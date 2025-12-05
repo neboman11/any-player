@@ -1,0 +1,64 @@
+{
+    "build": {
+        "beforeBuildCommand": "",
+        "beforeDevCommand": "",
+        "distDir": "../src-tauri/ui/dist"
+    },
+    "package": {
+        "productName": "Any Player",
+        "version": "0.1.0"
+    },
+    "tauri": {
+        "allowlist": {
+            "all": false,
+            "shell": {
+                "all": false,
+                "open": true
+            },
+            "window": {
+                "all": true
+            }
+        },
+        "bundle": {
+            "active": true,
+            "identifier": "rocks.nesbitt.any-player.app",
+            "targets": [
+                "deb",
+                "appimage",
+                "msi",
+                "dmg"
+            ],
+            "deb": {
+                "depends": [
+                    "libasound2-dev"
+                ]
+            },
+            "macOS": {
+                "frameworks": [
+                    "CoreAudio",
+                    "AVFoundation"
+                ],
+                "minimumSystemVersion": "10.13"
+            },
+            "windows": {
+                "certificateThumbprint": null,
+                "digestAlgorithm": "sha256",
+                "timestampUrl": ""
+            }
+        },
+        "security": {
+            "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;"
+        },
+        "windows": [
+            {
+                "fullscreen": false,
+                "height": 800,
+                "resizable": true,
+                "title": "Any Player",
+                "width": 1200,
+                "minHeight": 600,
+                "minWidth": 800
+            }
+        ]
+    }
+}
