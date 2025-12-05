@@ -1,0 +1,127 @@
+/// Core data models for the music player
+use serde::{Deserialize, Serialize};
+use std::fmt;
+
+/// Source provider type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Source {
+    Spotify,
+    Jellyfin,
+}
+
+impl fmt::Display for Source {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Source::Spotify => write!(f, "spotify"),
+            Source::Jellyfin => write!(f, "jellyfin"),
+        }
+    }
+}
+
+/// A music track from any source
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Track {
+    /// Unique ID within the source provider
+    pub id: String,
+    /// Display title
+    pub title: String,
+    /// Artist name(s)
+    pub artist: String,
+    /// Album name
+    pub album: String,
+    /// Duration in milliseconds
+    pub duration_ms: u64,
+    /// Cover art URL (if available)
+    pub image_url: Option<String>,
+    /// Source provider
+    pub source: Source,
+    /// External URL or stream URL
+    pub url: Option<String>,
+}
+
+impl fmt::Display for Track {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} - {} ({})", self.title, self.artist, self.source)
+    }
+}
+
+/// A playlist containing multiple tracks
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Playlist {
+    /// Unique ID within the source provider
+    pub id: String,
+    /// Display name
+    pub name: String,
+    /// Optional description
+    pub description: Option<String>,
+    /// Owner/creator name
+    pub owner: String,
+    /// Cover art URL (if available)
+    pub image_url: Option<String>,
+    /// Tracks in this playlist
+    pub tracks: Vec<Track>,
+    /// Source provider
+    pub source: Source,
+}
+
+impl fmt::Display for Playlist {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} by {} ({})", self.name, self.owner, self.source)
+    }
+}
+
+/// Playback state
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PlaybackState {
+    Playing,
+    Paused,
+    Stopped,
+}
+
+impl fmt::Display for PlaybackState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PlaybackState::Playing => write!(f, "Playing"),
+            PlaybackState::Paused => write!(f, "Paused"),
+            PlaybackState::Stopped => write!(f, "Stopped"),
+        }
+    }
+}
+
+/// Repeat mode for playback
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RepeatMode {
+    Off,
+    One,
+    All,
+}
+
+/// Current playback information
+#[derive(Debug, Clone)]
+pub struct PlaybackInfo {
+    /// Currently playing track (if any)
+    pub current_track: Option<Track>,
+    /// Current playback state
+    pub state: PlaybackState,
+    /// Current position in milliseconds
+    pub position_ms: u64,
+    /// Is shuffle enabled
+    pub shuffle: bool,
+    /// Repeat mode
+    pub repeat_mode: RepeatMode,
+    /// Volume (0-100)
+    pub volume: u32,
+}
+
+impl Default for PlaybackInfo {
+    fn default() -> Self {
+        Self {
+            current_track: None,
+            state: PlaybackState::Stopped,
+            position_ms: 0,
+            shuffle: false,
+            repeat_mode: RepeatMode::Off,
+            volume: 50,
+        }
+    }
+}
