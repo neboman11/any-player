@@ -55,6 +55,7 @@ export function useSpotifyAuth() {
       setError(null);
       await tauriAPI.authenticateSpotify(code);
       setIsConnected(true);
+      setAuthUrl(null);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Authentication failed";
@@ -66,6 +67,7 @@ export function useSpotifyAuth() {
 
   const connect = useCallback(async () => {
     try {
+      console.log("Running Spotify Connect hook");
       setIsLoading(true);
       setError(null);
       const url = await getAuthUrl();
@@ -102,6 +104,7 @@ export function useSpotifyAuth() {
           const hasCode = await tauriAPI.checkOAuthCode();
           if (hasCode) {
             setIsConnected(true);
+            setAuthUrl(null);
             clearInterval(checkInterval);
             resolve();
           }
