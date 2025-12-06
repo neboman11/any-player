@@ -109,6 +109,21 @@ export function usePlayback() {
     }
   }, []);
 
+  const playTrack = useCallback(
+    async (trackId: string, source: string) => {
+      try {
+        setIsLoading(true);
+        await tauriAPI.playTrack(trackId, source);
+        await updateStatus();
+      } catch (error) {
+        console.error("Error playing track:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [updateStatus]
+  );
+
   // Poll for status updates
   useEffect(() => {
     void updateStatus();
@@ -133,5 +148,6 @@ export function usePlayback() {
     cycleRepeatMode,
     setVolumeValue,
     seekTo,
+    playTrack,
   };
 }

@@ -17,11 +17,10 @@ export function NowPlaying() {
 
   useEffect(() => {
     if (playback.playbackStatus?.current_track) {
-      const track = playback.playbackStatus.current_track;
       setCurrentTrack({
-        title: track.title,
-        artist: track.artist,
-        album: track.album,
+        title: playback.playbackStatus.current_track.title,
+        artist: playback.playbackStatus.current_track.artist,
+        album: playback.playbackStatus.current_track.album,
       });
     } else {
       setCurrentTrack({

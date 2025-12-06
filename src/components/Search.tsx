@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { useSearch } from "../hooks";
+import { useSearch, usePlayback, useAudioPlayback } from "../hooks";
 import type { SearchType, TauriSource } from "../types";
 
 export function Search() {
@@ -7,6 +7,8 @@ export function Search() {
   const [searchSource, setSearchSource] = useState<TauriSource>("all");
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { results, isLoading, error, search, clearResults: _ } = useSearch();
+  const playback = usePlayback();
+  const audio = useAudioPlayback();
 
   const handleSearch = useCallback(async () => {
     const query = searchInputRef.current?.value;
@@ -22,6 +24,23 @@ export function Search() {
       }
     },
     [handleSearch]
+  );
+
+  const handleResultClick = useCallback(
+    async (result: (typeof results)[0]) => {
+      if (result.type === "track") {
+        await playback.playTrack(result.id, result.source);
+        // Update the UI immediately
+        await playback.updateStatus();
+
+        // Play actual audio if URL is available
+        if ((result as any).url) {
+          console.log("Playing audio from URL:", (result as any).url);
+          audio.playAudio((result as any).url);
+        }
+      }
+    },
+    [playback, audio]
   );
 
   return (
@@ -74,6 +93,10 @@ export function Search() {
             <div
               key={`${result.source}-${result.id}`}
               className="search-result-card playlist-card"
+              onClick={() => handleResultClick(result)}
+              style={{
+                cursor: result.type === "track" ? "pointer" : "default",
+              }}
             >
               <h4>{result.name}</h4>
               {result.type === "track" ? (
