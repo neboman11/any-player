@@ -1,6 +1,9 @@
 // Main application initialization
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log('Initializing Any Player Desktop UI...');
+    
+    // Wait for Tauri API to be ready before initializing UI
+    await tauriAPI.init();
     
     // Initialize UI
     ui.init();
