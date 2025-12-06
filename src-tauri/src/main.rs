@@ -42,6 +42,11 @@ fn main() {
             commands::get_playlists,
             commands::queue_track,
             commands::clear_queue,
+            // Spotify commands
+            commands::get_spotify_auth_url,
+            commands::authenticate_spotify,
+            commands::is_spotify_authenticated,
+            commands::get_spotify_playlists,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -80,6 +80,27 @@ class TauriAPI {
     async clearQueue() {
         return this.invoke('clear_queue');
     }
+
+    // Spotify commands
+    async getSpotifyAuthUrl(clientId, clientSecret, redirectUri) {
+        return this.invoke('get_spotify_auth_url', { 
+            client_id: clientId, 
+            client_secret: clientSecret, 
+            redirect_uri: redirectUri 
+        });
+    }
+
+    async authenticateSpotify(code) {
+        return this.invoke('authenticate_spotify', { code });
+    }
+
+    async isSpotifyAuthenticated() {
+        return this.invoke('is_spotify_authenticated');
+    }
+
+    async getSpotifyPlaylists() {
+        return this.invoke('get_spotify_playlists');
+    }
 }
 
 // Create global instance
