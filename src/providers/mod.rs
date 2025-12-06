@@ -74,12 +74,14 @@ pub trait MusicProvider: Send + Sync {
 /// Provider registry for managing multiple providers
 pub struct ProviderRegistry {
     providers: std::collections::HashMap<Source, Arc<dyn MusicProvider>>,
+    spotify_provider: Option<Arc<tokio::sync::Mutex<spotify::SpotifyProvider>>>,
 }
 
 impl ProviderRegistry {
     pub fn new() -> Self {
         Self {
             providers: std::collections::HashMap::new(),
+            spotify_provider: None,
         }
     }
 
@@ -93,6 +95,55 @@ impl ProviderRegistry {
 
     pub fn get_all(&self) -> Vec<Arc<dyn MusicProvider>> {
         self.providers.values().cloned().collect()
+    }
+
+    /// Initialize Spotify provider with OAuth configuration
+    pub fn get_spotify_auth_url(
+        &mut self,
+        client_id: &str,
+        client_secret: &str,
+        redirect_uri: &str,
+    ) -> Result<String, ProviderError> {
+        let spotify_provider = spotify::SpotifyProvider::with_oauth(
+            client_id.to_string(),
+            client_secret.to_string(),
+            redirect_uri.to_string(),
+        );
+
+        let auth_url = spotify_provider.get_auth_url()?;
+        self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
+
+        Ok(auth_url)
+    }
+
+    /// Complete Spotify authentication with authorization code
+    pub async fn authenticate_spotify(&self, code: &str) -> Result<(), ProviderError> {
+        if let Some(provider) = &self.spotify_provider {
+            let mut spotify = provider.lock().await;
+            spotify.authenticate_with_code(code).await?;
+        } else {
+            return Err(ProviderError(
+                "Spotify provider not initialized".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Check if Spotify is authenticated
+    pub fn is_spotify_authenticated(&self) -> bool {
+        self.spotify_provider.is_some()
+    }
+
+    /// Get Spotify playlists
+    pub async fn get_spotify_playlists(&self) -> Result<Vec<Playlist>, ProviderError> {
+        if let Some(provider) = &self.spotify_provider {
+            let spotify = provider.lock().await;
+            spotify.get_playlists().await
+        } else {
+            Err(ProviderError(
+                "Spotify provider not authenticated".to_string(),
+            ))
+        }
     }
 }
 

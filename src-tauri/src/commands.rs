@@ -183,3 +183,63 @@ pub async fn clear_queue(state: State<'_, AppState>) -> Result<(), String> {
     playback.clear_queue().await;
     Ok(())
 }
+
+/// Initialize Spotify OAuth flow and get authorization URL
+#[tauri::command]
+pub async fn get_spotify_auth_url(
+    state: State<'_, AppState>,
+    client_id: String,
+    client_secret: String,
+    redirect_uri: String,
+) -> Result<String, String> {
+    let mut providers = state.providers.lock().await;
+
+    let auth_url = providers
+        .get_spotify_auth_url(&client_id, &client_secret, &redirect_uri)
+        .map_err(|e| format!("Failed to get auth URL: {}", e))?;
+
+    Ok(auth_url)
+}
+
+/// Complete Spotify OAuth authentication with authorization code
+#[tauri::command]
+pub async fn authenticate_spotify(state: State<'_, AppState>, code: String) -> Result<(), String> {
+    let providers = state.providers.lock().await;
+
+    providers
+        .authenticate_spotify(&code)
+        .await
+        .map_err(|e| format!("Failed to authenticate: {}", e))
+}
+
+/// Check if Spotify is connected and authenticated
+#[tauri::command]
+pub async fn is_spotify_authenticated(state: State<'_, AppState>) -> Result<bool, String> {
+    let providers = state.providers.lock().await;
+    Ok(providers.is_spotify_authenticated())
+}
+
+/// Get Spotify playlists
+#[tauri::command]
+pub async fn get_spotify_playlists(
+    state: State<'_, AppState>,
+) -> Result<Vec<PlaylistInfo>, String> {
+    let providers = state.providers.lock().await;
+
+    let playlists = providers
+        .get_spotify_playlists()
+        .await
+        .map_err(|e| format!("Failed to get playlists: {}", e))?;
+
+    Ok(playlists
+        .into_iter()
+        .map(|p| PlaylistInfo {
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            track_count: p.tracks.len(),
+            owner: p.owner,
+            source: "spotify".to_string(),
+        })
+        .collect())
+}

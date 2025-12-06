@@ -6,6 +6,7 @@ class UI {
         this.repeatMode = 'off';
         this.shuffle = false;
         this.isPlaying = false;
+        this.spotifyAuthWindow = null;
     }
 
     init() {
@@ -14,6 +15,7 @@ class UI {
         this.setupSearchControls();
         this.setupPlaylistTabs();
         this.setupSettingsControls();
+        this.checkSpotifyStatus();
         this.updateUI();
     }
 
@@ -196,8 +198,17 @@ class UI {
             const grid = document.getElementById('playlists-grid');
             grid.innerHTML = '<div class="playlist-card loading">Loading playlists...</div>';
             
-            const source = this.currentSource === 'all' ? 'both' : this.currentSource;
-            const playlists = await tauriAPI.getPlaylists(source);
+            let playlists = [];
+            
+            // Load Spotify playlists if authenticated
+            if (this.currentSource === 'spotify' || this.currentSource === 'all') {
+                try {
+                    const spotifyPlaylists = await tauriAPI.getSpotifyPlaylists();
+                    playlists = playlists.concat(spotifyPlaylists);
+                } catch (error) {
+                    console.warn('Could not load Spotify playlists:', error);
+                }
+            }
             
             if (!playlists || playlists.length === 0) {
                 grid.innerHTML = '<div class="playlist-card">No playlists found. Connect a service in Settings.</div>';
@@ -246,12 +257,86 @@ class UI {
         }, 500);
     }
 
-    // Settings methods
-    connectSpotify() {
-        console.log('Connecting to Spotify...');
-        // TODO: Implement Spotify OAuth flow
-        const status = document.getElementById('spotify-status');
-        status.textContent = 'Connecting...';
+    // Spotify settings methods
+    async checkSpotifyStatus() {
+        try {
+            const isAuthenticated = await tauriAPI.isSpotifyAuthenticated();
+            const statusEl = document.getElementById('spotify-status');
+            const btnEl = document.getElementById('spotify-connect-btn');
+            
+            if (isAuthenticated && statusEl && btnEl) {
+                statusEl.textContent = '✓ Connected';
+                statusEl.className = 'status connected';
+                btnEl.textContent = 'Disconnect Spotify';
+            }
+        } catch (error) {
+            console.warn('Could not check Spotify status:', error);
+        }
+    }
+
+    async connectSpotify() {
+        try {
+            // Check if we already have credentials in localStorage
+            let clientId = localStorage.getItem('spotify_client_id');
+            let clientSecret = localStorage.getItem('spotify_client_secret');
+            let redirectUri = 'http://localhost:5173/auth/spotify';
+            
+            if (!clientId || !clientSecret) {
+                // Prompt user for credentials
+                clientId = prompt('Enter your Spotify Client ID:');
+                clientSecret = prompt('Enter your Spotify Client Secret:');
+                
+                if (!clientId || !clientSecret) {
+                    console.log('Spotify credentials cancelled');
+                    return;
+                }
+                
+                // Store in localStorage
+                localStorage.setItem('spotify_client_id', clientId);
+                localStorage.setItem('spotify_client_secret', clientSecret);
+            }
+            
+            const status = document.getElementById('spotify-status');
+            if (status) status.textContent = 'Authorizing...';
+            
+            // Get authorization URL
+            const authUrl = await tauriAPI.getSpotifyAuthUrl(clientId, clientSecret, redirectUri);
+            
+            // Open OAuth URL in system browser or new window
+            window.open(authUrl, '_blank', 'width=500,height=600');
+            
+            // Poll for authentication completion
+            this.waitForSpotifyAuth();
+            
+        } catch (error) {
+            console.error('Error connecting to Spotify:', error);
+            const status = document.getElementById('spotify-status');
+            if (status) status.textContent = '✗ Connection failed';
+        }
+    }
+
+    async waitForSpotifyAuth() {
+        // Wait a bit then check status
+        const checkInterval = setInterval(async () => {
+            try {
+                const isAuthenticated = await tauriAPI.isSpotifyAuthenticated();
+                if (isAuthenticated) {
+                    clearInterval(checkInterval);
+                    const statusEl = document.getElementById('spotify-status');
+                    const btnEl = document.getElementById('spotify-connect-btn');
+                    if (statusEl) {
+                        statusEl.textContent = '✓ Connected';
+                        statusEl.className = 'status connected';
+                    }
+                    if (btnEl) btnEl.textContent = 'Disconnect Spotify';
+                }
+            } catch (error) {
+                // Continue polling
+            }
+        }, 1000);
+        
+        // Stop polling after 5 minutes
+        setTimeout(() => clearInterval(checkInterval), 300000);
     }
 
     connectJellyfin() {
