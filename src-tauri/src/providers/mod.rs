@@ -252,6 +252,18 @@ impl ProviderRegistry {
             ))
         }
     }
+
+    /// Disconnect Spotify
+    pub async fn disconnect_spotify(&mut self) -> Result<(), ProviderError> {
+        self.spotify_provider = None;
+        Ok(())
+    }
+
+    /// Disconnect Jellyfin
+    pub async fn disconnect_jellyfin(&mut self) -> Result<(), ProviderError> {
+        self.jellyfin_provider = None;
+        Ok(())
+    }
 }
 
 impl Default for ProviderRegistry {

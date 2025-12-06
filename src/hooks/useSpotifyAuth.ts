@@ -121,10 +121,17 @@ export function useSpotifyAuth() {
     });
   }, []);
 
-  const disconnect = useCallback(() => {
-    setIsConnected(false);
-    setError(null);
-    setAuthUrl(null);
+  const disconnect = useCallback(async () => {
+    try {
+      await tauriAPI.disconnectSpotify();
+      setIsConnected(false);
+      setError(null);
+      setAuthUrl(null);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to disconnect";
+      setError(message);
+    }
   }, []);
 
   const clearAuthUrl = useCallback(() => {

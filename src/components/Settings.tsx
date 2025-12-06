@@ -142,15 +142,23 @@ export function Settings() {
   const jellyfin = useJellyfinAuth();
 
   const handleSpotifyConnect = useCallback(async () => {
-    try {
-      await spotify.connect();
-    } catch (err) {
-      console.error("Spotify connection error:", err);
+    if (spotify.isConnected) {
+      await spotify.disconnect();
+    } else {
+      try {
+        await spotify.connect();
+      } catch (err) {
+        console.error("Spotify connection error:", err);
+      }
     }
   }, [spotify]);
 
   const handleJellyfinConnect = useCallback(async () => {
-    await jellyfin.connect(jellyfinUrl, jellyfinApiKey);
+    if (jellyfin.isConnected) {
+      await jellyfin.disconnect();
+    } else {
+      await jellyfin.connect(jellyfinUrl, jellyfinApiKey);
+    }
   }, [jellyfin, jellyfinUrl, jellyfinApiKey]);
 
   return (

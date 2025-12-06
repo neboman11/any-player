@@ -95,6 +95,10 @@ export class TauriAPI {
     return invoke<boolean>("check_oauth_code");
   }
 
+  async disconnectSpotify(): Promise<void> {
+    return invoke<void>("disconnect_spotify");
+  }
+
   // Jellyfin commands
   async authenticateJellyfin(url: string, apiKey: string): Promise<void> {
     return invoke<void>("authenticate_jellyfin", {
@@ -125,6 +129,10 @@ export class TauriAPI {
 
   async getJellyfinRecentlyPlayed(limit: number): Promise<Track[]> {
     return invoke<Track[]>("get_jellyfin_recently_played", { limit });
+  }
+
+  async disconnectJellyfin(): Promise<void> {
+    return invoke<void>("disconnect_jellyfin");
   }
 }
 
