@@ -52,6 +52,14 @@ fn main() {
             commands::is_spotify_authenticated,
             commands::get_spotify_playlists,
             commands::check_oauth_code,
+            // Jellyfin commands
+            commands::authenticate_jellyfin,
+            commands::is_jellyfin_authenticated,
+            commands::get_jellyfin_playlists,
+            commands::get_jellyfin_playlist,
+            commands::search_jellyfin_tracks,
+            commands::search_jellyfin_playlists,
+            commands::get_jellyfin_recently_played,
         ])
         .setup(move |_app| {
             // Start OAuth callback server in the Tauri runtime

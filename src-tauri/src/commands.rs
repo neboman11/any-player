@@ -43,6 +43,13 @@ pub struct TrackInfo {
     pub source: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JellyfinAuthRequest {
+    pub url: String,
+    #[serde(rename = "apiKey")]
+    pub api_key: String,
+}
+
 /// Get current playback status
 #[tauri::command]
 pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackStatus, String> {
@@ -257,4 +264,152 @@ pub async fn check_oauth_code(state: State<'_, AppState>) -> Result<bool, String
     } else {
         Ok(false)
     }
+}
+
+/// Jellyfin authentication and connection
+#[tauri::command]
+pub async fn authenticate_jellyfin(
+    state: State<'_, AppState>,
+    url: String,
+    api_key: String,
+) -> Result<(), String> {
+    let mut providers = state.providers.lock().await;
+
+    providers
+        .authenticate_jellyfin(&url, &api_key)
+        .await
+        .map_err(|e| format!("Failed to authenticate Jellyfin: {}", e))
+}
+
+/// Check if Jellyfin is connected and authenticated
+#[tauri::command]
+pub async fn is_jellyfin_authenticated(state: State<'_, AppState>) -> Result<bool, String> {
+    let providers = state.providers.lock().await;
+    Ok(providers.is_jellyfin_authenticated().await)
+}
+
+/// Get Jellyfin playlists
+#[tauri::command]
+pub async fn get_jellyfin_playlists(
+    state: State<'_, AppState>,
+) -> Result<Vec<PlaylistInfo>, String> {
+    let providers = state.providers.lock().await;
+
+    let playlists = providers
+        .get_jellyfin_playlists()
+        .await
+        .map_err(|e| format!("Failed to get Jellyfin playlists: {}", e))?;
+
+    Ok(playlists
+        .into_iter()
+        .map(|p| PlaylistInfo {
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            track_count: p.tracks.len(),
+            owner: p.owner,
+            source: "jellyfin".to_string(),
+        })
+        .collect())
+}
+
+/// Get a specific Jellyfin playlist with tracks
+#[tauri::command]
+pub async fn get_jellyfin_playlist(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<PlaylistInfo, String> {
+    let providers = state.providers.lock().await;
+
+    let playlist = providers
+        .get_jellyfin_playlist(&id)
+        .await
+        .map_err(|e| format!("Failed to get Jellyfin playlist: {}", e))?;
+
+    Ok(PlaylistInfo {
+        id: playlist.id,
+        name: playlist.name,
+        description: playlist.description,
+        track_count: playlist.tracks.len(),
+        owner: playlist.owner,
+        source: "jellyfin".to_string(),
+    })
+}
+
+/// Search tracks on Jellyfin
+#[tauri::command]
+pub async fn search_jellyfin_tracks(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<Vec<TrackInfo>, String> {
+    let providers = state.providers.lock().await;
+
+    let tracks = providers
+        .search_jellyfin_tracks(&query)
+        .await
+        .map_err(|e| format!("Failed to search Jellyfin tracks: {}", e))?;
+
+    Ok(tracks
+        .into_iter()
+        .map(|t| TrackInfo {
+            id: t.id,
+            title: t.title,
+            artist: t.artist,
+            album: t.album,
+            duration: t.duration_ms,
+            source: "jellyfin".to_string(),
+        })
+        .collect())
+}
+
+/// Search playlists on Jellyfin
+#[tauri::command]
+pub async fn search_jellyfin_playlists(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<Vec<PlaylistInfo>, String> {
+    let providers = state.providers.lock().await;
+
+    let playlists = providers
+        .search_jellyfin_playlists(&query)
+        .await
+        .map_err(|e| format!("Failed to search Jellyfin playlists: {}", e))?;
+
+    Ok(playlists
+        .into_iter()
+        .map(|p| PlaylistInfo {
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            track_count: p.tracks.len(),
+            owner: p.owner,
+            source: "jellyfin".to_string(),
+        })
+        .collect())
+}
+
+/// Get recently played tracks from Jellyfin
+#[tauri::command]
+pub async fn get_jellyfin_recently_played(
+    state: State<'_, AppState>,
+    limit: usize,
+) -> Result<Vec<TrackInfo>, String> {
+    let providers = state.providers.lock().await;
+
+    let tracks = providers
+        .get_jellyfin_recently_played(limit)
+        .await
+        .map_err(|e| format!("Failed to get recently played: {}", e))?;
+
+    Ok(tracks
+        .into_iter()
+        .map(|t| TrackInfo {
+            id: t.id,
+            title: t.title,
+            artist: t.artist,
+            album: t.album,
+            duration: t.duration_ms,
+            source: "jellyfin".to_string(),
+        })
+        .collect())
 }

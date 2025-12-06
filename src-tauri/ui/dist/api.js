@@ -108,6 +108,35 @@ class TauriAPI {
     async checkOAuthCode() {
         return this.invoke('check_oauth_code');
     }
+
+    // Jellyfin commands
+    async authenticateJellyfin(url, apiKey) {
+        return this.invoke('authenticate_jellyfin', { url: url, api_key: apiKey });
+    }
+
+    async isJellyfinAuthenticated() {
+        return this.invoke('is_jellyfin_authenticated');
+    }
+
+    async getJellyfinPlaylists() {
+        return this.invoke('get_jellyfin_playlists');
+    }
+
+    async getJellyfinPlaylist(id) {
+        return this.invoke('get_jellyfin_playlist', { id });
+    }
+
+    async searchJellyfinTracks(query) {
+        return this.invoke('search_jellyfin_tracks', { query });
+    }
+
+    async searchJellyfinPlaylists(query) {
+        return this.invoke('search_jellyfin_playlists', { query });
+    }
+
+    async getJellyfinRecentlyPlayed(limit) {
+        return this.invoke('get_jellyfin_recently_played', { limit });
+    }
 }
 
 // Create global instance

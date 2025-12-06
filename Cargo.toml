@@ -11,24 +11,15 @@ name = "any_player"
 path = "src/lib.rs"
 
 [[bin]]
-name = "any-player-cli"
-path = "src/main.rs"
-
-[[bin]]
 name = "any-player"
 path = "src/gui_main.rs"
 required-features = ["gui"]
 
 [features]
-default = ["cli"]
-cli = ["clap", "ratatui", "crossterm"]
+default = ["gui"]
 gui = ["tauri"]
 
 [dependencies]
-# CLI and TUI (optional)
-clap = { version = "4.4", features = ["derive"], optional = true }
-ratatui = { version = "0.26", optional = true }
-crossterm = { version = "0.27", optional = true }
 
 # Async runtime
 async-trait = "0.1"
