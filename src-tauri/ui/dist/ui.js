@@ -17,6 +17,20 @@ class UI {
         this.setupSettingsControls();
         this.checkSpotifyStatus();
         this.updateUI();
+
+        // Listen for OAuth callback messages from auth window
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'spotify-auth') {
+                if (event.data.code) {
+                    console.log('Received auth code from popup');
+                    this.completeSpotifyAuth(event.data.code);
+                } else if (event.data.error) {
+                    console.error('Auth error:', event.data.error);
+                    const status = document.getElementById('spotify-status');
+                    if (status) status.textContent = `✗ ${event.data.error}`;
+                }
+            }
+        });
     }
 
     setupNavigation() {
@@ -276,36 +290,28 @@ class UI {
 
     async connectSpotify() {
         try {
-            // Check if we already have credentials in localStorage
-            let clientId = localStorage.getItem('spotify_client_id');
-            let clientSecret = localStorage.getItem('spotify_client_secret');
-            let redirectUri = 'http://localhost:5173/auth/spotify';
-            
-            if (!clientId || !clientSecret) {
-                // Prompt user for credentials
-                clientId = prompt('Enter your Spotify Client ID:');
-                clientSecret = prompt('Enter your Spotify Client Secret:');
-                
-                if (!clientId || !clientSecret) {
-                    console.log('Spotify credentials cancelled');
-                    return;
-                }
-                
-                // Store in localStorage
-                localStorage.setItem('spotify_client_id', clientId);
-                localStorage.setItem('spotify_client_secret', clientSecret);
-            }
-            
             const status = document.getElementById('spotify-status');
-            if (status) status.textContent = 'Authorizing...';
+            if (status) status.textContent = 'Opening Spotify login...';
             
-            // Get authorization URL
-            const authUrl = await tauriAPI.getSpotifyAuthUrl(clientId, clientSecret, redirectUri);
+            // Get authorization URL (no credentials needed!)
+            const authUrl = await tauriAPI.getSpotifyAuthUrl();
+            console.log('Auth URL:', authUrl);
             
-            // Open OAuth URL in system browser or new window
-            window.open(authUrl, '_blank', 'width=500,height=600');
-            
-            // Poll for authentication completion
+            // Try to open in default browser using Tauri shell
+            if (window.__TAURI__ && window.__TAURI__.shell) {
+                try {
+                    await window.__TAURI__.shell.open(authUrl);
+                    if (status) status.textContent = 'Waiting for authentication...';
+                } catch (e) {
+                    console.error('Failed to open browser:', e);
+                    this.showAuthFallback(authUrl);
+                }
+            } else {
+                // Fallback: show the link to the user
+                this.showAuthFallback(authUrl);
+            }
+
+            // Start waiting for the OAuth callback
             this.waitForSpotifyAuth();
             
         } catch (error) {
@@ -315,13 +321,142 @@ class UI {
         }
     }
 
+    showAuthFallback(authUrl) {
+        // Show a modal with the auth link
+        const fallbackDiv = document.createElement('div');
+        fallbackDiv.id = 'auth-fallback';
+        fallbackDiv.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+        
+        const modalDiv = document.createElement('div');
+        modalDiv.style.cssText = `
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 500px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        `;
+        
+        modalDiv.innerHTML = `
+            <h2>Complete Spotify Login</h2>
+            <p style="margin: 20px 0; color: #666;">Click the button below to log in to Spotify, or copy the link:</p>
+            <div style="margin: 20px 0;">
+                <a href="${authUrl}" target="_blank" style="
+                    display: inline-block;
+                    background: #1DB954;
+                    color: white;
+                    padding: 12px 30px;
+                    border-radius: 25px;
+                    text-decoration: none;
+                    font-weight: bold;
+                    margin-bottom: 15px;
+                ">Open Spotify Login</a>
+            </div>
+            <p style="font-size: 12px; color: #999; margin: 15px 0;">Or copy this link:</p>
+            <div style="
+                background: #f5f5f5;
+                padding: 10px;
+                border-radius: 5px;
+                margin: 10px 0;
+                word-break: break-all;
+                font-family: monospace;
+                font-size: 12px;
+            ">
+                <input type="text" value="${authUrl}" readonly style="
+                    width: 100%;
+                    border: none;
+                    background: transparent;
+                    font-family: monospace;
+                    font-size: 12px;
+                    padding: 5px;
+                " id="auth-url-input">
+            </div>
+            <button id="copy-link-btn" style="
+                background: #ddd;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 12px;
+            ">Copy Link</button>
+            <p style="margin-top: 20px; color: #666; font-size: 14px;">
+                After logging in, this window will automatically close.
+            </p>
+            <button id="close-modal-btn" style="
+                margin-top: 15px;
+                background: #f0f0f0;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+                cursor: pointer;
+            ">Close</button>
+        `;
+        
+        fallbackDiv.appendChild(modalDiv);
+        document.body.appendChild(fallbackDiv);
+
+        // Add event listeners for buttons
+        const copyBtn = document.getElementById('copy-link-btn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', (e) => {
+                const input = document.getElementById('auth-url-input');
+                if (input) {
+                    input.select();
+                    document.execCommand('copy');
+                    const originalText = e.target.textContent;
+                    e.target.textContent = 'Copied!';
+                    setTimeout(() => {
+                        e.target.textContent = originalText;
+                    }, 2000);
+                }
+            });
+        }
+
+        const closeBtn = document.getElementById('close-modal-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                const fallback = document.getElementById('auth-fallback');
+                if (fallback) fallback.remove();
+            });
+        }
+    }
+
     async waitForSpotifyAuth() {
-        // Wait a bit then check status
+        // Poll for authentication completion
+        let pollCount = 0;
+        const maxPolls = 600; // 10 minutes at 1 second intervals
+        
         const checkInterval = setInterval(async () => {
+            pollCount++;
             try {
+                // First, check if there's a pending OAuth code to process
+                const codeProcessed = await tauriAPI.checkOAuthCode();
+                if (codeProcessed) {
+                    console.log('OAuth code processed successfully');
+                }
+                
+                // Then check if authenticated
                 const isAuthenticated = await tauriAPI.isSpotifyAuthenticated();
+                console.log(`Auth check ${pollCount}: ${isAuthenticated}`);
+                
                 if (isAuthenticated) {
                     clearInterval(checkInterval);
+                    
+                    // Remove fallback modal if it exists
+                    const fallback = document.getElementById('auth-fallback');
+                    if (fallback) fallback.remove();
+                    
                     const statusEl = document.getElementById('spotify-status');
                     const btnEl = document.getElementById('spotify-connect-btn');
                     if (statusEl) {
@@ -329,14 +464,48 @@ class UI {
                         statusEl.className = 'status connected';
                     }
                     if (btnEl) btnEl.textContent = 'Disconnect Spotify';
+                    
+                    console.log('Spotify authentication successful!');
                 }
             } catch (error) {
-                // Continue polling
+                console.error('Error checking auth status:', error);
+            }
+            
+            // Stop polling after max attempts
+            if (pollCount >= maxPolls) {
+                clearInterval(checkInterval);
+                console.log('Auth polling timeout after 10 minutes');
+                const statusEl = document.getElementById('spotify-status');
+                if (statusEl && statusEl.textContent === 'Waiting for authentication...') {
+                    statusEl.textContent = '⏱ Auth timeout - please try again';
+                }
             }
         }, 1000);
-        
-        // Stop polling after 5 minutes
-        setTimeout(() => clearInterval(checkInterval), 300000);
+    }
+
+    async completeSpotifyAuth(code) {
+        try {
+            const status = document.getElementById('spotify-status');
+            if (status) status.textContent = 'Completing authentication...';
+
+            // Send the auth code to the backend
+            await tauriAPI.authenticateSpotify(code);
+
+            // Update UI
+            const statusEl = document.getElementById('spotify-status');
+            const btnEl = document.getElementById('spotify-connect-btn');
+            if (statusEl) {
+                statusEl.textContent = '✓ Connected';
+                statusEl.className = 'status connected';
+            }
+            if (btnEl) btnEl.textContent = 'Disconnect Spotify';
+
+            console.log('Spotify authentication successful!');
+        } catch (error) {
+            console.error('Error completing Spotify auth:', error);
+            const status = document.getElementById('spotify-status');
+            if (status) status.textContent = '✗ Auth failed';
+        }
     }
 
     connectJellyfin() {

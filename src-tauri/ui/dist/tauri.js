@@ -1,6 +1,7 @@
 // Tauri API - stub for local development
 // This will be replaced by the actual Tauri API when running in the Tauri app
 if (!window.__TAURI__) {
+    // Create mock Tauri API for development
     window.__TAURI__ = {
         invoke: async (command, args) => {
             console.log(`Mock invoke: ${command}`, args);
@@ -39,4 +40,8 @@ if (!window.__TAURI__) {
             }
         }
     };
+} else if (!window.__TAURI__.invoke && window.__TAURI_INVOKE__) {
+    // Tauri v2 API structure - invoke is at window.__TAURI_INVOKE__
+    window.__TAURI__.invoke = window.__TAURI_INVOKE__;
 }
+

@@ -2,24 +2,40 @@ use super::{MusicProvider, ProviderError};
 use crate::models::{Playlist, Source, Track};
 use async_trait::async_trait;
 use futures::stream::StreamExt;
-use rspotify::{prelude::*, scopes, AuthCodeSpotify, Credentials, OAuth};
+use rspotify::{prelude::*, scopes, AuthCodePkceSpotify, Credentials, OAuth};
+use std::path::PathBuf;
+
+/// Public Spotify Client ID
+const SPOTIFY_CLIENT_ID: &str = "243bb6667db04143b6586d8598aed48b";
+
+/// Default OAuth redirect URI - must be localhost with specific port for Spotify
+const DEFAULT_REDIRECT_URI: &str = "http://127.0.0.1:8989/callback";
 
 /// Spotify provider state
 pub struct SpotifyProvider {
-    client: Option<AuthCodeSpotify>,
+    client: Option<AuthCodePkceSpotify>,
+    redirect_uri: String,
+    cache_path: Option<PathBuf>,
+    is_authenticated: bool,
 }
 
 impl SpotifyProvider {
     /// Create a new Spotify provider
     pub fn new() -> Self {
-        Self { client: None }
+        Self {
+            client: None,
+            redirect_uri: DEFAULT_REDIRECT_URI.to_string(),
+            cache_path: None,
+            is_authenticated: false,
+        }
     }
 
-    /// Create a new Spotify provider with OAuth configuration
-    pub fn with_oauth(client_id: String, client_secret: String, redirect_uri: String) -> Self {
-        let credentials = Credentials::new(&client_id, &client_secret);
+    /// Create a new Spotify provider with default OAuth configuration (PKCE - no secrets needed)
+    pub fn with_default_oauth() -> Self {
+        // Use PKCE for public clients (desktop apps) that don't have/store a secret
+        let credentials = Credentials::new_pkce(SPOTIFY_CLIENT_ID);
         let oauth = OAuth {
-            redirect_uri,
+            redirect_uri: DEFAULT_REDIRECT_URI.to_string(),
             scopes: scopes!(
                 "playlist-read-private",
                 "playlist-read-collaborative",
@@ -36,19 +52,54 @@ impl SpotifyProvider {
             ..Default::default()
         };
 
-        let client = AuthCodeSpotify::new(credentials, oauth);
+        let client = AuthCodePkceSpotify::new(credentials, oauth);
 
         Self {
             client: Some(client),
+            redirect_uri: DEFAULT_REDIRECT_URI.to_string(),
+            cache_path: None,
+            is_authenticated: false,
+        }
+    }
+
+    /// Create a new Spotify provider with custom OAuth configuration
+    pub fn with_oauth(client_id: String, client_secret: String, redirect_uri: String) -> Self {
+        let credentials = Credentials::new(&client_id, &client_secret);
+        let oauth = OAuth {
+            redirect_uri: redirect_uri.clone(),
+            scopes: scopes!(
+                "playlist-read-private",
+                "playlist-read-collaborative",
+                "playlist-modify-public",
+                "playlist-modify-private",
+                "streaming",
+                "user-read-private",
+                "user-read-email",
+                "user-library-read",
+                "user-library-modify",
+                "user-top-read",
+                "user-read-recently-played"
+            ),
+            ..Default::default()
+        };
+
+        let client = AuthCodePkceSpotify::new(credentials, oauth);
+
+        Self {
+            client: Some(client),
+            redirect_uri,
+            cache_path: None,
+            is_authenticated: false,
         }
     }
 
     /// Get the authorization URL for OAuth flow
-    pub fn get_auth_url(&self) -> Result<String, ProviderError> {
+    pub fn get_auth_url(&mut self) -> Result<String, ProviderError> {
         self.client
-            .as_ref()
+            .as_mut()
             .map(|c| {
-                c.get_authorize_url(false)
+                // PKCE requires mutable reference to generate verifier
+                c.get_authorize_url(None)
                     .map_err(|e| ProviderError(e.to_string()))
             })
             .ok_or_else(|| ProviderError("Client not configured".to_string()))?
@@ -67,7 +118,15 @@ impl SpotifyProvider {
             .await
             .map_err(|e| ProviderError(format!("Failed to request access token: {}", e)))?;
 
+        // Mark as authenticated after successful token request
+        self.is_authenticated = true;
+
         Ok(())
+    }
+
+    /// Check if provider is authenticated
+    pub fn is_authenticated_status(&self) -> bool {
+        self.is_authenticated
     }
 }
 
@@ -87,7 +146,7 @@ impl MusicProvider for SpotifyProvider {
     }
 
     fn is_authenticated(&self) -> bool {
-        self.client.is_some()
+        self.is_authenticated && self.client.is_some()
     }
 
     async fn get_playlists(&self) -> Result<Vec<Playlist>, ProviderError> {

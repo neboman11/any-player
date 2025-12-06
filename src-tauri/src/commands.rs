@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 pub struct AppState {
     pub playback: Arc<Mutex<PlaybackManager>>,
     pub providers: Arc<Mutex<ProviderRegistry>>,
+    pub oauth_code: Arc<Mutex<Option<String>>>,
 }
 
 /// Command response types
@@ -184,18 +185,13 @@ pub async fn clear_queue(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
-/// Initialize Spotify OAuth flow and get authorization URL
+/// Initialize Spotify OAuth flow and get authorization URL (no credentials needed)
 #[tauri::command]
-pub async fn get_spotify_auth_url(
-    state: State<'_, AppState>,
-    client_id: String,
-    client_secret: String,
-    redirect_uri: String,
-) -> Result<String, String> {
+pub async fn get_spotify_auth_url(state: State<'_, AppState>) -> Result<String, String> {
     let mut providers = state.providers.lock().await;
 
     let auth_url = providers
-        .get_spotify_auth_url(&client_id, &client_secret, &redirect_uri)
+        .get_spotify_auth_url_default()
         .map_err(|e| format!("Failed to get auth URL: {}", e))?;
 
     Ok(auth_url)
@@ -216,7 +212,7 @@ pub async fn authenticate_spotify(state: State<'_, AppState>, code: String) -> R
 #[tauri::command]
 pub async fn is_spotify_authenticated(state: State<'_, AppState>) -> Result<bool, String> {
     let providers = state.providers.lock().await;
-    Ok(providers.is_spotify_authenticated())
+    Ok(providers.is_spotify_authenticated().await)
 }
 
 /// Get Spotify playlists
@@ -242,4 +238,23 @@ pub async fn get_spotify_playlists(
             source: "spotify".to_string(),
         })
         .collect())
+}
+
+/// Check for and process pending OAuth code
+#[tauri::command]
+pub async fn check_oauth_code(state: State<'_, AppState>) -> Result<bool, String> {
+    let mut oauth_code = state.oauth_code.lock().await;
+
+    if let Some(code) = oauth_code.take() {
+        // We have a pending code - authenticate with it
+        let providers = state.providers.lock().await;
+        providers
+            .authenticate_spotify(&code)
+            .await
+            .map_err(|e| format!("Failed to authenticate: {}", e))?;
+
+        Ok(true)
+    } else {
+        Ok(false)
+    }
 }

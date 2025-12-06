@@ -6,12 +6,19 @@ class TauriAPI {
 
     async init() {
         // Wait for Tauri to be ready
-        if (window.__TAURI__) {
-            this.ready = true;
-            console.log('Tauri API initialized');
-        } else {
-            setTimeout(() => this.init(), 100);
-        }
+        return new Promise((resolve) => {
+            const checkTauri = () => {
+                // Check if window.__TAURI__.invoke exists (normalized by tauri.js)
+                if (window.__TAURI__ && typeof window.__TAURI__.invoke === 'function') {
+                    this.ready = true;
+                    console.log('Tauri API initialized');
+                    resolve();
+                } else {
+                    setTimeout(checkTauri, 50);
+                }
+            };
+            checkTauri();
+        });
     }
 
     async invoke(command, args = {}) {
@@ -82,12 +89,8 @@ class TauriAPI {
     }
 
     // Spotify commands
-    async getSpotifyAuthUrl(clientId, clientSecret, redirectUri) {
-        return this.invoke('get_spotify_auth_url', { 
-            client_id: clientId, 
-            client_secret: clientSecret, 
-            redirect_uri: redirectUri 
-        });
+    async getSpotifyAuthUrl() {
+        return this.invoke('get_spotify_auth_url');
     }
 
     async authenticateSpotify(code) {
@@ -100,6 +103,10 @@ class TauriAPI {
 
     async getSpotifyPlaylists() {
         return this.invoke('get_spotify_playlists');
+    }
+
+    async checkOAuthCode() {
+        return this.invoke('check_oauth_code');
     }
 }
 

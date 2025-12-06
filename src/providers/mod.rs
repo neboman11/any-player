@@ -97,6 +97,17 @@ impl ProviderRegistry {
         self.providers.values().cloned().collect()
     }
 
+    /// Initialize Spotify provider with default OAuth configuration (PKCE - no secrets needed)
+    pub fn get_spotify_auth_url_default(&mut self) -> Result<String, ProviderError> {
+        let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth();
+
+        // PKCE requires mutable reference to generate verifier
+        let auth_url = spotify_provider.get_auth_url()?;
+        self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
+
+        Ok(auth_url)
+    }
+
     /// Initialize Spotify provider with OAuth configuration
     pub fn get_spotify_auth_url(
         &mut self,
@@ -104,18 +115,18 @@ impl ProviderRegistry {
         client_secret: &str,
         redirect_uri: &str,
     ) -> Result<String, ProviderError> {
-        let spotify_provider = spotify::SpotifyProvider::with_oauth(
+        let mut spotify_provider = spotify::SpotifyProvider::with_oauth(
             client_id.to_string(),
             client_secret.to_string(),
             redirect_uri.to_string(),
         );
 
+        // PKCE requires mutable reference to generate verifier
         let auth_url = spotify_provider.get_auth_url()?;
         self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
 
         Ok(auth_url)
     }
-
     /// Complete Spotify authentication with authorization code
     pub async fn authenticate_spotify(&self, code: &str) -> Result<(), ProviderError> {
         if let Some(provider) = &self.spotify_provider {
@@ -130,8 +141,13 @@ impl ProviderRegistry {
     }
 
     /// Check if Spotify is authenticated
-    pub fn is_spotify_authenticated(&self) -> bool {
-        self.spotify_provider.is_some()
+    pub async fn is_spotify_authenticated(&self) -> bool {
+        if let Some(provider) = &self.spotify_provider {
+            let spotify = provider.lock().await;
+            spotify.is_authenticated_status()
+        } else {
+            false
+        }
     }
 
     /// Get Spotify playlists
