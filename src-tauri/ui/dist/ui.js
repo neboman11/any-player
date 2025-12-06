@@ -16,6 +16,7 @@ class UI {
         this.setupPlaylistTabs();
         this.setupSettingsControls();
         this.checkSpotifyStatus();
+        this.checkJellyfinStatus();
         this.updateUI();
 
         // Listen for OAuth callback messages from auth window
@@ -224,6 +225,16 @@ class UI {
                 }
             }
             
+            // Load Jellyfin playlists if authenticated
+            if (this.currentSource === 'jellyfin' || this.currentSource === 'all') {
+                try {
+                    const jellyfinPlaylists = await tauriAPI.getJellyfinPlaylists();
+                    playlists = playlists.concat(jellyfinPlaylists);
+                } catch (error) {
+                    console.warn('Could not load Jellyfin playlists:', error);
+                }
+            }
+            
             if (!playlists || playlists.length === 0) {
                 grid.innerHTML = '<div class="playlist-card">No playlists found. Connect a service in Settings.</div>';
                 return;
@@ -264,11 +275,95 @@ class UI {
         const resultsDiv = document.getElementById('search-results');
         resultsDiv.innerHTML = '<div class="playlist-card loading">Searching...</div>';
 
-        // TODO: Implement actual search using Tauri commands
-        // For now, show a placeholder
-        setTimeout(() => {
-            resultsDiv.innerHTML = '<p>Search functionality coming soon</p>';
-        }, 500);
+        try {
+            // Get the active search tab (tracks or playlists)
+            const activeTab = document.querySelector('.search-tabs .tab-btn.active');
+            const searchType = activeTab ? activeTab.dataset.type : 'tracks';
+            
+            // Get the active source tab
+            const activeSourceTab = document.querySelector('.search-source-tabs .tab-btn.active');
+            const source = activeSourceTab ? activeSourceTab.dataset.source : 'all';
+            
+            let results = [];
+            
+            if (searchType === 'tracks') {
+                // Search for tracks
+                if (source === 'spotify' || source === 'all') {
+                    try {
+                        // Note: We'd need to implement search_spotify_tracks in the backend
+                        // For now, Spotify playlists are loaded via get_spotify_playlists
+                    } catch (error) {
+                        console.warn('Spotify track search not yet implemented');
+                    }
+                }
+                
+                if (source === 'jellyfin' || source === 'all') {
+                    try {
+                        const jellyfinTracks = await tauriAPI.searchJellyfinTracks(query);
+                        results = results.concat(jellyfinTracks.map(track => ({
+                            id: track.id,
+                            name: track.title,
+                            artist: track.artist,
+                            type: 'track',
+                            source: track.source
+                        })));
+                    } catch (error) {
+                        console.warn('Could not search Jellyfin tracks:', error);
+                    }
+                }
+            } else {
+                // Search for playlists
+                if (source === 'jellyfin' || source === 'all') {
+                    try {
+                        const jellyfinPlaylists = await tauriAPI.searchJellyfinPlaylists(query);
+                        results = results.concat(jellyfinPlaylists.map(p => ({
+                            id: p.id,
+                            name: p.name,
+                            owner: p.owner,
+                            type: 'playlist',
+                            source: p.source
+                        })));
+                    } catch (error) {
+                        console.warn('Could not search Jellyfin playlists:', error);
+                    }
+                }
+            }
+            
+            if (!results || results.length === 0) {
+                resultsDiv.innerHTML = '<p>No results found</p>';
+                return;
+            }
+
+            resultsDiv.innerHTML = '';
+            results.forEach(result => {
+                const resultCard = document.createElement('div');
+                resultCard.className = 'search-result-card playlist-card';
+                
+                if (result.type === 'track') {
+                    resultCard.innerHTML = `
+                        <h4>${result.name}</h4>
+                        <p>${result.artist}</p>
+                        <small>${result.source}</small>
+                    `;
+                } else {
+                    resultCard.innerHTML = `
+                        <h4>${result.name}</h4>
+                        <p>by ${result.owner}</p>
+                        <small>${result.source}</small>
+                    `;
+                }
+                
+                resultCard.addEventListener('click', () => {
+                    console.log('Clicked search result:', result.id);
+                    // TODO: Load and play the selected item
+                });
+                
+                resultsDiv.appendChild(resultCard);
+            });
+        } catch (error) {
+            console.error('Error performing search:', error);
+            resultsDiv.innerHTML = '<p>Error during search</p>';
+        }
     }
 
     // Spotify settings methods
@@ -517,10 +612,58 @@ class UI {
             return;
         }
 
-        console.log('Connecting to Jellyfin...', url);
-        // TODO: Implement Jellyfin connection
-        const status = document.getElementById('jellyfin-status');
-        status.textContent = 'Connecting...';
+        this.performJellyfinConnection(url, apiKey);
+    }
+
+    async performJellyfinConnection(url, apiKey) {
+        try {
+            const status = document.getElementById('jellyfin-status');
+            if (status) status.textContent = 'Connecting...';
+            
+            // Attempt to authenticate with Jellyfin
+            await tauriAPI.authenticateJellyfin(url, apiKey);
+            
+            // Check if authentication was successful
+            const isAuthenticated = await tauriAPI.isJellyfinAuthenticated();
+            
+            if (isAuthenticated) {
+                if (status) {
+                    status.textContent = '✓ Connected';
+                    status.className = 'status connected';
+                }
+                const btnEl = document.getElementById('jellyfin-connect-btn');
+                if (btnEl) btnEl.textContent = 'Disconnect Jellyfin';
+                
+                console.log('Jellyfin authentication successful!');
+                
+                // Reload playlists if they're currently displayed
+                if (this.currentPage === 'playlists') {
+                    this.loadPlaylists();
+                }
+            } else {
+                if (status) status.textContent = '✗ Connection failed';
+            }
+        } catch (error) {
+            console.error('Error connecting to Jellyfin:', error);
+            const status = document.getElementById('jellyfin-status');
+            if (status) status.textContent = `✗ Connection failed: ${error.message}`;
+        }
+    }
+
+    async checkJellyfinStatus() {
+        try {
+            const isAuthenticated = await tauriAPI.isJellyfinAuthenticated();
+            const statusEl = document.getElementById('jellyfin-status');
+            const btnEl = document.getElementById('jellyfin-connect-btn');
+            
+            if (isAuthenticated && statusEl && btnEl) {
+                statusEl.textContent = '✓ Connected';
+                statusEl.className = 'status connected';
+                btnEl.textContent = 'Disconnect Jellyfin';
+            }
+        } catch (error) {
+            console.warn('Could not check Jellyfin status:', error);
+        }
     }
 
     // UI update methods

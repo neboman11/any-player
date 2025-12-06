@@ -75,6 +75,7 @@ pub trait MusicProvider: Send + Sync {
 pub struct ProviderRegistry {
     providers: std::collections::HashMap<Source, Arc<dyn MusicProvider>>,
     spotify_provider: Option<Arc<tokio::sync::Mutex<spotify::SpotifyProvider>>>,
+    jellyfin_provider: Option<Arc<tokio::sync::Mutex<jellyfin::JellyfinProvider>>>,
 }
 
 impl ProviderRegistry {
@@ -82,6 +83,7 @@ impl ProviderRegistry {
         Self {
             providers: std::collections::HashMap::new(),
             spotify_provider: None,
+            jellyfin_provider: None,
         }
     }
 
@@ -158,6 +160,95 @@ impl ProviderRegistry {
         } else {
             Err(ProviderError(
                 "Spotify provider not authenticated".to_string(),
+            ))
+        }
+    }
+
+    /// Authenticate with Jellyfin
+    pub async fn authenticate_jellyfin(
+        &mut self,
+        url: &str,
+        api_key: &str,
+    ) -> Result<(), ProviderError> {
+        let mut jellyfin_provider =
+            jellyfin::JellyfinProvider::new(url.to_string(), api_key.to_string());
+        jellyfin_provider.authenticate().await?;
+        self.jellyfin_provider = Some(Arc::new(tokio::sync::Mutex::new(jellyfin_provider)));
+        Ok(())
+    }
+
+    /// Check if Jellyfin is authenticated
+    pub async fn is_jellyfin_authenticated(&self) -> bool {
+        if let Some(provider) = &self.jellyfin_provider {
+            let jellyfin = provider.lock().await;
+            jellyfin.is_authenticated()
+        } else {
+            false
+        }
+    }
+
+    /// Get Jellyfin playlists
+    pub async fn get_jellyfin_playlists(&self) -> Result<Vec<Playlist>, ProviderError> {
+        if let Some(provider) = &self.jellyfin_provider {
+            let jellyfin = provider.lock().await;
+            jellyfin.get_playlists().await
+        } else {
+            Err(ProviderError(
+                "Jellyfin provider not authenticated".to_string(),
+            ))
+        }
+    }
+
+    /// Get a specific Jellyfin playlist
+    pub async fn get_jellyfin_playlist(&self, id: &str) -> Result<Playlist, ProviderError> {
+        if let Some(provider) = &self.jellyfin_provider {
+            let jellyfin = provider.lock().await;
+            jellyfin.get_playlist(id).await
+        } else {
+            Err(ProviderError(
+                "Jellyfin provider not authenticated".to_string(),
+            ))
+        }
+    }
+
+    /// Search tracks on Jellyfin
+    pub async fn search_jellyfin_tracks(&self, query: &str) -> Result<Vec<Track>, ProviderError> {
+        if let Some(provider) = &self.jellyfin_provider {
+            let jellyfin = provider.lock().await;
+            jellyfin.search_tracks(query).await
+        } else {
+            Err(ProviderError(
+                "Jellyfin provider not authenticated".to_string(),
+            ))
+        }
+    }
+
+    /// Search playlists on Jellyfin
+    pub async fn search_jellyfin_playlists(
+        &self,
+        query: &str,
+    ) -> Result<Vec<Playlist>, ProviderError> {
+        if let Some(provider) = &self.jellyfin_provider {
+            let jellyfin = provider.lock().await;
+            jellyfin.search_playlists(query).await
+        } else {
+            Err(ProviderError(
+                "Jellyfin provider not authenticated".to_string(),
+            ))
+        }
+    }
+
+    /// Get recently played tracks from Jellyfin
+    pub async fn get_jellyfin_recently_played(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<Track>, ProviderError> {
+        if let Some(provider) = &self.jellyfin_provider {
+            let jellyfin = provider.lock().await;
+            jellyfin.get_recently_played(limit).await
+        } else {
+            Err(ProviderError(
+                "Jellyfin provider not authenticated".to_string(),
             ))
         }
     }
