@@ -185,7 +185,16 @@ impl MusicProvider for SpotifyProvider {
             .as_ref()
             .ok_or_else(|| ProviderError("Not authenticated".to_string()))?;
 
-        let playlist_id = rspotify::model::PlaylistId::from_id(id)
+        // Extract the ID part - it could be a full URI or just the ID
+        let clean_id = if id.contains("spotify:playlist:") {
+            id.split(':').last().unwrap_or(id)
+        } else if id.contains("/playlist/") {
+            id.split('/').last().unwrap_or(id)
+        } else {
+            id
+        };
+
+        let playlist_id = rspotify::model::PlaylistId::from_id(clean_id)
             .map_err(|e| ProviderError(format!("Invalid playlist ID: {}", e)))?;
 
         let playlist = client
@@ -262,7 +271,16 @@ impl MusicProvider for SpotifyProvider {
             .as_ref()
             .ok_or_else(|| ProviderError("Not authenticated".to_string()))?;
 
-        let track_id_obj = rspotify::model::TrackId::from_id(track_id)
+        // Extract the ID part - it could be a full URI or just the ID
+        let clean_id = if track_id.contains("spotify:track:") {
+            track_id.split(':').last().unwrap_or(track_id)
+        } else if track_id.contains("/track/") {
+            track_id.split('/').last().unwrap_or(track_id)
+        } else {
+            track_id
+        };
+
+        let track_id_obj = rspotify::model::TrackId::from_id(clean_id)
             .map_err(|e| ProviderError(format!("Invalid track ID: {}", e)))?;
 
         let track = client
@@ -275,6 +293,49 @@ impl MusicProvider for SpotifyProvider {
             .preview_url
             .or_else(|| track.external_urls.get("spotify").cloned())
             .ok_or_else(|| ProviderError("No stream URL available for this track".to_string()))
+    }
+
+    async fn get_track(&self, track_id: &str) -> Result<Track, ProviderError> {
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| ProviderError("Not authenticated".to_string()))?;
+
+        // Extract the ID part - it could be a full URI or just the ID
+        let clean_id = if track_id.contains("spotify:track:") {
+            track_id.split(':').last().unwrap_or(track_id)
+        } else if track_id.contains("/track/") {
+            track_id.split('/').last().unwrap_or(track_id)
+        } else {
+            track_id
+        };
+
+        let track_id_obj = rspotify::model::TrackId::from_id(clean_id)
+            .map_err(|e| ProviderError(format!("Invalid track ID: {}", e)))?;
+
+        let track = client
+            .track(track_id_obj, None)
+            .await
+            .map_err(|e| ProviderError(format!("Failed to fetch track: {}", e)))?;
+
+        let duration_ms = track.duration.num_milliseconds() as u64;
+        Ok(Track {
+            id: track.id.map(|id| id.to_string()).unwrap_or_default(),
+            title: track.name,
+            artist: track
+                .artists
+                .iter()
+                .map(|a| a.name.clone())
+                .collect::<Vec<_>>()
+                .join(", "),
+            album: track.album.name,
+            duration_ms,
+            image_url: track.album.images.first().map(|img| img.url.clone()),
+            source: Source::Spotify,
+            url: track
+                .preview_url
+                .or_else(|| track.external_urls.get("spotify").cloned()),
+        })
     }
 
     async fn create_playlist(

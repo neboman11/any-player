@@ -16,11 +16,12 @@ pub struct AppState {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlaybackStatus {
     pub state: String,
-    pub current_track: Option<String>,
+    pub current_track: Option<TrackInfo>,
     pub position: u64,
     pub volume: u32,
     pub shuffle: bool,
     pub repeat_mode: String,
+    pub duration: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -41,6 +42,19 @@ pub struct TrackInfo {
     pub album: String,
     pub duration: u64,
     pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PlaylistResponse {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub track_count: usize,
+    pub owner: String,
+    pub source: String,
+    pub tracks: Vec<TrackInfo>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,13 +84,29 @@ pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackS
         RepeatMode::All => "all".to_string(),
     };
 
+    let duration = info
+        .current_track
+        .as_ref()
+        .map(|t| t.duration_ms)
+        .unwrap_or(0);
+    let current_track = info.current_track.map(|t| TrackInfo {
+        id: t.id,
+        title: t.title,
+        artist: t.artist,
+        album: t.album,
+        duration: t.duration_ms,
+        source: t.source.to_string(),
+        url: t.url,
+    });
+
     Ok(PlaybackStatus {
         state: state_str,
-        current_track: None, // TODO: Get from queue
+        current_track,
         position: info.position_ms,
         volume: info.volume,
         shuffle: info.shuffle,
         repeat_mode: repeat_str,
+        duration,
     })
 }
 
@@ -173,14 +203,62 @@ pub async fn get_playlists(
     Ok(Vec::new())
 }
 
+/// Play a track from a source
+#[tauri::command]
+pub async fn play_track(
+    state: State<'_, AppState>,
+    track_id: String,
+    source: String,
+) -> Result<(), String> {
+    let providers = state.providers.lock().await;
+
+    // Get the track from the appropriate provider
+    let track = match source.as_str() {
+        "spotify" => providers
+            .get_spotify_track(&track_id)
+            .await
+            .map_err(|e| format!("Failed to get Spotify track: {}", e))?,
+        "jellyfin" => providers
+            .get_jellyfin_track(&track_id)
+            .await
+            .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
+        _ => return Err("Unknown source".to_string()),
+    };
+
+    // Clear queue, add track, and start playing
+    let playback = state.playback.lock().await;
+    playback.clear_queue().await;
+    playback.play_track(track).await;
+
+    Ok(())
+}
+
 /// Queue a track or playlist
 #[tauri::command]
 pub async fn queue_track(
-    _state: State<'_, AppState>,
-    _track_id: String,
-    _source: String,
+    state: State<'_, AppState>,
+    track_id: String,
+    source: String,
 ) -> Result<(), String> {
-    // TODO: Implement track queueing
+    let providers = state.providers.lock().await;
+
+    // Get the track from the appropriate provider
+    let track = match source.as_str() {
+        "spotify" => providers
+            .get_spotify_track(&track_id)
+            .await
+            .map_err(|e| format!("Failed to get Spotify track: {}", e))?,
+        "jellyfin" => providers
+            .get_jellyfin_track(&track_id)
+            .await
+            .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
+        _ => return Err("Unknown source".to_string()),
+    };
+
+    // Queue the track
+    let playback = state.playback.lock().await;
+    playback.queue_track(track).await;
+
     Ok(())
 }
 
@@ -245,6 +323,44 @@ pub async fn get_spotify_playlists(
             source: "spotify".to_string(),
         })
         .collect())
+}
+
+/// Get a specific Spotify playlist with tracks
+#[tauri::command]
+pub async fn get_spotify_playlist(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<PlaylistResponse, String> {
+    let providers = state.providers.lock().await;
+
+    let playlist = providers
+        .get_spotify_playlist(&id)
+        .await
+        .map_err(|e| format!("Failed to get Spotify playlist: {}", e))?;
+
+    let tracks = playlist
+        .tracks
+        .iter()
+        .map(|t| TrackInfo {
+            id: t.id.clone(),
+            title: t.title.clone(),
+            artist: t.artist.clone(),
+            album: t.album.clone(),
+            duration: t.duration_ms,
+            source: "spotify".to_string(),
+            url: t.url.clone(),
+        })
+        .collect();
+
+    Ok(PlaylistResponse {
+        id: playlist.id,
+        name: playlist.name,
+        description: playlist.description,
+        track_count: playlist.tracks.len(),
+        owner: playlist.owner,
+        source: "spotify".to_string(),
+        tracks,
+    })
 }
 
 /// Check for and process pending OAuth code
@@ -329,7 +445,7 @@ pub async fn get_jellyfin_playlists(
 pub async fn get_jellyfin_playlist(
     state: State<'_, AppState>,
     id: String,
-) -> Result<PlaylistInfo, String> {
+) -> Result<PlaylistResponse, String> {
     let providers = state.providers.lock().await;
 
     let playlist = providers
@@ -337,13 +453,28 @@ pub async fn get_jellyfin_playlist(
         .await
         .map_err(|e| format!("Failed to get Jellyfin playlist: {}", e))?;
 
-    Ok(PlaylistInfo {
+    let tracks = playlist
+        .tracks
+        .iter()
+        .map(|t| TrackInfo {
+            id: t.id.clone(),
+            title: t.title.clone(),
+            artist: t.artist.clone(),
+            album: t.album.clone(),
+            duration: t.duration_ms,
+            source: "jellyfin".to_string(),
+            url: t.url.clone(),
+        })
+        .collect();
+
+    Ok(PlaylistResponse {
         id: playlist.id,
         name: playlist.name,
         description: playlist.description,
         track_count: playlist.tracks.len(),
         owner: playlist.owner,
         source: "jellyfin".to_string(),
+        tracks,
     })
 }
 
@@ -369,6 +500,7 @@ pub async fn search_jellyfin_tracks(
             album: t.album,
             duration: t.duration_ms,
             source: "jellyfin".to_string(),
+            url: t.url,
         })
         .collect())
 }
@@ -421,6 +553,7 @@ pub async fn get_jellyfin_recently_played(
             album: t.album,
             duration: t.duration_ms,
             source: "jellyfin".to_string(),
+            url: t.url,
         })
         .collect())
 }
@@ -434,4 +567,47 @@ pub async fn disconnect_jellyfin(state: State<'_, AppState>) -> Result<(), Strin
         .disconnect_jellyfin()
         .await
         .map_err(|e| format!("Failed to disconnect Jellyfin: {}", e))
+}
+
+/// Download audio to a temporary file and return the path as a file:// URL
+#[tauri::command]
+pub async fn get_audio_file(url: String) -> Result<String, String> {
+    use std::io::Write;
+
+    tracing::info!("Downloading audio from: {}", url);
+
+    // Fetch the audio file
+    let response = reqwest::Client::new()
+        .get(&url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch audio: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Failed to fetch audio: HTTP {}", response.status()));
+    }
+
+    // Read audio bytes
+    let audio_bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read audio bytes: {}", e))?;
+
+    // Create temp file in system temp directory
+    let temp_dir = std::env::temp_dir();
+    let filename = format!("any-player-audio-{}.mp3", uuid::Uuid::new_v4());
+    let file_path = temp_dir.join(&filename);
+
+    // Write audio to file
+    let mut file = std::fs::File::create(&file_path)
+        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+
+    file.write_all(&audio_bytes)
+        .map_err(|e| format!("Failed to write audio to file: {}", e))?;
+
+    // Return as file:// URL
+    let file_url = format!("file://{}", file_path.display());
+    tracing::info!("Audio saved to: {}", file_url);
+    Ok(file_url)
 }

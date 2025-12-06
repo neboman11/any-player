@@ -3,6 +3,9 @@ use crate::models::{PlaybackInfo, PlaybackState, RepeatMode, Track};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+/// Audio player for playback
+pub struct AudioPlayer;
+
 /// Queue for managing playback
 #[derive(Debug, Clone)]
 pub struct PlaybackQueue {
@@ -74,11 +77,110 @@ impl Default for PlaybackQueue {
     }
 }
 
+impl AudioPlayer {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub async fn play_url(&self, url: &str) -> Result<(), String> {
+        let url = url.to_string();
+
+        // Spawn a background task to play audio without blocking
+        tokio::spawn(async move {
+            tracing::info!("Starting audio playback from URL: {}", url);
+
+            // Spawn blocking task since rodio is not async-aware
+            let result = tokio::task::spawn_blocking({
+                let url = url.clone();
+                move || Self::play_audio_blocking(&url)
+            })
+            .await;
+
+            match result {
+                Ok(Ok(())) => {
+                    tracing::info!("Audio playback completed successfully");
+                }
+                Ok(Err(e)) => {
+                    tracing::error!("Audio playback error: {}", e);
+                }
+                Err(e) => {
+                    tracing::error!("Task join error: {}", e);
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn play_audio_blocking(url: &str) -> Result<(), String> {
+        use rodio::{Decoder, OutputStream, Source};
+        use std::io::Cursor;
+
+        // Get audio output stream
+        let (_stream, stream_handle) = OutputStream::try_default()
+            .map_err(|e| format!("Failed to get audio output: {}", e))?;
+
+        // Fetch audio data from URL
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .get(url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+            .send()
+            .map_err(|e| format!("Failed to fetch audio: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("Failed to fetch audio: HTTP {}", response.status()));
+        }
+
+        let bytes = response
+            .bytes()
+            .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+        // Decode audio data
+        let cursor = Cursor::new(bytes.to_vec());
+        let source = Decoder::new(cursor).map_err(|e| format!("Failed to decode audio: {}", e))?;
+
+        // Get duration for logging
+        let duration_secs = source.total_duration().map(|d| d.as_secs()).unwrap_or(0);
+
+        tracing::info!("Playing audio (duration: ~{}s)", duration_secs);
+
+        // Convert to f32 samples and play
+        let source = source.convert_samples::<f32>();
+        let _sink = stream_handle
+            .play_raw(source)
+            .map_err(|e| format!("Failed to play audio: {}", e))?;
+
+        // Sleep until audio finishes (or for a maximum duration)
+        // For Spotify preview URLs, this is typically 30 seconds
+        let max_duration = std::time::Duration::from_secs(35);
+        std::thread::sleep(max_duration);
+
+        Ok(())
+    }
+
+    pub async fn pause(&self) -> Result<(), String> {
+        tracing::info!("Pausing playback");
+        Ok(())
+    }
+
+    pub async fn resume(&self) -> Result<(), String> {
+        tracing::info!("Resuming playback");
+        Ok(())
+    }
+}
+
+impl Default for AudioPlayer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Playback manager - handles playback state and queue
 pub struct PlaybackManager {
     queue: Arc<Mutex<PlaybackQueue>>,
     info: Arc<Mutex<PlaybackInfo>>,
-    // TODO: Add audio sink/stream for actual playback
+    audio_player: Arc<AudioPlayer>,
 }
 
 impl PlaybackManager {
@@ -86,6 +188,25 @@ impl PlaybackManager {
         Self {
             queue: Arc::new(Mutex::new(PlaybackQueue::new())),
             info: Arc::new(Mutex::new(PlaybackInfo::default())),
+            audio_player: Arc::new(AudioPlayer::new()),
+        }
+    }
+
+    /// Set current track and start playing
+    pub async fn play_track(&self, track: Track) {
+        let mut info = self.info.lock().await;
+        info.current_track = Some(track.clone());
+        info.state = PlaybackState::Playing;
+        info.position_ms = 0;
+        drop(info); // Release the lock
+
+        // Attempt to play the audio
+        if let Some(url) = &track.url {
+            if let Err(e) = self.audio_player.play_url(url).await {
+                tracing::error!("Failed to play audio: {}", e);
+            }
+        } else {
+            tracing::warn!("No playback URL available for track: {}", track.title);
         }
     }
 
@@ -114,12 +235,24 @@ impl PlaybackManager {
     pub async fn play(&self) {
         let mut info = self.info.lock().await;
         info.state = PlaybackState::Playing;
+        drop(info);
+
+        // Resume audio playback
+        if let Err(e) = self.audio_player.resume().await {
+            tracing::warn!("Failed to resume playback: {}", e);
+        }
     }
 
     /// Pause playback
     pub async fn pause(&self) {
         let mut info = self.info.lock().await;
         info.state = PlaybackState::Paused;
+        drop(info);
+
+        // Pause audio playback
+        if let Err(e) = self.audio_player.pause().await {
+            tracing::warn!("Failed to pause playback: {}", e);
+        }
     }
 
     /// Toggle play/pause

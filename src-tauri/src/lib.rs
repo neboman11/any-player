@@ -49,6 +49,7 @@ pub fn run() {
             commands::set_repeat_mode,
             // Playlist commands
             commands::get_playlists,
+            commands::play_track,
             commands::queue_track,
             commands::clear_queue,
             // Spotify commands
@@ -56,6 +57,7 @@ pub fn run() {
             commands::authenticate_spotify,
             commands::is_spotify_authenticated,
             commands::get_spotify_playlists,
+            commands::get_spotify_playlist,
             commands::check_oauth_code,
             commands::disconnect_spotify,
             // Jellyfin commands
@@ -67,6 +69,8 @@ pub fn run() {
             commands::search_jellyfin_playlists,
             commands::get_jellyfin_recently_played,
             commands::disconnect_jellyfin,
+            // Audio commands
+            commands::get_audio_file,
         ])
         .setup(move |_app| {
             // Start OAuth callback server in the Tauri runtime

@@ -300,6 +300,42 @@ impl MusicProvider for JellyfinProvider {
         Ok(playlist)
     }
 
+    async fn get_track(&self, id: &str) -> Result<Track, ProviderError> {
+        if !self.authenticated {
+            return Err(ProviderError("Not authenticated".to_string()));
+        }
+
+        let user_id = self
+            .user_id
+            .as_ref()
+            .ok_or_else(|| ProviderError("User ID not available".to_string()))?;
+
+        // GET /Users/{userId}/Items/{id}
+        let url = format!("{}/Users/{}/Items/{}", self.base_url, user_id, id);
+
+        let response = self
+            .client
+            .get(&url)
+            .headers(self.build_headers())
+            .send()
+            .await
+            .map_err(|e| ProviderError(format!("Failed to fetch track: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(ProviderError(format!(
+                "Failed to fetch track: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let item: JellyfinItem = response
+            .json()
+            .await
+            .map_err(|e| ProviderError(format!("Failed to parse track: {}", e)))?;
+
+        Ok(self.item_to_track(&item))
+    }
+
     async fn search_tracks(&self, query: &str) -> Result<Vec<Track>, ProviderError> {
         if !self.authenticated {
             return Err(ProviderError("Not authenticated".to_string()));
