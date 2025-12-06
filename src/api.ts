@@ -1,0 +1,132 @@
+/**
+ * Tauri API wrapper - handles communication with Rust backend
+ */
+
+import { invoke } from "@tauri-apps/api/core";
+import type { PlaybackStatus, Playlist, Track } from "./types";
+
+declare global {
+  interface Window {
+    __TAURI__: {
+      invoke: (
+        command: string,
+        args?: Record<string, unknown>
+      ) => Promise<unknown>;
+      shell?: {
+        open: (url: string) => Promise<void>;
+      };
+    };
+  }
+}
+
+export class TauriAPI {
+  // Playback commands
+  async getPlaybackStatus(): Promise<PlaybackStatus> {
+    return invoke<PlaybackStatus>("get_playback_status");
+  }
+
+  async play(): Promise<void> {
+    return invoke<void>("play");
+  }
+
+  async pause(): Promise<void> {
+    return invoke<void>("pause");
+  }
+
+  async togglePlayPause(): Promise<void> {
+    return invoke<void>("toggle_play_pause");
+  }
+
+  async nextTrack(): Promise<void> {
+    return invoke<void>("next_track");
+  }
+
+  async previousTrack(): Promise<void> {
+    return invoke<void>("previous_track");
+  }
+
+  async seek(position: number): Promise<void> {
+    return invoke<void>("seek", { position });
+  }
+
+  async setVolume(volume: number): Promise<void> {
+    return invoke<void>("set_volume", { volume });
+  }
+
+  async toggleShuffle(): Promise<void> {
+    return invoke<void>("toggle_shuffle");
+  }
+
+  async setRepeatMode(mode: "off" | "one" | "all"): Promise<void> {
+    return invoke<void>("set_repeat_mode", { mode });
+  }
+
+  // Playlist commands
+  async getPlaylists(source: string): Promise<Playlist[]> {
+    return invoke<Playlist[]>("get_playlists", { source });
+  }
+
+  async queueTrack(trackId: string, source: string): Promise<void> {
+    return invoke<void>("queue_track", { track_id: trackId, source });
+  }
+
+  async clearQueue(): Promise<void> {
+    return invoke<void>("clear_queue");
+  }
+
+  // Spotify commands
+  async getSpotifyAuthUrl(): Promise<string> {
+    return invoke<string>("get_spotify_auth_url");
+  }
+
+  async authenticateSpotify(code: string): Promise<void> {
+    return invoke<void>("authenticate_spotify", { code });
+  }
+
+  async isSpotifyAuthenticated(): Promise<boolean> {
+    return invoke<boolean>("is_spotify_authenticated");
+  }
+
+  async getSpotifyPlaylists(): Promise<Playlist[]> {
+    return invoke<Playlist[]>("get_spotify_playlists");
+  }
+
+  async checkOAuthCode(): Promise<boolean> {
+    return invoke<boolean>("check_oauth_code");
+  }
+
+  // Jellyfin commands
+  async authenticateJellyfin(url: string, apiKey: string): Promise<void> {
+    return invoke<void>("authenticate_jellyfin", {
+      url,
+      apiKey: apiKey,
+    });
+  }
+
+  async isJellyfinAuthenticated(): Promise<boolean> {
+    return invoke<boolean>("is_jellyfin_authenticated");
+  }
+
+  async getJellyfinPlaylists(): Promise<Playlist[]> {
+    return invoke<Playlist[]>("get_jellyfin_playlists");
+  }
+
+  async getJellyfinPlaylist(id: string): Promise<Playlist> {
+    return invoke<Playlist>("get_jellyfin_playlist", { id });
+  }
+
+  async searchJellyfinTracks(query: string): Promise<Track[]> {
+    return invoke<Track[]>("search_jellyfin_tracks", { query });
+  }
+
+  async searchJellyfinPlaylists(query: string): Promise<Playlist[]> {
+    return invoke<Playlist[]>("search_jellyfin_playlists", { query });
+  }
+
+  async getJellyfinRecentlyPlayed(limit: number): Promise<Track[]> {
+    return invoke<Track[]>("get_jellyfin_recently_played", { limit });
+  }
+}
+
+// Create and export global instance
+export const tauriAPI = new TauriAPI();
