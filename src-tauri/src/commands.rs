@@ -266,6 +266,17 @@ pub async fn check_oauth_code(state: State<'_, AppState>) -> Result<bool, String
     }
 }
 
+/// Disconnect and revoke Spotify authentication
+#[tauri::command]
+pub async fn disconnect_spotify(state: State<'_, AppState>) -> Result<(), String> {
+    let mut providers = state.providers.lock().await;
+
+    providers
+        .disconnect_spotify()
+        .await
+        .map_err(|e| format!("Failed to disconnect Spotify: {}", e))
+}
+
 /// Jellyfin authentication and connection
 #[tauri::command]
 pub async fn authenticate_jellyfin(
@@ -412,4 +423,15 @@ pub async fn get_jellyfin_recently_played(
             source: "jellyfin".to_string(),
         })
         .collect())
+}
+
+/// Disconnect and revoke Jellyfin authentication
+#[tauri::command]
+pub async fn disconnect_jellyfin(state: State<'_, AppState>) -> Result<(), String> {
+    let mut providers = state.providers.lock().await;
+
+    providers
+        .disconnect_jellyfin()
+        .await
+        .map_err(|e| format!("Failed to disconnect Jellyfin: {}", e))
 }
