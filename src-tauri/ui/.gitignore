@@ -1,7 +1,0 @@
-node_modules/
-dist/**/*.js
-dist/**/*.js.map
-dist/**/*.d.ts
-dist/index.html
-*.log
-.DS_Store

@@ -1,5 +1,5 @@
 // Tauri command handlers for Any Player desktop app
-use any_player::{PlaybackManager, PlaybackState, ProviderRegistry, RepeatMode};
+use crate::{PlaybackManager, PlaybackState, ProviderRegistry, RepeatMode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
