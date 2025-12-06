@@ -1,6 +1,3 @@
-/// Terminal UI components
-use ratatui::backend::Backend;
-use ratatui::Terminal;
 
 pub mod pages;
 pub mod components;
