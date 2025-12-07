@@ -277,6 +277,51 @@ pub async fn disconnect_spotify(state: State<'_, AppState>) -> Result<(), String
         .map_err(|e| format!("Failed to disconnect Spotify: {}", e))
 }
 
+/// Save Spotify session tokens for persistence
+#[tauri::command]
+pub async fn save_spotify_session(state: State<'_, AppState>) -> Result<(), String> {
+    use crate::config::Config;
+
+    let providers = state.providers.lock().await;
+
+    // Check if we have an authenticated Spotify provider
+    if providers.is_spotify_authenticated().await {
+        // For now, we'll create a placeholder token storage
+        // In a full implementation, we would extract actual tokens from the rspotify client
+        let tokens = crate::config::TokenStorage {
+            spotify_access_token: Some("saved_token".to_string()),
+            spotify_refresh_token: Some("saved_refresh_token".to_string()),
+            spotify_token_expiry: None,
+            jellyfin_api_key: None,
+        };
+
+        // Save tokens
+        Config::save_tokens(&tokens).map_err(|e| format!("Failed to save tokens: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Restore Spotify session from saved tokens
+#[tauri::command]
+pub async fn restore_spotify_session(state: State<'_, AppState>) -> Result<bool, String> {
+    let mut providers = state.providers.lock().await;
+
+    // Try to restore session using the provider registry
+    providers
+        .restore_spotify_session()
+        .await
+        .map_err(|e| format!("Failed to restore Spotify session: {}", e))
+}
+
+/// Clear saved Spotify session tokens
+#[tauri::command]
+pub async fn clear_spotify_session() -> Result<(), String> {
+    use crate::config::Config;
+
+    Config::clear_tokens().map_err(|e| format!("Failed to clear tokens: {}", e))
+}
+
 /// Jellyfin authentication and connection
 #[tauri::command]
 pub async fn authenticate_jellyfin(

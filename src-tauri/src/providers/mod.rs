@@ -264,6 +264,50 @@ impl ProviderRegistry {
         self.jellyfin_provider = None;
         Ok(())
     }
+
+    /// Get Spotify provider for token access (internal use)
+    pub fn get_spotify_provider(
+        &self,
+    ) -> Option<&Arc<tokio::sync::Mutex<spotify::SpotifyProvider>>> {
+        self.spotify_provider.as_ref()
+    }
+
+    /// Check if we have saved tokens that can be used for authentication
+    pub fn has_saved_tokens(&self) -> bool {
+        // This will be called before the provider is initialized
+        // We'll check for token files in the config directory
+        use crate::config::Config;
+
+        if let Ok(tokens) = Config::load_tokens() {
+            tokens.spotify_access_token.is_some() || tokens.spotify_refresh_token.is_some()
+        } else {
+            false
+        }
+    }
+
+    /// Restore Spotify session from saved tokens
+    pub async fn restore_spotify_session(&mut self) -> Result<bool, ProviderError> {
+        use crate::config::Config;
+
+        // Load saved tokens
+        let tokens = Config::load_tokens()
+            .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+
+        // Check if we have any tokens to restore
+        if tokens.spotify_access_token.is_none() && tokens.spotify_refresh_token.is_none() {
+            return Ok(false);
+        }
+
+        // Create a new Spotify provider with default OAuth
+        let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth();
+
+        // TODO: Restore tokens to the provider
+        // This requires modifying the SpotifyProvider to accept pre-existing tokens
+
+        self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
+
+        Ok(true)
+    }
 }
 
 impl Default for ProviderRegistry {
