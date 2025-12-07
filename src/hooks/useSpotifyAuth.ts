@@ -7,12 +7,24 @@ export function useSpotifyAuth() {
   const [error, setError] = useState<string | null>(null);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
 
-  // Check initial auth status
+  // Check initial auth status and load saved tokens
   useEffect(() => {
     const checkStatus = async () => {
       try {
         const authenticated = await tauriAPI.isSpotifyAuthenticated();
         setIsConnected(authenticated);
+
+        // If not authenticated, try to restore from saved tokens
+        if (!authenticated) {
+          try {
+            const restored = await tauriAPI.restoreSpotifySession();
+            if (restored) {
+              setIsConnected(true);
+            }
+          } catch (err) {
+            console.log("No saved Spotify session found:", err);
+          }
+        }
       } catch (err) {
         console.error("Error checking Spotify status:", err);
       }
@@ -56,6 +68,9 @@ export function useSpotifyAuth() {
       await tauriAPI.authenticateSpotify(code);
       setIsConnected(true);
       setAuthUrl(null);
+
+      // Save the session for persistence
+      await tauriAPI.saveSpotifySession();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Authentication failed";
@@ -127,6 +142,9 @@ export function useSpotifyAuth() {
       setIsConnected(false);
       setError(null);
       setAuthUrl(null);
+
+      // Clear saved session
+      await tauriAPI.clearSpotifySession();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to disconnect";
