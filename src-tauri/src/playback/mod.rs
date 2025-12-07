@@ -1,10 +1,82 @@
 /// Playback management
 use crate::models::{PlaybackInfo, PlaybackState, RepeatMode, Track};
+use rodio::{Decoder, OutputStream, Sink, Source};
+use std::io::Cursor;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
+/// Shared playback state for the current audio stream
+#[derive(Clone)]
+pub struct PlaybackHandle {
+    /// Global flag to stop the playback thread
+    stop_flag: Arc<AtomicBool>,
+    /// Current playback position in milliseconds
+    position_ms: Arc<AtomicU64>,
+    /// Total duration in milliseconds
+    duration_ms: Arc<AtomicU64>,
+    /// Whether playback is paused
+    is_paused: Arc<AtomicBool>,
+}
+
+impl PlaybackHandle {
+    pub fn new() -> Self {
+        Self {
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            position_ms: Arc::new(AtomicU64::new(0)),
+            duration_ms: Arc::new(AtomicU64::new(0)),
+            is_paused: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn stop(&self) {
+        self.stop_flag.store(true, Ordering::SeqCst);
+    }
+
+    pub fn pause(&self) {
+        self.is_paused.store(true, Ordering::SeqCst);
+    }
+
+    pub fn resume(&self) {
+        self.is_paused.store(false, Ordering::SeqCst);
+    }
+
+    pub fn get_position(&self) -> u64 {
+        self.position_ms.load(Ordering::SeqCst)
+    }
+
+    pub fn set_position(&self, ms: u64) {
+        self.position_ms.store(ms, Ordering::SeqCst);
+    }
+
+    pub fn get_duration(&self) -> u64 {
+        self.duration_ms.load(Ordering::SeqCst)
+    }
+
+    pub fn set_duration(&self, ms: u64) {
+        self.duration_ms.store(ms, Ordering::SeqCst);
+    }
+
+    pub fn should_stop(&self) -> bool {
+        self.stop_flag.load(Ordering::SeqCst)
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.is_paused.load(Ordering::SeqCst)
+    }
+}
+
+impl Default for PlaybackHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Audio player for playback
-pub struct AudioPlayer;
+pub struct AudioPlayer {
+    current_handle: Arc<Mutex<Option<PlaybackHandle>>>,
+}
 
 /// Queue for managing playback
 #[derive(Debug, Clone)]
@@ -79,11 +151,24 @@ impl Default for PlaybackQueue {
 
 impl AudioPlayer {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            current_handle: Arc::new(Mutex::new(None)),
+        }
     }
 
-    pub async fn play_url(&self, url: &str) -> Result<(), String> {
+    pub async fn play_url(&self, url: &str) -> Result<PlaybackHandle, String> {
         let url = url.to_string();
+        let handle = PlaybackHandle::new();
+        let handle_clone = handle.clone();
+
+        // Store the handle so we can control playback
+        {
+            let mut current = self.current_handle.lock().await;
+            if let Some(old_handle) = current.take() {
+                old_handle.stop();
+            }
+            *current = Some(handle.clone());
+        }
 
         // Spawn a background task to play audio without blocking
         tokio::spawn(async move {
@@ -92,7 +177,8 @@ impl AudioPlayer {
             // Spawn blocking task since rodio is not async-aware
             let result = tokio::task::spawn_blocking({
                 let url = url.clone();
-                move || Self::play_audio_blocking(&url)
+                let handle = handle_clone.clone();
+                move || Self::play_audio_blocking(&url, &handle)
             })
             .await;
 
@@ -109,13 +195,22 @@ impl AudioPlayer {
             }
         });
 
-        Ok(())
+        Ok(handle)
     }
 
-    fn play_audio_blocking(url: &str) -> Result<(), String> {
-        use rodio::{Decoder, OutputStream, Source};
-        use std::io::Cursor;
+    fn play_audio_blocking(url: &str, handle: &PlaybackHandle) -> Result<(), String> {
+        // Check if URL is valid (should be HTTP(S))
+        if !url.starts_with("http") {
+            return Err(format!(
+                "Invalid playback URL format. Expected HTTP URL, got: {}",
+                url
+            ));
+        }
 
+        Self::play_http_audio(url, handle)
+    }
+
+    fn play_http_audio(url: &str, handle: &PlaybackHandle) -> Result<(), String> {
         // Get audio output stream
         let (_stream, stream_handle) = OutputStream::try_default()
             .map_err(|e| format!("Failed to get audio output: {}", e))?;
@@ -140,33 +235,99 @@ impl AudioPlayer {
         let cursor = Cursor::new(bytes.to_vec());
         let source = Decoder::new(cursor).map_err(|e| format!("Failed to decode audio: {}", e))?;
 
-        // Get duration for logging
-        let duration_secs = source.total_duration().map(|d| d.as_secs()).unwrap_or(0);
+        // Get duration
+        let duration_secs = source
+            .total_duration()
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        handle.set_duration(duration_secs);
 
-        tracing::info!("Playing audio (duration: ~{}s)", duration_secs);
+        tracing::info!("Playing preview audio (duration: {}ms)", duration_secs);
 
-        // Convert to f32 samples and play
+        // Create sink for playback control
+        let sink =
+            Sink::try_new(&stream_handle).map_err(|e| format!("Failed to create sink: {}", e))?;
+
+        // Convert to f32 samples and add to sink
         let source = source.convert_samples::<f32>();
-        let _sink = stream_handle
-            .play_raw(source)
-            .map_err(|e| format!("Failed to play audio: {}", e))?;
+        sink.append(source);
 
-        // Sleep until audio finishes (or for a maximum duration)
-        // For Spotify preview URLs, this is typically 30 seconds
-        let max_duration = std::time::Duration::from_secs(35);
-        std::thread::sleep(max_duration);
+        // Track playback progress
+        let start = Instant::now();
+        let mut last_update = Instant::now();
 
+        loop {
+            if handle.should_stop() {
+                break;
+            }
+
+            // Update position
+            let elapsed = start.elapsed().as_millis() as u64;
+            if elapsed != handle.get_position() {
+                handle.set_position(elapsed);
+            }
+
+            // Handle pause/resume
+            if handle.is_paused() {
+                sink.pause();
+            } else {
+                sink.play();
+            }
+
+            std::thread::sleep(Duration::from_millis(100));
+
+            // Log progress periodically
+            if last_update.elapsed() > Duration::from_secs(1) {
+                tracing::debug!(
+                    "Playback progress: {}/{} ms",
+                    handle.get_position(),
+                    duration_secs
+                );
+                last_update = Instant::now();
+            }
+
+            // Stop if we've reached the end or duration is exceeded
+            if elapsed >= duration_secs && duration_secs > 0 {
+                break;
+            }
+        }
+
+        sink.stop();
         Ok(())
     }
 
     pub async fn pause(&self) -> Result<(), String> {
-        tracing::info!("Pausing playback");
-        Ok(())
+        if let Some(handle) = &*self.current_handle.lock().await {
+            handle.pause();
+            tracing::info!("Pausing playback");
+            Ok(())
+        } else {
+            Err("No playback in progress".to_string())
+        }
     }
 
     pub async fn resume(&self) -> Result<(), String> {
-        tracing::info!("Resuming playback");
-        Ok(())
+        if let Some(handle) = &*self.current_handle.lock().await {
+            handle.resume();
+            tracing::info!("Resuming playback");
+            Ok(())
+        } else {
+            Err("No playback in progress".to_string())
+        }
+    }
+
+    pub async fn stop(&self) -> Result<(), String> {
+        if let Some(handle) = self.current_handle.lock().await.take() {
+            handle.stop();
+            tracing::info!("Stopping playback");
+            Ok(())
+        } else {
+            Err("No playback in progress".to_string())
+        }
+    }
+
+    pub async fn get_current_handle(&self) -> Option<PlaybackHandle> {
+        self.current_handle.lock().await.clone()
     }
 }
 
@@ -202,8 +363,33 @@ impl PlaybackManager {
 
         // Attempt to play the audio
         if let Some(url) = &track.url {
-            if let Err(e) = self.audio_player.play_url(url).await {
-                tracing::error!("Failed to play audio: {}", e);
+            match self.audio_player.play_url(url).await {
+                Ok(handle) => {
+                    // Spawn a task to update playback position from the audio player
+                    let info_clone = self.info.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            let position = handle.get_position();
+                            let duration = handle.get_duration();
+                            let should_stop = handle.should_stop();
+
+                            let mut info = info_clone.lock().await;
+                            info.position_ms = position;
+                            if duration > 0 && info.current_track.is_some() {
+                                info.current_track.as_mut().unwrap().duration_ms = duration;
+                            }
+
+                            if should_stop || duration == 0 {
+                                break;
+                            }
+
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        }
+                    });
+                }
+                Err(e) => {
+                    tracing::error!("Failed to play audio: {}", e);
+                }
             }
         } else {
             tracing::warn!("No playback URL available for track: {}", track.title);
@@ -257,11 +443,36 @@ impl PlaybackManager {
 
     /// Toggle play/pause
     pub async fn toggle_play_pause(&self) {
-        let mut info = self.info.lock().await;
-        info.state = match info.state {
-            PlaybackState::Playing => PlaybackState::Paused,
-            PlaybackState::Paused | PlaybackState::Stopped => PlaybackState::Playing,
+        let info_arc = self.info.clone();
+        let player = self.audio_player.clone();
+
+        // Determine new state based on current state
+        let new_state = {
+            let info = info_arc.lock().await;
+            match info.state {
+                PlaybackState::Playing => PlaybackState::Paused,
+                PlaybackState::Paused | PlaybackState::Stopped => PlaybackState::Playing,
+            }
         };
+
+        // Update audio player
+        match new_state {
+            PlaybackState::Playing => {
+                if let Err(e) = player.resume().await {
+                    tracing::warn!("Failed to resume playback: {}", e);
+                }
+            }
+            PlaybackState::Paused => {
+                if let Err(e) = player.pause().await {
+                    tracing::warn!("Failed to pause playback: {}", e);
+                }
+            }
+            PlaybackState::Stopped => {}
+        }
+
+        // Update playback state
+        let mut info = info_arc.lock().await;
+        info.state = new_state;
     }
 
     /// Play next track

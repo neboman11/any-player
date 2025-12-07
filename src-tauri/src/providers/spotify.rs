@@ -208,6 +208,8 @@ impl MusicProvider for SpotifyProvider {
         for item in playlist.tracks.items {
             if let Some(rspotify::model::PlayableItem::Track(t)) = item.track {
                 let duration_ms = t.duration.num_milliseconds() as u64;
+                // Use preview URL if available (full Spotify streaming requires librespot)
+                let url = t.preview_url.clone();
                 tracks.push(Track {
                     id: t.id.map(|id| id.to_string()).unwrap_or_default(),
                     title: t.name,
@@ -221,7 +223,7 @@ impl MusicProvider for SpotifyProvider {
                     duration_ms,
                     image_url: t.album.images.first().map(|img| img.url.clone()),
                     source: Source::Spotify,
-                    url: t.external_urls.get("spotify").cloned(),
+                    url,
                 });
             }
         }
@@ -319,6 +321,14 @@ impl MusicProvider for SpotifyProvider {
             .map_err(|e| ProviderError(format!("Failed to fetch track: {}", e)))?;
 
         let duration_ms = track.duration.num_milliseconds() as u64;
+        // Use preview URL if available
+        // Note: Spotify tracks without preview URLs require full librespot implementation
+        let url = track.preview_url.clone();
+
+        if url.is_none() {
+            tracing::warn!("Track '{}' has no preview URL available", track.name);
+        }
+
         Ok(Track {
             id: track.id.map(|id| id.to_string()).unwrap_or_default(),
             title: track.name,
@@ -332,9 +342,7 @@ impl MusicProvider for SpotifyProvider {
             duration_ms,
             image_url: track.album.images.first().map(|img| img.url.clone()),
             source: Source::Spotify,
-            url: track
-                .preview_url
-                .or_else(|| track.external_urls.get("spotify").cloned()),
+            url,
         })
     }
 
