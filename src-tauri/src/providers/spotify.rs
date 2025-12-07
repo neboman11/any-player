@@ -19,6 +19,12 @@ pub struct SpotifyProvider {
     is_authenticated: bool,
 }
 
+impl Default for SpotifyProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SpotifyProvider {
     /// Create a new Spotify provider
     pub fn new() -> Self {
@@ -187,9 +193,9 @@ impl MusicProvider for SpotifyProvider {
 
         // Extract the ID part - it could be a full URI or just the ID
         let clean_id = if id.contains("spotify:playlist:") {
-            id.split(':').last().unwrap_or(id)
+            id.split(':').next_back().unwrap_or(id)
         } else if id.contains("/playlist/") {
-            id.split('/').last().unwrap_or(id)
+            id.split('/').next_back().unwrap_or(id)
         } else {
             id
         };
@@ -275,9 +281,9 @@ impl MusicProvider for SpotifyProvider {
 
         // Extract the ID part - it could be a full URI or just the ID
         let clean_id = if track_id.contains("spotify:track:") {
-            track_id.split(':').last().unwrap_or(track_id)
+            track_id.split(':').next_back().unwrap_or(track_id)
         } else if track_id.contains("/track/") {
-            track_id.split('/').last().unwrap_or(track_id)
+            track_id.split('/').next_back().unwrap_or(track_id)
         } else {
             track_id
         };
@@ -305,9 +311,9 @@ impl MusicProvider for SpotifyProvider {
 
         // Extract the ID part - it could be a full URI or just the ID
         let clean_id = if track_id.contains("spotify:track:") {
-            track_id.split(':').last().unwrap_or(track_id)
+            track_id.split(':').next_back().unwrap_or(track_id)
         } else if track_id.contains("/track/") {
-            track_id.split('/').last().unwrap_or(track_id)
+            track_id.split('/').next_back().unwrap_or(track_id)
         } else {
             track_id
         };

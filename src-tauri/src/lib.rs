@@ -123,7 +123,7 @@ async fn handle_oauth_request(
     let mut reader = BufReader::new(reader);
     let mut request_line = String::new();
 
-    if let Ok(_) = reader.read_line(&mut request_line).await {
+    if (reader.read_line(&mut request_line).await).is_ok() {
         // Extract the request path
         if let Some(path) = request_line.split_whitespace().nth(1) {
             // Parse the authorization code from the callback URL
