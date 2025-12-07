@@ -107,8 +107,7 @@ impl JellyfinProvider {
         let artist = item
             .artists
             .as_ref()
-            .and_then(|artists| artists.first())
-            .map(|s| s.clone())
+            .and_then(|artists| artists.first()).cloned()
             .unwrap_or_else(|| "Unknown Artist".to_string());
         let album = item
             .album
