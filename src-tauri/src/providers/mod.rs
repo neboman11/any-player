@@ -101,7 +101,13 @@ impl ProviderRegistry {
 
     /// Initialize Spotify provider with default OAuth configuration (PKCE - no secrets needed)
     pub fn get_spotify_auth_url_default(&mut self) -> Result<String, ProviderError> {
-        let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth();
+        // Use cache path from config
+        let cache_path = crate::config::Config::config_dir()
+            .map_err(|e| ProviderError(format!("Failed to get config dir: {}", e)))?
+            .join("spotify_cache.json");
+
+        let mut spotify_provider =
+            spotify::SpotifyProvider::with_default_oauth_and_cache(cache_path);
 
         // PKCE requires mutable reference to generate verifier
         let auth_url = spotify_provider.get_auth_url()?;
@@ -134,6 +140,15 @@ impl ProviderRegistry {
         if let Some(provider) = &self.spotify_provider {
             let mut spotify = provider.lock().await;
             spotify.authenticate_with_code(code).await?;
+
+            // Save the token after successful authentication
+            if let Some(token) = spotify.get_token().await {
+                let mut tokens = crate::config::Config::load_tokens()
+                    .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+                tokens.spotify_token = Some(token);
+                crate::config::Config::save_tokens(&tokens)
+                    .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
+            }
         } else {
             return Err(ProviderError(
                 "Spotify provider not initialized".to_string(),
@@ -255,6 +270,18 @@ impl ProviderRegistry {
 
     /// Disconnect Spotify
     pub async fn disconnect_spotify(&mut self) -> Result<(), ProviderError> {
+        // Clear the cache file when disconnecting
+        if let Ok(config_dir) = crate::config::Config::config_dir() {
+            let cache_path = config_dir.join("spotify_cache.json");
+            if cache_path.exists() {
+                let _ = std::fs::remove_file(cache_path);
+            }
+        }
+
+        // Clear stored tokens
+        crate::config::Config::clear_tokens()
+            .map_err(|e| ProviderError(format!("Failed to clear tokens: {}", e)))?;
+
         self.spotify_provider = None;
         Ok(())
     }
@@ -279,7 +306,7 @@ impl ProviderRegistry {
         use crate::config::Config;
 
         if let Ok(tokens) = Config::load_tokens() {
-            tokens.spotify_access_token.is_some() || tokens.spotify_refresh_token.is_some()
+            tokens.spotify_token.is_some()
         } else {
             false
         }
@@ -289,24 +316,45 @@ impl ProviderRegistry {
     pub async fn restore_spotify_session(&mut self) -> Result<bool, ProviderError> {
         use crate::config::Config;
 
-        // Load saved tokens
+        // Try to restore from rspotify's cache file first
+        let cache_path = Config::config_dir()
+            .map_err(|e| ProviderError(format!("Failed to get config dir: {}", e)))?
+            .join("spotify_cache.json");
+
+        if cache_path.exists() {
+            // Create provider with cache path - rspotify will automatically load from cache
+            let spotify_provider =
+                spotify::SpotifyProvider::with_default_oauth_and_cache(cache_path);
+
+            // Check if the cache restored a valid session
+            if spotify_provider.is_authenticated_status() {
+                self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
+                return Ok(true);
+            }
+        }
+
+        // Fallback to our token storage if cache doesn't work
         let tokens = Config::load_tokens()
             .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
 
-        // Check if we have any tokens to restore
-        if tokens.spotify_access_token.is_none() && tokens.spotify_refresh_token.is_none() {
+        if tokens.spotify_token.is_none() {
             return Ok(false);
         }
 
-        // Create a new Spotify provider with default OAuth
-        let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth();
+        // Create provider and try to restore with our tokens
+        let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth_and_cache(
+            Config::config_dir()
+                .map_err(|e| ProviderError(format!("Failed to get config dir: {}", e)))?
+                .join("spotify_cache.json"),
+        );
 
-        // TODO: Restore tokens to the provider
-        // This requires modifying the SpotifyProvider to accept pre-existing tokens
-
-        self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
-
-        Ok(true)
+        if let Some(token) = tokens.spotify_token {
+            spotify_provider.set_token(token).await?;
+            self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 

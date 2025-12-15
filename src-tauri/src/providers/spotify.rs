@@ -2,7 +2,7 @@ use super::{MusicProvider, ProviderError};
 use crate::models::{Playlist, Source, Track};
 use async_trait::async_trait;
 use futures::stream::StreamExt;
-use rspotify::{prelude::*, scopes, AuthCodePkceSpotify, Credentials, OAuth};
+use rspotify::{prelude::*, scopes, AuthCodePkceSpotify, Credentials, OAuth, Token};
 use std::path::PathBuf;
 
 /// Public Spotify Client ID
@@ -58,6 +58,42 @@ impl SpotifyProvider {
             client: Some(client),
             redirect_uri: DEFAULT_REDIRECT_URI.to_string(),
             cache_path: None,
+            is_authenticated: false,
+        }
+    }
+
+    /// Create a new Spotify provider with default OAuth and configured cache path
+    pub fn with_default_oauth_and_cache(cache_path: PathBuf) -> Self {
+        // Use PKCE for public clients (desktop apps) that don't have/store a secret
+        let credentials = Credentials::new_pkce(SPOTIFY_CLIENT_ID);
+        let oauth = OAuth {
+            redirect_uri: DEFAULT_REDIRECT_URI.to_string(),
+            scopes: scopes!(
+                "playlist-read-private",
+                "playlist-read-collaborative",
+                "playlist-modify-public",
+                "playlist-modify-private",
+                "streaming",
+                "user-read-private",
+                "user-read-email",
+                "user-library-read",
+                "user-library-modify",
+                "user-top-read",
+                "user-read-recently-played"
+            ),
+            ..Default::default()
+        };
+
+        let mut client = AuthCodePkceSpotify::new(credentials, oauth);
+
+        // Configure token cache
+        client.config.token_cached = true;
+        client.config.cache_path = cache_path.clone();
+
+        Self {
+            client: Some(client),
+            redirect_uri: DEFAULT_REDIRECT_URI.to_string(),
+            cache_path: Some(cache_path),
             is_authenticated: false,
         }
     }
@@ -122,6 +158,42 @@ impl SpotifyProvider {
         self.is_authenticated = true;
 
         Ok(())
+    }
+
+    /// Get the current token if available
+    pub async fn get_token(&self) -> Option<Token> {
+        if let Some(client) = &self.client {
+            let token_guard = client.token.lock().await;
+            if let Ok(guard) = token_guard {
+                guard.clone()
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Set a token for the client (used for restoring sessions)
+    pub async fn set_token(&mut self, token: Token) -> Result<(), ProviderError> {
+        let client = self
+            .client
+            .as_mut()
+            .ok_or_else(|| ProviderError("Client not configured".to_string()))?;
+
+        let token_guard = client.token.lock().await;
+        if let Ok(mut guard) = token_guard {
+            *guard = Some(token);
+            self.is_authenticated = true;
+            Ok(())
+        } else {
+            Err(ProviderError("Failed to lock token".to_string()))
+        }
+    }
+
+    /// Get the cache path if configured
+    pub fn get_cache_path(&self) -> Option<&PathBuf> {
+        self.cache_path.as_ref()
     }
 
     /// Check if provider is authenticated

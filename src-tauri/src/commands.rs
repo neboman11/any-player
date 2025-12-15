@@ -289,9 +289,7 @@ pub async fn save_spotify_session(state: State<'_, AppState>) -> Result<(), Stri
         // For now, we'll create a placeholder token storage
         // In a full implementation, we would extract actual tokens from the rspotify client
         let tokens = crate::config::TokenStorage {
-            spotify_access_token: Some("saved_token".to_string()),
-            spotify_refresh_token: Some("saved_refresh_token".to_string()),
-            spotify_token_expiry: None,
+            spotify_token: None, // Placeholder, actual saving is done in authenticate_spotify
             jellyfin_api_key: None,
         };
 
