@@ -1,4 +1,5 @@
 /// Configuration management
+use rspotify::Token;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -56,12 +57,8 @@ pub struct JellyfinConfig {
 /// Secure token storage for authentication
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenStorage {
-    /// Spotify access token
-    pub spotify_access_token: Option<String>,
-    /// Spotify refresh token
-    pub spotify_refresh_token: Option<String>,
-    /// Spotify token expiry timestamp
-    pub spotify_token_expiry: Option<i64>,
+    /// Spotify token
+    pub spotify_token: Option<Token>,
     /// Jellyfin API key (redundant with JellyfinConfig but kept for consistency)
     pub jellyfin_api_key: Option<String>,
 }
@@ -69,9 +66,7 @@ pub struct TokenStorage {
 impl Default for TokenStorage {
     fn default() -> Self {
         Self {
-            spotify_access_token: None,
-            spotify_refresh_token: None,
-            spotify_token_expiry: None,
+            spotify_token: None,
             jellyfin_api_key: None,
         }
     }
@@ -150,11 +145,11 @@ impl Config {
     /// Load token storage from secure location
     pub fn load_tokens() -> Result<TokenStorage, Box<dyn std::error::Error>> {
         let config_dir = Self::config_dir()?;
-        let token_path = config_dir.join("tokens.toml");
+        let token_path = config_dir.join("tokens.json");
 
         if token_path.exists() {
             let content = fs::read_to_string(&token_path)?;
-            Ok(toml::from_str(&content)?)
+            Ok(serde_json::from_str(&content)?)
         } else {
             Ok(TokenStorage::default())
         }
@@ -163,10 +158,10 @@ impl Config {
     /// Save tokens to secure location
     pub fn save_tokens(tokens: &TokenStorage) -> Result<(), Box<dyn std::error::Error>> {
         let config_dir = Self::config_dir()?;
-        let token_path = config_dir.join("tokens.toml");
+        let token_path = config_dir.join("tokens.json");
         fs::create_dir_all(&config_dir)?;
 
-        let content = toml::to_string_pretty(tokens)?;
+        let content = serde_json::to_string_pretty(tokens)?;
         fs::write(&token_path, content)?;
 
         // Set secure permissions (600) on token file
@@ -184,7 +179,7 @@ impl Config {
     /// Clear stored tokens
     pub fn clear_tokens() -> Result<(), Box<dyn std::error::Error>> {
         let config_dir = Self::config_dir()?;
-        let token_path = config_dir.join("tokens.toml");
+        let token_path = config_dir.join("tokens.json");
 
         if token_path.exists() {
             fs::remove_file(&token_path)?;

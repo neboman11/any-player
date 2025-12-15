@@ -24,6 +24,8 @@ pub fn run() {
     let providers = Arc::new(Mutex::new(ProviderRegistry::new()));
     let oauth_code: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
+    let providers_clone = providers.clone();
+
     let app_state = commands::AppState {
         playback,
         providers,
@@ -75,6 +77,13 @@ pub fn run() {
             // Start OAuth callback server in the Tauri runtime
             let oauth_code_clone = oauth_code_for_server.clone();
             tauri::async_runtime::spawn(start_oauth_server(oauth_code_clone));
+
+            // Try to restore Spotify session on startup
+            tauri::async_runtime::block_on(async {
+                let mut providers = providers_clone.lock().await;
+                let _ = providers.restore_spotify_session().await;
+            });
+
             Ok(())
         })
         .run(tauri::generate_context!())
