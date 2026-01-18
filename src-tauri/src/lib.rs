@@ -8,6 +8,7 @@ pub use config::Config;
 pub use models::{PlaybackInfo, PlaybackState, Playlist, RepeatMode, Source, Track};
 pub use playback::PlaybackManager;
 pub use providers::{MusicProvider, ProviderError, ProviderRegistry};
+use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod commands;
 
@@ -17,11 +18,20 @@ use tokio::sync::Mutex;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize logging
-    tracing_subscriber::fmt::init();
+    let filter = filter::Targets::new()
+        .with_default(filter::LevelFilter::TRACE)
+        .with_target("any_player_lib", filter::LevelFilter::TRACE)
+        .with_target("glycin", filter::LevelFilter::INFO)
+        .with_target("hyper", filter::LevelFilter::INFO)
+        .with_target("zbus", filter::LevelFilter::INFO);
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     // Create application state
-    let playback = Arc::new(Mutex::new(PlaybackManager::new()));
     let providers = Arc::new(Mutex::new(ProviderRegistry::new()));
+    let playback = Arc::new(Mutex::new(PlaybackManager::new(providers.clone())));
     let oauth_code: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
     let app_state = commands::AppState {
@@ -56,6 +66,11 @@ pub fn run() {
             commands::get_spotify_auth_url,
             commands::authenticate_spotify,
             commands::is_spotify_authenticated,
+            commands::check_spotify_premium,
+            commands::initialize_spotify_session,
+            commands::initialize_spotify_session_from_provider,
+            commands::is_spotify_session_ready,
+            commands::refresh_spotify_token,
             commands::get_spotify_playlists,
             commands::get_spotify_playlist,
             commands::check_oauth_code,

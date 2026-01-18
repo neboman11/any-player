@@ -6,3 +6,5 @@ export { Settings } from "./Settings";
 export { NowPlayingControls } from "./NowPlayingControls";
 export { ProgressBar } from "./ProgressBar";
 export { VolumeControl } from "./VolumeControl";
+export { ProviderStatus } from "./ProviderStatus";
+export type { ProviderStatusInfo, ProviderStatusProps } from "./ProviderStatus";

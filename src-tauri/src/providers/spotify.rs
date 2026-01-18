@@ -3,9 +3,8 @@ use crate::models::{Playlist, Source, Track};
 use async_trait::async_trait;
 use futures::stream::StreamExt;
 use rspotify::{prelude::*, scopes, AuthCodePkceSpotify, Credentials, OAuth};
-use std::path::PathBuf;
 
-/// Public Spotify Client ID
+/// Public Spotify Client ID - must match the one in playback/spotify_session.rs
 const SPOTIFY_CLIENT_ID: &str = "243bb6667db04143b6586d8598aed48b";
 
 /// Default OAuth redirect URI - must be localhost with specific port for Spotify
@@ -14,9 +13,9 @@ const DEFAULT_REDIRECT_URI: &str = "http://127.0.0.1:8989/callback";
 /// Spotify provider state
 pub struct SpotifyProvider {
     client: Option<AuthCodePkceSpotify>,
-    redirect_uri: String,
-    cache_path: Option<PathBuf>,
     is_authenticated: bool,
+    is_premium: bool,
+    access_token: Option<String>,
 }
 
 impl Default for SpotifyProvider {
@@ -30,9 +29,9 @@ impl SpotifyProvider {
     pub fn new() -> Self {
         Self {
             client: None,
-            redirect_uri: DEFAULT_REDIRECT_URI.to_string(),
-            cache_path: None,
             is_authenticated: false,
+            is_premium: false,
+            access_token: None,
         }
     }
 
@@ -62,9 +61,9 @@ impl SpotifyProvider {
 
         Self {
             client: Some(client),
-            redirect_uri: DEFAULT_REDIRECT_URI.to_string(),
-            cache_path: None,
             is_authenticated: false,
+            is_premium: false,
+            access_token: None,
         }
     }
 
@@ -93,9 +92,9 @@ impl SpotifyProvider {
 
         Self {
             client: Some(client),
-            redirect_uri,
-            cache_path: None,
             is_authenticated: false,
+            is_premium: false,
+            access_token: None,
         }
     }
 
@@ -109,6 +108,25 @@ impl SpotifyProvider {
                     .map_err(|e| ProviderError(e.to_string()))
             })
             .ok_or_else(|| ProviderError("Client not configured".to_string()))?
+    }
+
+    /// Fetch current user profile and check premium status
+    async fn get_current_user_profile(&mut self) -> Result<bool, ProviderError> {
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| ProviderError("Client not configured".to_string()))?;
+
+        let user = client
+            .current_user()
+            .await
+            .map_err(|e| ProviderError(format!("Failed to fetch user profile: {}", e)))?;
+
+        let is_premium = user.product.is_some();
+
+        tracing::info!("Spotify user subscription type: {:?}", user.product);
+
+        Ok(is_premium)
     }
 
     /// Complete the authentication flow with an authorization code
@@ -127,12 +145,119 @@ impl SpotifyProvider {
         // Mark as authenticated after successful token request
         self.is_authenticated = true;
 
+        // Try to cache the raw access token for convenience by reading the
+        // client's in-memory token (avoids depending on file-based token cache
+        // which may not be configured).
+        let token_mutex = client.get_token();
+        match token_mutex.lock().await.unwrap().as_ref() {
+            Some(token) => {
+                tracing::info!(
+                    "Caching Spotify access token (len={})",
+                    token.access_token.len()
+                );
+                self.access_token = Some(token.access_token.clone());
+            }
+            None => {
+                tracing::debug!("No token found in client in-memory token after request_token");
+            }
+        }
+
+        // Check premium status
+        match self.get_current_user_profile().await {
+            Ok(is_premium) => {
+                self.is_premium = is_premium;
+                if !is_premium {
+                    tracing::warn!(
+                        "Premium required for full Spotify playback. User has free tier account."
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to check premium status: {}. Defaulting to free tier.",
+                    e
+                );
+                self.is_premium = false;
+            }
+        }
+
         Ok(())
     }
 
     /// Check if provider is authenticated
     pub fn is_authenticated_status(&self) -> bool {
         self.is_authenticated
+    }
+
+    /// Check if user has Spotify Premium
+    pub fn is_premium(&self) -> bool {
+        self.is_premium
+    }
+
+    /// Get the current access token for Spotify API
+    ///
+    /// Returns a placeholder access token if authenticated.
+    /// This token can be used to initialize the librespot session for premium users.
+    /// Note: In a production implementation, we'd need to extract the actual token from rspotify's internal state.
+    pub async fn get_access_token(&self) -> Option<String> {
+        // Return cached token if we stored it during authentication
+        if let Some(token) = &self.access_token {
+            tracing::debug!(
+                "Returning cached Spotify access token (len={})",
+                token.len()
+            );
+            return Some(token.clone());
+        }
+
+        if self.is_authenticated {
+            if let Some(client) = &self.client {
+                // Prefer the client's in-memory token if present (populated by
+                // `request_token`). Fall back to file cache only if needed.
+                let token_mutex = client.get_token();
+                let guard = token_mutex.lock().await.unwrap();
+                if let Some(token) = guard.as_ref() {
+                    tracing::debug!(
+                        "Returning access token from client memory (len={})",
+                        token.access_token.len()
+                    );
+                    return Some(token.access_token.clone());
+                } else {
+                    tracing::debug!("Client in-memory token empty in get_access_token()");
+                }
+                // If the client was configured to use a file cache, try that as a
+                // fallback (may return None if token caching is disabled).
+                if let Ok(maybe_token) = client.read_token_cache(true).await {
+                    if let Some(token) = maybe_token {
+                        tracing::debug!(
+                            "Returning access token from client cache (len={})",
+                            token.access_token.len()
+                        );
+                        return Some(token.access_token.clone());
+                    }
+                } else {
+                    tracing::warn!("Failed to read client token cache in get_access_token()");
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Refresh the OAuth token if needed
+    ///
+    /// In a production implementation, this would refresh the token with Spotify's API
+    /// and notify the playback manager to reinitialize the session if needed.
+    /// For now, this is a placeholder that logs the intention.
+    pub async fn refresh_token(&mut self) -> Result<(), ProviderError> {
+        // TODO: Implement actual token refresh when rspotify provides refresh capability
+        // Steps:
+        // 1. Check if token is expired
+        // 2. Request new token from Spotify
+        // 3. Update internal client with new token
+        // 4. Return new token for session reinitialization
+
+        tracing::debug!("Spotify token refresh called (placeholder)");
+        Ok(())
     }
 }
 
@@ -214,8 +339,8 @@ impl MusicProvider for SpotifyProvider {
         for item in playlist.tracks.items {
             if let Some(rspotify::model::PlayableItem::Track(t)) = item.track {
                 let duration_ms = t.duration.num_milliseconds() as u64;
-                // Use preview URL if available (full Spotify streaming requires librespot)
-                let url = t.preview_url.clone();
+                // Premium playback only - return spotify:track: URI for librespot
+                let url = t.id.as_ref().map(|id| format!("spotify:track:{}", id));
                 tracks.push(Track {
                     id: t.id.map(|id| id.to_string()).unwrap_or_default(),
                     title: t.name,
@@ -274,12 +399,7 @@ impl MusicProvider for SpotifyProvider {
     }
 
     async fn get_stream_url(&self, track_id: &str) -> Result<String, ProviderError> {
-        let client = self
-            .client
-            .as_ref()
-            .ok_or_else(|| ProviderError("Not authenticated".to_string()))?;
-
-        // Extract the ID part - it could be a full URI or just the ID
+        // Premium playback only - extract track ID and return spotify:track: URI
         let clean_id = if track_id.contains("spotify:track:") {
             track_id.split(':').next_back().unwrap_or(track_id)
         } else if track_id.contains("/track/") {
@@ -288,19 +408,20 @@ impl MusicProvider for SpotifyProvider {
             track_id
         };
 
-        let track_id_obj = rspotify::model::TrackId::from_id(clean_id)
-            .map_err(|e| ProviderError(format!("Invalid track ID: {}", e)))?;
+        // Verify user is premium
+        if !self.is_premium {
+            tracing::warn!("Premium required for track playback. User has free tier account.");
+            return Err(ProviderError(
+                "Premium required for full Spotify playback".to_string(),
+            ));
+        }
 
-        let track = client
-            .track(track_id_obj, None)
-            .await
-            .map_err(|e| ProviderError(format!("Failed to fetch track: {}", e)))?;
-
-        // Use Spotify Web API preview URL if available, or external URL
-        track
-            .preview_url
-            .or_else(|| track.external_urls.get("spotify").cloned())
-            .ok_or_else(|| ProviderError("No stream URL available for this track".to_string()))
+        let spotify_uri = format!("spotify:track:{}", clean_id);
+        tracing::info!(
+            "Returning spotify URI for premium playback: {}",
+            spotify_uri
+        );
+        Ok(spotify_uri)
     }
 
     async fn get_track(&self, track_id: &str) -> Result<Track, ProviderError> {
@@ -327,16 +448,11 @@ impl MusicProvider for SpotifyProvider {
             .map_err(|e| ProviderError(format!("Failed to fetch track: {}", e)))?;
 
         let duration_ms = track.duration.num_milliseconds() as u64;
-        // Use preview URL if available
-        // Note: Spotify tracks without preview URLs require full librespot implementation
-        let url = track.preview_url.clone();
-
-        if url.is_none() {
-            tracing::warn!("Track '{}' has no preview URL available", track.name);
-        }
+        // Return full track URI for premium streaming via librespot
+        let url = Some(format!("spotify:track:{}", clean_id));
 
         Ok(Track {
-            id: track.id.map(|id| id.to_string()).unwrap_or_default(),
+            id: clean_id.to_string(),
             title: track.name,
             artist: track
                 .artists

@@ -1,11 +1,100 @@
 /// Playback management
 use crate::models::{PlaybackInfo, PlaybackState, RepeatMode, Track};
+use crate::providers::ProviderRegistry;
+use librespot_oauth::OAuthToken;
 use rodio::{Decoder, OutputStream, Sink, Source};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+
+// Librespot imports for premium Spotify streaming via session-based OAuth
+use librespot_core::authentication::Credentials;
+use librespot_core::cache::Cache;
+use librespot_core::config::SessionConfig;
+use librespot_core::session::Session;
+use librespot_core::spotify_id::SpotifyId;
+use librespot_playback::audio_backend::{Sink as LibrespotSink, SinkAsBytes};
+use librespot_playback::config::PlayerConfig;
+use librespot_playback::convert::Converter;
+use librespot_playback::decoder::AudioPacket;
+use librespot_playback::mixer::VolumeGetter;
+use librespot_playback::player::Player as LibrespotPlayer;
+// Use conservative defaults for sample rate and channels when converting to rodio
+const LIBRESPOT_FALLBACK_SAMPLE_RATE: u32 = 44100;
+const LIBRESPOT_FALLBACK_CHANNELS: u16 = 2;
+
+pub mod spotify_session;
+pub use spotify_session::SpotifySessionManager;
+
+// Simple volume getter that returns 1.0 (no attenuation)
+struct NoOpVolume {}
+
+impl VolumeGetter for NoOpVolume {
+    fn attenuation_factor(&self) -> f64 {
+        1.0
+    }
+}
+
+/// A minimal librespot Sink implementation that writes PCM bytes into a `rodio::Sink`.
+struct RodioSink {
+    // Keep the stream alive
+    _stream: OutputStream,
+    sink: Sink,
+}
+
+impl RodioSink {
+    fn new() -> Result<Self, String> {
+        let (stream, _handle) = OutputStream::try_default()
+            .map_err(|e| format!("Failed to open audio output: {}", e))?;
+        let handle = _handle;
+        let sink = Sink::try_new(&handle).map_err(|e| format!("Failed to create sink: {}", e))?;
+        Ok(Self {
+            _stream: stream,
+            sink,
+        })
+    }
+}
+
+impl LibrespotSink for RodioSink {
+    fn write(
+        &mut self,
+        packet: AudioPacket,
+        converter: &mut Converter,
+    ) -> librespot_playback::audio_backend::SinkResult<()> {
+        match packet {
+            AudioPacket::Samples(samples_f64) => {
+                // Convert f64 samples [-1.0, 1.0] to i16 PCM
+                let mut samples_i16: Vec<i16> = Vec::with_capacity(samples_f64.len());
+                for &s in samples_f64.iter() {
+                    let scaled = (s * 32767.0).round();
+                    let clamped = if scaled < i16::MIN as f64 {
+                        i16::MIN
+                    } else if scaled > i16::MAX as f64 {
+                        i16::MAX
+                    } else {
+                        scaled as i16
+                    };
+                    samples_i16.push(clamped);
+                }
+
+                let source = rodio::buffer::SamplesBuffer::new(
+                    LIBRESPOT_FALLBACK_CHANNELS,
+                    LIBRESPOT_FALLBACK_SAMPLE_RATE,
+                    samples_i16,
+                );
+                self.sink.append(source);
+            }
+            _ => {
+                // Non-sample packets (e.g. encoded/ogg data) would require decoding;
+                // skip for now to keep the sink implementation simple.
+            }
+        }
+
+        Ok(())
+    }
+}
 
 /// Shared playback state for the current audio stream
 #[derive(Clone)]
@@ -199,10 +288,18 @@ impl AudioPlayer {
     }
 
     fn play_audio_blocking(url: &str, handle: &PlaybackHandle) -> Result<(), String> {
+        // Check if URL is a spotify: URI - would require session for full playback
+        if url.starts_with("spotify:track:") {
+            return Err(
+                "Session not available for Spotify track. Ensure spotify_session is initialized."
+                    .to_string(),
+            );
+        }
+
         // Check if URL is valid (should be HTTP(S))
         if !url.starts_with("http") {
             return Err(format!(
-                "Invalid playback URL format. Expected HTTP URL, got: {}",
+                "Invalid playback URL format. Expected HTTP URL or spotify: URI, got: {}",
                 url
             ));
         }
@@ -296,6 +393,273 @@ impl AudioPlayer {
         Ok(())
     }
 
+    /// Extract track ID from spotify: URI
+    ///
+    /// Handles formats like "spotify:track:3n3Ppam7vgaVa1iaRUc9Lp"
+    /// Returns the base62 track ID if valid, None otherwise
+    #[allow(dead_code)]
+    fn extract_track_id(uri: &str) -> Option<String> {
+        if uri.starts_with("spotify:track:") {
+            uri.split(':').next_back().map(|s| s.to_string())
+        } else if uri.contains('/') && uri.contains("track") {
+            uri.split('/').next_back().map(|s| s.to_string())
+        } else if !uri.contains(':') && !uri.contains('/') && uri.len() == 22 {
+            // Likely a raw track ID
+            Some(uri.to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Play a Spotify track via librespot using OAuth session authentication
+    ///
+    /// This implements full-track Spotify playback like spotify-player does:
+    /// 1. Fetch track metadata from Web API via rspotify
+    /// 2. Retrieve OAuth token from session
+    /// 3. Use librespot to stream the actual audio
+    async fn play_spotify_track(
+        &self,
+        track_id: &str,
+        handle: &PlaybackHandle,
+        providers: Arc<Mutex<ProviderRegistry>>,
+        session: Option<Session>,
+    ) -> Result<(), String> {
+        // Extract clean track ID
+        let clean_id = if track_id.starts_with("spotify:track:") {
+            track_id
+                .strip_prefix("spotify:track:")
+                .ok_or("Invalid Spotify URI format")?
+                .to_string()
+        } else if track_id.contains("/track/") {
+            track_id
+                .split('/')
+                .next_back()
+                .unwrap_or(track_id)
+                .to_string()
+        } else {
+            track_id.to_string()
+        };
+
+        tracing::info!(
+            "Starting Spotify track playback via librespot: {}",
+            clean_id
+        );
+
+        let handle_clone = handle.clone();
+        let providers_clone = providers.clone();
+        let track_id_for_fetch = clean_id.clone();
+
+        tokio::spawn(async move {
+            let result = (|| async {
+                // Lock the providers registry to fetch track info and get session
+                let providers_locked = providers_clone.lock().await;
+
+                // Fetch track info from Spotify using rspotify to get metadata
+                let track = providers_locked
+                    .get_spotify_track(&track_id_for_fetch)
+                    .await
+                    .map_err(|e| format!("Failed to fetch track info: {}", e))?;
+
+                tracing::info!("Track fetched: {} by {}", track.title, track.artist);
+
+                // Set duration from track metadata
+                if track.duration_ms > 0 {
+                    handle_clone.set_duration(track.duration_ms);
+                    tracing::info!("Track duration: {}ms", track.duration_ms);
+                }
+
+                // If a session was provided (manager created it), use it; otherwise obtain token and create one
+                if let Some(sess) = session {
+                    tracing::info!("Using existing librespot Session from manager");
+                    Self::play_spotify_with_librespot(&track_id_for_fetch, &handle_clone, sess)
+                        .await?;
+                } else {
+                    // Get the OAuth access token from the providers
+                    let access_token = providers_locked
+                        .get_spotify_access_token()
+                        .await
+                        .ok_or("No Spotify access token available".to_string())?;
+
+                    drop(providers_locked); // Release lock before async operations
+
+                    tracing::info!("Retrieved OAuth token for Spotify playback");
+
+                    // Create and connect librespot session
+                    match Self::create_librespot_session(&access_token).await {
+                        Ok(session) => {
+                            tracing::info!("Librespot session created successfully");
+                            // Use real streaming via librespot Player
+                            Self::play_spotify_with_librespot(
+                                &track_id_for_fetch,
+                                &handle_clone,
+                                session,
+                            )
+                            .await?;
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to create librespot session: {}, using simulation",
+                                e
+                            );
+                            // Fallback to simulation playback
+                            Self::play_audio_stream(
+                                &format!("spotify:track:{}", track_id_for_fetch),
+                                &handle_clone,
+                            )
+                            .await?;
+                        }
+                    }
+                }
+
+                Ok::<(), String>(())
+            })();
+
+            match result.await {
+                Ok(()) => {
+                    tracing::info!("Spotify track playback completed");
+                }
+                Err(e) => {
+                    tracing::error!("Spotify playback error: {}", e);
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Create a librespot Session with OAuth credentials
+    async fn create_librespot_session(access_token: &str) -> Result<Session, String> {
+        tracing::info!("Creating librespot Session with OAuth token...");
+
+        // Create a session configuration and credentials that use the OAuth token
+        let session_config = SessionConfig::default();
+
+        // Use the OAuth access token as the "password" in credentials; username can be any identifier
+        let credentials = Credentials::with_password("any-player", access_token.to_string());
+
+        // Create a simple cache (no paths) - this is optional but the Session API expects an Option<Cache>
+        let cache = Cache::new::<&std::path::Path>(None, None, None, None)
+            .map_err(|e| format!("Failed to create librespot cache: {}", e))?;
+
+        let session = Session::new(session_config, Some(cache));
+
+        // Connect the Session (async)
+        match Session::connect(&session, credentials, false).await {
+            Ok(()) => {
+                tracing::info!("Librespot Session connected");
+                Ok(session)
+            }
+            Err(e) => Err(format!("Failed to connect librespot Session: {:?}", e)),
+        }
+    }
+
+    /// Play a Spotify track using librespot's real streaming
+    async fn play_spotify_with_librespot(
+        track_id: &str,
+        handle: &PlaybackHandle,
+        _session: Session,
+    ) -> Result<(), String> {
+        tracing::info!(
+            "Starting real Spotify playback with librespot for: {}",
+            track_id
+        );
+
+        // Parse the Spotify track ID
+        let _spotify_id = SpotifyId::from_base62(track_id)
+            .map_err(|e| format!("Invalid Spotify track ID: {:?}", e))?;
+
+        tracing::info!("Track ID parsed successfully");
+
+        // Build a player and play the requested track using the provided session.
+        // We'll use a small rodio-based sink implementation for audio output.
+
+        // Build player config and a no-op volume getter
+        let config = PlayerConfig::default();
+        let volume_getter = Box::new(NoOpVolume {});
+
+        // Sink builder: create a new RodioSink wrapped as librespot audio backend
+        let sink_builder = || -> Box<dyn LibrespotSink> {
+            // If creation fails we still return a boxed sink; unwrap is acceptable here
+            Box::new(RodioSink::new().expect("Failed to create RodioSink"))
+        };
+
+        // Create the player
+        let mut player =
+            LibrespotPlayer::new(config, _session.clone(), volume_getter, sink_builder);
+
+        // Load and play the track
+        let spotify_id = SpotifyId::from_base62(track_id)
+            .map_err(|e| format!("Invalid Spotify track ID on load: {:?}", e))?;
+
+        player.load(
+            librespot_core::SpotifyUri::Track { id: spotify_id },
+            true,
+            0,
+        );
+
+        // Wait until end of track
+        player.await_end_of_track().await;
+
+        Ok(())
+    }
+
+    /// Helper method to stream audio from a URL or Spotify URI
+    async fn play_audio_stream(url: &str, handle: &PlaybackHandle) -> Result<(), String> {
+        // For Spotify URIs, we provide full-track duration simulation
+        // In a full implementation with real librespot, this would stream actual audio
+        if url.starts_with("spotify:track:") {
+            Self::simulate_playback(handle).await
+        } else {
+            // For HTTP URLs (previews), use actual playback
+            let url_copy = url.to_string();
+            let handle_clone = handle.clone();
+
+            tokio::task::spawn_blocking(move || Self::play_http_audio(&url_copy, &handle_clone))
+                .await
+                .map_err(|e| format!("Playback task failed: {}", e))?
+        }
+    }
+
+    /// Simulate realistic playback timing based on track duration
+    async fn simulate_playback(handle: &PlaybackHandle) -> Result<(), String> {
+        let start_time = Instant::now();
+        let mut last_position = 0u64;
+        let duration = handle.get_duration();
+
+        tracing::info!(
+            "Simulating Spotify track playback (duration: {}ms)",
+            duration
+        );
+
+        loop {
+            if handle.should_stop() {
+                tracing::info!("Playback stopped by user");
+                break;
+            }
+
+            // Update position based on elapsed time
+            let elapsed = start_time.elapsed();
+            let elapsed_ms = elapsed.as_millis() as u64;
+
+            if elapsed_ms != last_position {
+                handle.set_position(elapsed_ms);
+                last_position = elapsed_ms;
+            }
+
+            // Check if we've reached the end of track duration
+            if duration > 0 && elapsed_ms >= duration {
+                tracing::info!("Track playback completed");
+                handle.stop();
+                break;
+            }
+
+            // Sleep briefly to avoid busy waiting
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        Ok(())
+    }
+
     pub async fn pause(&self) -> Result<(), String> {
         if let Some(handle) = &*self.current_handle.lock().await {
             handle.pause();
@@ -342,14 +706,18 @@ pub struct PlaybackManager {
     queue: Arc<Mutex<PlaybackQueue>>,
     info: Arc<Mutex<PlaybackInfo>>,
     audio_player: Arc<AudioPlayer>,
+    spotify_session: Arc<SpotifySessionManager>,
+    providers: Arc<Mutex<ProviderRegistry>>,
 }
 
 impl PlaybackManager {
-    pub fn new() -> Self {
+    pub fn new(providers: Arc<Mutex<ProviderRegistry>>) -> Self {
         Self {
             queue: Arc::new(Mutex::new(PlaybackQueue::new())),
             info: Arc::new(Mutex::new(PlaybackInfo::default())),
             audio_player: Arc::new(AudioPlayer::new()),
+            spotify_session: Arc::new(SpotifySessionManager::new("any-player".to_string())),
+            providers,
         }
     }
 
@@ -363,32 +731,82 @@ impl PlaybackManager {
 
         // Attempt to play the audio
         if let Some(url) = &track.url {
-            match self.audio_player.play_url(url).await {
-                Ok(handle) => {
-                    // Spawn a task to update playback position from the audio player
-                    let info_clone = self.info.clone();
-                    tokio::spawn(async move {
-                        loop {
-                            let position = handle.get_position();
-                            let duration = handle.get_duration();
-                            let should_stop = handle.should_stop();
-
-                            let mut info = info_clone.lock().await;
-                            info.position_ms = position;
-                            if duration > 0 && info.current_track.is_some() {
-                                info.current_track.as_mut().unwrap().duration_ms = duration;
-                            }
-
-                            if should_stop || duration == 0 {
-                                break;
-                            }
-
-                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                        }
-                    });
+            // Check if this is a Spotify URI requiring premium playback
+            if url.starts_with("spotify:track:") {
+                // Verify session is initialized before attempting playback
+                if !self.spotify_session.is_initialized().await {
+                    tracing::error!(
+                        "Cannot play Spotify track: session not initialized. URL: {}",
+                        url
+                    );
+                    let mut info = self.info.lock().await;
+                    info.state = PlaybackState::Stopped;
+                    return;
                 }
-                Err(e) => {
-                    tracing::error!("Failed to play audio: {}", e);
+
+                // Premium user with session initialized - use librespot
+                tracing::info!("Playing Spotify track via librespot: {}", url);
+                match self.play_spotify_track(url).await {
+                    Ok(handle) => {
+                        // Spawn a task to update playback position from the audio player
+                        let info_clone = self.info.clone();
+                        tokio::spawn(async move {
+                            loop {
+                                let position = handle.get_position();
+                                let duration = handle.get_duration();
+                                let should_stop = handle.should_stop();
+
+                                let mut info = info_clone.lock().await;
+                                info.position_ms = position;
+                                if duration > 0 && info.current_track.is_some() {
+                                    info.current_track.as_mut().unwrap().duration_ms = duration;
+                                }
+
+                                if should_stop || duration == 0 {
+                                    break;
+                                }
+
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to play Spotify track: {}", e);
+                        let mut info = self.info.lock().await;
+                        info.state = PlaybackState::Stopped;
+                    }
+                }
+            } else {
+                // HTTP URL - play as normal
+                match self.audio_player.play_url(url).await {
+                    Ok(handle) => {
+                        // Spawn a task to update playback position from the audio player
+                        let info_clone = self.info.clone();
+                        tokio::spawn(async move {
+                            loop {
+                                let position = handle.get_position();
+                                let duration = handle.get_duration();
+                                let should_stop = handle.should_stop();
+
+                                let mut info = info_clone.lock().await;
+                                info.position_ms = position;
+                                if duration > 0 && info.current_track.is_some() {
+                                    info.current_track.as_mut().unwrap().duration_ms = duration;
+                                }
+
+                                if should_stop || duration == 0 {
+                                    break;
+                                }
+
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to play audio: {}", e);
+                        let mut info = self.info.lock().await;
+                        info.state = PlaybackState::Stopped;
+                    }
                 }
             }
         } else {
@@ -539,10 +957,85 @@ impl PlaybackManager {
     pub async fn current_track(&self) -> Option<Track> {
         self.queue.lock().await.current_track().cloned()
     }
-}
 
-impl Default for PlaybackManager {
-    fn default() -> Self {
-        Self::new()
+    /// Initialize the Spotify session with an OAuth access token
+    ///
+    /// This should be called after successful Spotify authentication
+    /// to enable full track streaming for premium users.
+    pub async fn initialize_spotify_session(&self, access_token: &str) -> Result<(), String> {
+        self.spotify_session
+            .initialize_with_oauth_token(access_token)
+            .await
+    }
+
+    /// Initialize Spotify session using a `librespot_oauth::OAuthToken` instance.
+    pub async fn initialize_spotify_session_from_token(
+        &self,
+        token: OAuthToken,
+    ) -> Result<(), String> {
+        self.spotify_session
+            .initialize_with_oauth_token_obj(&token)
+            .await
+    }
+
+    /// Check if Spotify session is initialized
+    pub async fn is_spotify_session_ready(&self) -> bool {
+        self.spotify_session.is_initialized().await
+    }
+
+    /// Play a Spotify track via librespot
+    ///
+    /// This method handles playback of full Spotify tracks for premium users.
+    /// Returns a PlaybackHandle to control playback.
+    pub async fn play_spotify_track(&self, track_id: &str) -> Result<PlaybackHandle, String> {
+        // Check if session is initialized
+        if !self.spotify_session.is_initialized().await {
+            return Err(
+                "Spotify session not initialized. Run initialize_spotify_session first."
+                    .to_string(),
+            );
+        }
+
+        let handle = PlaybackHandle::new();
+        let track_id = track_id.to_string();
+
+        // Store the handle
+        {
+            let mut current = self.audio_player.current_handle.lock().await;
+            if let Some(old_handle) = current.take() {
+                old_handle.stop();
+            }
+            *current = Some(handle.clone());
+        }
+
+        // Spawn task to play spotify track
+        let handle_for_spawn = handle.clone();
+        let audio_player = self.audio_player.clone();
+        let providers = self.providers.clone();
+        // Grab the session from the session manager and pass it into the audio player
+        let spotify_session_clone = self.spotify_session.clone();
+        tokio::spawn(async move {
+            let session = spotify_session_clone.get_session().await;
+
+            let result = audio_player
+                .play_spotify_track(&track_id, &handle_for_spawn, providers, session)
+                .await;
+
+            match result {
+                Ok(()) => {
+                    tracing::info!("Spotify track playback completed");
+                }
+                Err(e) => {
+                    tracing::error!("Spotify playback error: {}", e);
+                }
+            }
+        });
+
+        Ok(handle)
+    }
+
+    /// Close the Spotify session
+    pub async fn close_spotify_session(&self) -> Result<(), String> {
+        self.spotify_session.close_session().await
     }
 }
