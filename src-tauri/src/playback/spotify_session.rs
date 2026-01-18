@@ -6,37 +6,6 @@ use librespot_core::authentication::Credentials;
 use librespot_core::cache::Cache;
 use librespot_core::config::SessionConfig;
 use librespot_core::session::Session;
-use librespot_oauth::{OAuthClientBuilder, OAuthToken};
-
-const SPOTIFY_CLIENT_ID: &str = "243bb6667db04143b6586d8598aed48b";
-const DEFAULT_REDIRECT_URI: &str = "http://127.0.0.1:8989/callback";
-// based on https://developer.spotify.com/documentation/web-api/concepts/scopes#list-of-scopes
-pub const OAUTH_SCOPES: &[&str] = &[
-    // Spotify Connect
-    "user-read-playback-state",
-    "user-modify-playback-state",
-    "user-read-currently-playing",
-    // Playback
-    "app-remote-control",
-    "streaming",
-    // Playlists
-    "playlist-read-private",
-    "playlist-read-collaborative",
-    "playlist-modify-private",
-    "playlist-modify-public",
-    // Follow
-    "user-follow-modify",
-    "user-follow-read",
-    // Listening History
-    "user-read-playback-position",
-    "user-top-read",
-    "user-read-recently-played",
-    // Library
-    "user-library-modify",
-    "user-library-read",
-    // Users
-    "user-personalized",
-];
 
 /// Manages librespot session for Spotify track streaming
 pub struct SpotifySessionManager {
@@ -65,35 +34,6 @@ impl SpotifySessionManager {
     /// Check if session is initialized
     pub async fn is_initialized(&self) -> bool {
         *self.session_ready.lock().await
-    }
-
-    /// Launch the librespot OAuth flow and return the obtained `OAuthToken`.
-    ///
-    /// This opens the browser for user authorization and waits for the token.
-    pub async fn get_creds(&self) -> Option<OAuthToken> {
-        tracing::info!("SpotifySessionManager: Starting OAuth flow to get credentials");
-        let client_builder = OAuthClientBuilder::new(
-            SPOTIFY_CLIENT_ID,
-            DEFAULT_REDIRECT_URI,
-            OAUTH_SCOPES.to_vec(),
-        )
-        .open_in_browser();
-
-        let oauth_client = match client_builder.build() {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!("Failed to build OAuth client: {:?}", e);
-                return None;
-            }
-        };
-
-        match oauth_client.get_access_token_async().await {
-            Ok(token) => Some(token),
-            Err(e) => {
-                tracing::error!("Failed to obtain OAuth token: {:?}", e);
-                None
-            }
-        }
     }
 
     /// Initialize session with OAuth access token
@@ -146,11 +86,6 @@ impl SpotifySessionManager {
                 Err(format!("Failed to initialize librespot session: {:?}", e))
             }
         }
-    }
-
-    /// Initialize session using a `librespot_oauth::OAuthToken` instance.
-    pub async fn initialize_with_oauth_token_obj(&self, token: &OAuthToken) -> Result<(), String> {
-        self.initialize_with_oauth_token(&token.access_token).await
     }
 
     /// Get the current access token
