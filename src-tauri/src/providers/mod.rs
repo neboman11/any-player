@@ -298,6 +298,48 @@ impl ProviderRegistry {
         Ok(())
     }
 
+    /// Check if Spotify user has Premium subscription
+    ///
+    /// Returns Some(true) if user is premium, Some(false) if free tier,
+    /// or None if Spotify is not authenticated
+    pub async fn is_spotify_premium(&self) -> Option<bool> {
+        if let Some(provider) = &self.spotify_provider {
+            let spotify = provider.lock().await;
+            Some(spotify.is_premium())
+        } else {
+            None
+        }
+    }
+
+    /// Get Spotify access token for session initialization
+    ///
+    /// Returns the OAuth access token if authenticated, None otherwise.
+    /// This token can be used to initialize the librespot session.
+    pub async fn get_spotify_access_token(&self) -> Option<String> {
+        if let Some(provider) = &self.spotify_provider {
+            let spotify = provider.lock().await;
+            spotify.get_access_token().await
+        } else {
+            None
+        }
+    }
+
+    /// Refresh Spotify token and reinitialize session if needed
+    ///
+    /// This is called periodically to ensure the OAuth token stays valid.
+    /// After token refresh, the playback session may need to be reinitialized.
+    pub async fn refresh_spotify_token(&mut self) -> Result<(), ProviderError> {
+        if let Some(provider) = &self.spotify_provider {
+            let mut spotify = provider.lock().await;
+            spotify.refresh_token().await?;
+            Ok(())
+        } else {
+            Err(ProviderError(
+                "Spotify provider not authenticated".to_string(),
+            ))
+        }
+    }
+
     /// Disconnect Jellyfin
     pub async fn disconnect_jellyfin(&mut self) -> Result<(), ProviderError> {
         self.jellyfin_provider = None;

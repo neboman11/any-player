@@ -10,6 +10,16 @@ export function useAudioPlayback() {
 
   const playAudio = useCallback(async (url: string) => {
     try {
+      // Spotify premium tracks (spotify:track: URIs) are handled by the backend's
+      // librespot integration, not by the frontend audio player
+      if (url.startsWith("spotify:track:")) {
+        console.log(
+          "Skipping frontend playback for Spotify URI - handled by backend librespot:",
+          url
+        );
+        return;
+      }
+
       // Create or reuse audio element
       if (!audioRef.current) {
         audioRef.current = new Audio();

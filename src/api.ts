@@ -10,7 +10,7 @@ declare global {
     __TAURI__: {
       invoke: (
         command: string,
-        args?: Record<string, unknown>
+        args?: Record<string, unknown>,
       ) => Promise<unknown>;
       shell?: {
         open: (url: string) => Promise<void>;
@@ -89,6 +89,26 @@ export class TauriAPI {
 
   async isSpotifyAuthenticated(): Promise<boolean> {
     return invoke<boolean>("is_spotify_authenticated");
+  }
+
+  async checkSpotifyPremium(): Promise<boolean> {
+    return invoke<boolean>("check_spotify_premium");
+  }
+
+  async initializeSpotifySession(accessToken: string): Promise<void> {
+    return invoke<void>("initialize_spotify_session", { accessToken });
+  }
+
+  async initializeSpotifySessionFromProvider(): Promise<void> {
+    return invoke<void>("initialize_spotify_session_from_provider");
+  }
+
+  async isSpotifySessionReady(): Promise<boolean> {
+    return invoke<boolean>("is_spotify_session_ready");
+  }
+
+  async refreshSpotifyToken(): Promise<void> {
+    return invoke<void>("refresh_spotify_token");
   }
 
   async getSpotifyPlaylists(): Promise<Playlist[]> {
