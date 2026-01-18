@@ -1,7 +1,6 @@
 /// Playback management
 use crate::models::{PlaybackInfo, PlaybackState, RepeatMode, Track};
 use crate::providers::ProviderRegistry;
-use librespot_oauth::OAuthToken;
 use rodio::{Decoder, OutputStream, Sink, Source};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -15,7 +14,7 @@ use librespot_core::cache::Cache;
 use librespot_core::config::SessionConfig;
 use librespot_core::session::Session;
 use librespot_core::spotify_id::SpotifyId;
-use librespot_playback::audio_backend::{Sink as LibrespotSink, SinkAsBytes};
+use librespot_playback::audio_backend::Sink as LibrespotSink;
 use librespot_playback::config::PlayerConfig;
 use librespot_playback::convert::Converter;
 use librespot_playback::decoder::AudioPacket;
@@ -965,16 +964,6 @@ impl PlaybackManager {
     pub async fn initialize_spotify_session(&self, access_token: &str) -> Result<(), String> {
         self.spotify_session
             .initialize_with_oauth_token(access_token)
-            .await
-    }
-
-    /// Initialize Spotify session using a `librespot_oauth::OAuthToken` instance.
-    pub async fn initialize_spotify_session_from_token(
-        &self,
-        token: OAuthToken,
-    ) -> Result<(), String> {
-        self.spotify_session
-            .initialize_with_oauth_token_obj(&token)
             .await
     }
 
