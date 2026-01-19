@@ -127,11 +127,6 @@ export class TauriAPI {
     return invoke<void>("disconnect_spotify");
   }
 
-  async saveSpotifySession(): Promise<void> {
-    // This is a no-op - token saving now happens automatically in authenticate_spotify
-    return Promise.resolve();
-  }
-
   async restoreSpotifySession(): Promise<boolean> {
     return invoke<boolean>("restore_spotify_session");
   }

@@ -97,9 +97,10 @@ pub fn run() {
             let oauth_code_clone = oauth_code_for_server.clone();
             tauri::async_runtime::spawn(start_oauth_server(oauth_code_clone));
 
-            // Try to restore Spotify session on startup
+            // Try to restore Spotify session on startup in the background
+            // This allows the UI to load immediately while authentication is being restored
             let playback_for_init = playback_clone.clone();
-            tauri::async_runtime::block_on(async {
+            tauri::async_runtime::spawn(async move {
                 let mut providers = providers_clone.lock().await;
                 match providers.restore_spotify_session().await {
                     Ok(restored) => {
