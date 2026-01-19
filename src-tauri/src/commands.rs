@@ -564,11 +564,20 @@ pub async fn restore_spotify_session(state: State<'_, AppState>) -> Result<bool,
         .map_err(|e| format!("Failed to restore Spotify session: {}", e))
 }
 
-/// Clear saved Spotify session tokens
+/// Clear saved Spotify session tokens and in-memory Spotify session state
 #[tauri::command]
-pub async fn clear_spotify_session() -> Result<(), String> {
+pub async fn clear_spotify_session(state: State<'_, AppState>) -> Result<(), String> {
     use crate::config::Config;
 
+    // First disconnect Spotify to clear any in-memory session state
+    let mut providers = state.providers.lock().await;
+    providers
+        .disconnect_spotify()
+        .await
+        .map_err(|e| format!("Failed to disconnect Spotify during session clear: {}", e))?;
+    drop(providers);
+
+    // Then clear any persisted tokens on disk
     Config::clear_tokens().map_err(|e| format!("Failed to clear tokens: {}", e))
 }
 
