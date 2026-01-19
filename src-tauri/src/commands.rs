@@ -2,8 +2,18 @@
 use crate::{PlaybackManager, PlaybackState, ProviderRegistry, RepeatMode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::State;
 use tokio::sync::Mutex;
+
+/// Maximum age of temporary audio files before cleanup (1 hour)
+const TEMP_FILE_MAX_AGE_SECONDS: u64 = 3600;
+
+/// Minimum interval between cleanup runs (5 minutes)
+const CLEANUP_INTERVAL_SECONDS: u64 = 300;
+
+/// Last cleanup timestamp (in seconds since UNIX epoch)
+static LAST_CLEANUP: AtomicU64 = AtomicU64::new(0);
 
 /// Shared application state
 pub struct AppState {
@@ -764,8 +774,23 @@ pub async fn get_audio_file(url: String) -> Result<String, String> {
 }
 
 /// Clean up old temporary audio files (older than 1 hour)
+/// Rate-limited to run at most once every 5 minutes to avoid expensive directory scans
 fn cleanup_old_temp_audio_files() {
     use std::time::SystemTime;
+
+    // Check if enough time has passed since last cleanup
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    
+    let last = LAST_CLEANUP.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < CLEANUP_INTERVAL_SECONDS {
+        return; // Skip cleanup if run too recently
+    }
+    
+    // Update last cleanup time
+    LAST_CLEANUP.store(now, Ordering::Relaxed);
 
     let temp_dir = std::env::temp_dir();
     
@@ -774,12 +799,11 @@ fn cleanup_old_temp_audio_files() {
             if let Ok(file_name) = entry.file_name().into_string() {
                 // Only process our temporary audio files
                 if file_name.starts_with("any-player-audio-") && file_name.ends_with(".mp3") {
-                    // Check if file is older than 1 hour
+                    // Check if file is older than configured max age
                     if let Ok(metadata) = entry.metadata() {
                         if let Ok(modified) = metadata.modified() {
                             if let Ok(elapsed) = SystemTime::now().duration_since(modified) {
-                                // Remove files older than 1 hour
-                                if elapsed.as_secs() > 3600 {
+                                if elapsed.as_secs() > TEMP_FILE_MAX_AGE_SECONDS {
                                     if let Err(e) = std::fs::remove_file(entry.path()) {
                                         tracing::warn!("Failed to remove old temp file {}: {}", file_name, e);
                                     } else {
