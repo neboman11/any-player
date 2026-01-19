@@ -36,8 +36,8 @@ impl SpotifyProvider {
         }
     }
 
-    /// Create a new Spotify provider with default OAuth configuration (PKCE - no secrets needed)
-    pub fn with_default_oauth() -> Self {
+    /// Helper method to create default OAuth configuration with PKCE
+    fn default_oauth_config() -> (Credentials, OAuth) {
         // Use PKCE for public clients (desktop apps) that don't have/store a secret
         let credentials = Credentials::new_pkce(SPOTIFY_CLIENT_ID);
         let oauth = OAuth {
@@ -57,7 +57,12 @@ impl SpotifyProvider {
             ),
             ..Default::default()
         };
+        (credentials, oauth)
+    }
 
+    /// Create a new Spotify provider with default OAuth configuration (PKCE - no secrets needed)
+    pub fn with_default_oauth() -> Self {
+        let (credentials, oauth) = Self::default_oauth_config();
         let client = AuthCodePkceSpotify::new(credentials, oauth);
 
         Self {
@@ -70,26 +75,7 @@ impl SpotifyProvider {
 
     /// Create a new Spotify provider with default OAuth and configured cache path
     pub fn with_default_oauth_and_cache(cache_path: PathBuf) -> Self {
-        // Use PKCE for public clients (desktop apps) that don't have/store a secret
-        let credentials = Credentials::new_pkce(SPOTIFY_CLIENT_ID);
-        let oauth = OAuth {
-            redirect_uri: DEFAULT_REDIRECT_URI.to_string(),
-            scopes: scopes!(
-                "playlist-read-private",
-                "playlist-read-collaborative",
-                "playlist-modify-public",
-                "playlist-modify-private",
-                "streaming",
-                "user-read-private",
-                "user-read-email",
-                "user-library-read",
-                "user-library-modify",
-                "user-top-read",
-                "user-read-recently-played"
-            ),
-            ..Default::default()
-        };
-
+        let (credentials, oauth) = Self::default_oauth_config();
         let mut client = AuthCodePkceSpotify::new(credentials, oauth);
 
         // Configure token cache
@@ -251,12 +237,15 @@ impl SpotifyProvider {
     /// Get the current token if available
     pub async fn get_token(&self) -> Option<Token> {
         if let Some(client) = &self.client {
-            let token_guard = client.token.lock().await;
-            if let Ok(guard) = token_guard {
-                guard.clone()
-            } else {
-                eprintln!("Warning: failed to acquire token lock in get_token");
-                None
+            match client.token.lock().await {
+                Ok(guard) => guard.clone(),
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to acquire Spotify token mutex in get_token: {:?}",
+                        err
+                    );
+                    None
+                }
             }
         } else {
             None
@@ -265,19 +254,39 @@ impl SpotifyProvider {
 
     /// Set a token for the client (used for restoring sessions)
     pub async fn set_token(&mut self, token: Token) -> Result<(), ProviderError> {
+        // Basic validation: do not accept an already-expired token
+        if token.is_expired() {
+            return Err(ProviderError(
+                "Provided Spotify token is expired or invalid".to_string(),
+            ));
+        }
+
         let client = self
             .client
             .as_mut()
             .ok_or_else(|| ProviderError("Client not configured".to_string()))?;
 
-        let token_guard = client.token.lock().await;
-        if let Ok(mut guard) = token_guard {
-            *guard = Some(token);
-            self.is_authenticated = true;
-            Ok(())
-        } else {
-            Err(ProviderError("Failed to lock token".to_string()))
+        // Save access token string before moving `token` into the guard
+        let access_token = token.access_token.clone();
+
+        // Update the underlying client's token
+        let mut token_guard = client.token.lock().await
+            .map_err(|_| ProviderError("Failed to lock token".to_string()))?;
+        *token_guard = Some(token);
+        drop(token_guard);
+
+        // Keep internal metadata in sync with the newly set token
+        self.access_token = Some(access_token);
+        self.is_authenticated = true;
+
+        // Ensure premium status is updated based on the new token
+        if let Err(err) = self.check_and_update_premium_status().await {
+            tracing::warn!("Failed to update premium status after setting token: {}", err);
+            // Don't fail the whole operation if premium check fails
+            // The token is still valid for basic operations
         }
+
+        Ok(())
     }
 
     /// Get the cache path if configured

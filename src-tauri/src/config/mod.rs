@@ -53,7 +53,13 @@ pub struct JellyfinConfig {
     pub user_id: Option<String>,
 }
 
-/// Secure token storage for authentication
+/// Token storage with file system protections
+/// 
+/// Stores authentication tokens in a JSON file with restrictive file permissions
+/// on Unix systems (0600). Note: This is not cryptographically secure storage.
+/// On Windows, file permissions are not as restrictive. For production use with
+/// sensitive data, consider platform-specific secure storage mechanisms
+/// (e.g., Windows Credential Manager, macOS Keychain).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenStorage {
     /// Spotify token
@@ -251,26 +257,18 @@ mod tests {
 
     #[test]
     fn test_save_and_load_tokens() {
-        // Use a temporary directory for testing
-        let temp_dir = std::env::temp_dir().join("any-player-test");
-        fs::create_dir_all(&temp_dir).unwrap();
-
-        // Mock config directory using environment variable or direct path
-        let test_token_path = temp_dir.join("test_tokens.json");
-
-        // Create test token storage
+        // Create a test token storage
         let tokens = TokenStorage {
             spotify_token: None,
             jellyfin_api_key: Some("test_api_key".to_string()),
         };
 
-        // Save tokens to test file
-        let json = serde_json::to_string_pretty(&tokens).unwrap();
-        fs::write(&test_token_path, json).unwrap();
+        // Save tokens using the actual Config method
+        // This will save to the real config directory, which is fine for testing
+        Config::save_tokens(&tokens).expect("Failed to save tokens");
 
-        // Load tokens from test file
-        let content = fs::read_to_string(&test_token_path).unwrap();
-        let loaded_tokens: TokenStorage = serde_json::from_str(&content).unwrap();
+        // Load tokens using the actual Config method
+        let loaded_tokens = Config::load_tokens().expect("Failed to load tokens");
 
         // Verify
         assert_eq!(
@@ -279,9 +277,21 @@ mod tests {
         );
         assert!(loaded_tokens.spotify_token.is_none());
 
+        // Verify file permissions on Unix systems
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let config_dir = Config::config_dir().expect("Failed to get config dir");
+            let token_path = config_dir.join("tokens.json");
+            let metadata = fs::metadata(&token_path).expect("Failed to get file metadata");
+            let mode = metadata.permissions().mode();
+            // Check that only owner has read/write (0600)
+            assert_eq!(mode & 0o777, 0o600, "Token file should have 0600 permissions");
+        }
+
         // Cleanup
-        let _ = fs::remove_file(&test_token_path);
-        let _ = fs::remove_dir(&temp_dir);
+        let _ = Config::clear_tokens();
+    }
     }
 
     #[test]

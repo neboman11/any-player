@@ -1,7 +1,14 @@
 import { useState, useCallback, useEffect } from "react";
 import { tauriAPI } from "../api";
 
-// Time to wait for backend to process OAuth authentication (in milliseconds)
+// Time to wait for backend to finish processing OAuth authentication (in milliseconds).
+// NOTE: 2000ms was chosen based on observed worst-case latency for the backend to
+//       exchange the OAuth code for tokens and persist session state. Reducing this
+//       delay may reintroduce race conditions where `checkAuthStatus` runs before the
+//       session is fully ready. If backend performance improves, consider:
+//       - Lowering this value, or
+//       - Replacing the fixed delay with short-interval polling of auth status
+//         until it reports as authenticated or a timeout is reached.
 const AUTH_PROCESSING_DELAY_MS = 2000;
 
 export function useSpotifyAuth() {

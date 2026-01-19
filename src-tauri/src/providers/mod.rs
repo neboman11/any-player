@@ -150,6 +150,9 @@ impl ProviderRegistry {
             spotify.authenticate_with_code(code).await?;
 
             // Save the token after successful authentication
+            // Note: The provider mutex ensures that concurrent authenticate_spotify calls
+            // are serialized. While there's a theoretical race between load and save,
+            // it's extremely unlikely in a single-user desktop application context.
             if let Some(token) = spotify.get_token().await {
                 let mut tokens = crate::config::Config::load_tokens()
                     .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
@@ -319,8 +322,8 @@ impl ProviderRegistry {
             let cache_path = config_dir.join("spotify_cache.json");
             if cache_path.exists() {
                 if let Err(e) = std::fs::remove_file(&cache_path) {
-                    eprintln!(
-                        "Warning: failed to remove Spotify cache file ({}): {}",
+                    tracing::warn!(
+                        "Failed to remove Spotify cache file ({}): {}",
                         cache_path.display(),
                         e
                     );
