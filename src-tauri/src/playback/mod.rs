@@ -1,6 +1,6 @@
 /// Playback management
 use crate::models::{PlaybackInfo, PlaybackState, RepeatMode, Track};
-use crate::providers::ProviderRegistry;
+use crate::providers::{ProviderRegistry, spotify::SPOTIFY_CLIENT_ID};
 use rodio::{Decoder, OutputStream, Sink, Source};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -601,8 +601,8 @@ impl AudioPlayer {
         // Create a session configuration and credentials that use the OAuth token
         let session_config = SessionConfig::default();
 
-        // Use the OAuth access token as the "password" in credentials; username can be any identifier
-        let credentials = Credentials::with_password("any-player", access_token.to_string());
+        // Use the OAuth access token as credentials; librespot provides a dedicated constructor for this
+        let credentials = Credentials::with_access_token(access_token.to_string());
 
         // Create a simple cache (no paths) - this is optional but the Session API expects an Option<Cache>
         let cache = Cache::new::<&std::path::Path>(None, None, None, None)
@@ -898,7 +898,7 @@ impl PlaybackManager {
             queue: Arc::new(Mutex::new(PlaybackQueue::new())),
             info: Arc::new(Mutex::new(PlaybackInfo::default())),
             audio_player: Arc::new(AudioPlayer::new()),
-            spotify_session: Arc::new(SpotifySessionManager::new("any-player".to_string())),
+            spotify_session: Arc::new(SpotifySessionManager::new(SPOTIFY_CLIENT_ID.to_string())),
             providers,
         }
     }
