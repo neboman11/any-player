@@ -779,10 +779,11 @@ fn cleanup_old_temp_audio_files() {
     use std::time::SystemTime;
 
     // Check if enough time has passed since last cleanup
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let Ok(now_duration) = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) else {
+        tracing::warn!("System time is before UNIX epoch, skipping cleanup");
+        return;
+    };
+    let now = now_duration.as_secs();
     
     let last = LAST_CLEANUP.load(Ordering::Relaxed);
     if now.saturating_sub(last) < CLEANUP_INTERVAL_SECONDS {
