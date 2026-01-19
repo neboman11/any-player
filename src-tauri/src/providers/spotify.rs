@@ -149,14 +149,20 @@ impl SpotifyProvider {
         // client's in-memory token (avoids depending on file-based token cache
         // which may not be configured).
         let token_mutex = client.get_token();
-        let token_guard = token_mutex.lock().await;
-        match token_guard.as_ref() {
-            Some(token) => {
-                tracing::info!("Caching Spotify access token in memory");
-                self.access_token = Some(token.access_token.clone());
+        match token_mutex.lock().await {
+            Ok(token_guard) => {
+                if let Some(token) = token_guard.as_ref() {
+                    tracing::info!("Caching Spotify access token in memory");
+                    self.access_token = Some(token.access_token.clone());
+                } else {
+                    tracing::debug!("No token found in client in-memory token after request_token");
+                }
             }
-            None => {
-                tracing::debug!("No token found in client in-memory token after request_token");
+            Err(err) => {
+                tracing::warn!(
+                    "Failed to acquire Spotify token mutex during authentication: {:?}",
+                    err
+                );
             }
         }
 
