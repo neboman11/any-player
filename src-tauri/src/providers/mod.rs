@@ -145,20 +145,27 @@ impl ProviderRegistry {
     }
     /// Complete Spotify authentication with authorization code
     pub async fn authenticate_spotify(&self, code: &str) -> Result<(), ProviderError> {
+        tracing::info!("Starting Spotify authentication with code");
+
         if let Some(provider) = &self.spotify_provider {
             let mut spotify = provider.lock().await;
             spotify.authenticate_with_code(code).await?;
+            tracing::info!("Authentication with code successful");
 
             // Save the token after successful authentication
             // Note: The provider mutex ensures that concurrent authenticate_spotify calls
             // are serialized. While there's a theoretical race between load and save,
             // it's extremely unlikely in a single-user desktop application context.
             if let Some(token) = spotify.get_token().await {
+                tracing::info!("Retrieved token from provider, saving to keyring");
                 let mut tokens = crate::config::Config::load_tokens()
                     .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
                 tokens.spotify_token = Some(token);
                 crate::config::Config::save_tokens(&tokens)
                     .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
+                tracing::info!("Token saved to keyring successfully");
+            } else {
+                tracing::warn!("Authentication succeeded but no token was retrieved");
             }
         } else {
             return Err(ProviderError(
@@ -411,53 +418,38 @@ impl ProviderRegistry {
     pub async fn restore_spotify_session(&mut self) -> Result<bool, ProviderError> {
         use crate::config::Config;
 
-        // Get config directory and ensure it exists
-        let config_dir = Config::config_dir()
-            .map_err(|e| ProviderError(format!("Failed to get config dir: {}", e)))?;
+        tracing::info!("Starting Spotify session restoration from keyring");
 
-        std::fs::create_dir_all(&config_dir)
-            .map_err(|e| ProviderError(format!("Failed to create config directory: {}", e)))?;
-
-        let cache_path = config_dir.join("spotify_cache.json");
-
-        if cache_path.exists() {
-            // Create provider with cache path - rspotify will automatically load from cache
-            let mut spotify_provider =
-                spotify::SpotifyProvider::with_default_oauth_and_cache(cache_path.clone());
-
-            // Try to verify that the restored session is valid by checking premium status.
-            // This makes an authenticated API call which serves two purposes:
-            // 1. Confirms the cached token is valid and not expired
-            // 2. Updates the premium status flag for the user
-            //
-            // Note: If the API call succeeds but the token expires shortly after,
-            // the provider's refresh token mechanism will handle re-authentication.
-            if spotify_provider.check_and_update_premium_status().await.is_ok() {
-                self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
-                return Ok(true);
-            }
-        }
-
-        // Fallback to our token storage if cache doesn't work
+        // Load tokens from keyring
         let tokens = Config::load_tokens()
             .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
 
         if tokens.spotify_token.is_none() {
+            tracing::info!("No Spotify token found in keyring");
             return Ok(false);
         }
 
-        // Create provider and try to restore with our tokens
-        let mut spotify_provider =
-            spotify::SpotifyProvider::with_default_oauth_and_cache(cache_path);
+        tracing::info!("Found Spotify token in keyring, creating provider");
+
+        // Create provider without file-based cache - keyring is our only source of truth
+        let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth();
 
         if let Some(token) = tokens.spotify_token {
+            tracing::info!("Setting token on provider");
             spotify_provider.set_token(token).await?;
-            // Check premium status after setting token
-            let _ = spotify_provider.check_and_update_premium_status().await;
+            tracing::info!("Token set successfully");
 
+            // Check premium status after setting token
+            match spotify_provider.check_and_update_premium_status().await {
+                Ok(_) => tracing::info!("Premium status check completed"),
+                Err(e) => tracing::warn!("Premium status check failed: {}", e),
+            }
+
+            tracing::info!("Session restored from keyring, storing provider");
             self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
             Ok(true)
         } else {
+            tracing::info!("Token was None after loading from keyring");
             Ok(false)
         }
     }
@@ -502,10 +494,10 @@ mod tests {
     async fn test_restore_spotify_session_no_cache_or_tokens() {
         // Clean up any existing cache and tokens
         let _ = Config::clear_tokens();
-        
+
         let mut registry = ProviderRegistry::new();
         let result = registry.restore_spotify_session().await;
-        
+
         // Should return Ok(false) when no cache or tokens exist
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), false);
@@ -518,21 +510,21 @@ mod tests {
             spotify_token: Some(create_valid_token()),
             jellyfin_api_key: None,
         };
-        
+
         // Save tokens (this will create the tokens.json file)
         Config::save_tokens(&tokens).expect("Failed to save test tokens");
-        
+
         let mut registry = ProviderRegistry::new();
         let result = registry.restore_spotify_session().await;
-        
-        // Note: This test will likely fail because the token is fake and 
+
+        // Note: This test will likely fail because the token is fake and
         // check_and_update_premium_status will fail when it tries to make an API call.
         // In a real test environment, we'd mock the Spotify API.
         // For now, we're just verifying the code path doesn't panic.
-        
+
         // Clean up
         let _ = Config::clear_tokens();
-        
+
         // The result will be Ok(true) if token was set, even if premium check fails
         assert!(result.is_ok() || result.is_err());
     }
@@ -544,17 +536,17 @@ mod tests {
             spotify_token: Some(create_expired_token()),
             jellyfin_api_key: None,
         };
-        
+
         // Save tokens
         Config::save_tokens(&tokens).expect("Failed to save test tokens");
-        
+
         let mut registry = ProviderRegistry::new();
         let result = registry.restore_spotify_session().await;
-        
+
         // Should fail because the token is expired
         // The set_token method now validates expiry
         assert!(result.is_err() || (result.is_ok() && !result.unwrap()));
-        
+
         // Clean up
         let _ = Config::clear_tokens();
     }
@@ -563,14 +555,14 @@ mod tests {
     async fn test_restore_spotify_session_error_handling() {
         // This test verifies that restore_spotify_session handles errors gracefully
         // when both cache and token storage mechanisms fail or are unavailable
-        
+
         // Clean up any existing state
         let _ = Config::clear_tokens();
-        
+
         // Try to restore with no available session data
         let mut registry = ProviderRegistry::new();
         let result = registry.restore_spotify_session().await;
-        
+
         // Should return Ok(false) rather than panicking
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), false);
@@ -580,7 +572,7 @@ mod tests {
     async fn test_provider_registry_initialization() {
         // Test that ProviderRegistry can be created and initialized
         let registry = ProviderRegistry::new();
-        
+
         // Verify initial state
         assert!(registry.spotify_provider.is_none());
         assert!(registry.jellyfin_provider.is_none());
@@ -594,14 +586,14 @@ mod tests {
             jellyfin_api_key: Some("test_key".to_string()),
         };
         Config::save_tokens(&tokens).expect("Failed to save tokens");
-        
+
         // Clear tokens
         Config::clear_tokens().expect("Failed to clear tokens");
-        
+
         // Try to restore - should return Ok(false)
         let mut registry = ProviderRegistry::new();
         let result = registry.restore_spotify_session().await;
-        
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), false);
     }

@@ -1,7 +1,7 @@
+use keyring::Entry;
 /// Configuration management
 use rspotify::Token;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::PathBuf;
 
 /// Application configuration
@@ -53,13 +53,14 @@ pub struct JellyfinConfig {
     pub user_id: Option<String>,
 }
 
-/// Token storage with file system protections
+/// Token storage using platform-specific secure storage
 ///
-/// Stores authentication tokens in a JSON file with restrictive file permissions
-/// on Unix systems (0600). Note: This is not cryptographically secure storage.
-/// On Windows, file permissions are not as restrictive. For production use with
-/// sensitive data, consider platform-specific secure storage mechanisms
-/// (e.g., Windows Credential Manager, macOS Keychain).
+/// Uses the keyring crate which provides cross-platform secure storage:
+/// - **macOS**: Uses the Keychain
+/// - **Windows**: Uses the Credential Manager
+/// - **Linux**: Uses Secret Service API (e.g., GNOME Keyring, KDE Wallet)
+///
+/// Tokens are stored securely and encrypted by the operating system.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenStorage {
     /// Spotify token
@@ -147,67 +148,127 @@ impl Config {
         }
     }
 
-    /// Load token storage from secure location
+    /// Load token storage from secure keyring
     pub fn load_tokens() -> Result<TokenStorage, Box<dyn std::error::Error>> {
-        let config_dir = Self::config_dir()?;
-        let token_path = config_dir.join("tokens.json");
+        tracing::debug!("Loading tokens from keyring");
 
-        if token_path.exists() {
-            let content = fs::read_to_string(&token_path)?;
-            Ok(serde_json::from_str(&content)?)
-        } else {
-            Ok(TokenStorage::default())
+        match Self::load_tokens_from_keyring() {
+            Ok(tokens) => {
+                let has_spotify = tokens.spotify_token.is_some();
+                let has_jellyfin = tokens.jellyfin_api_key.is_some();
+                tracing::debug!(
+                    "Loaded from keyring - spotify: {}, jellyfin: {}",
+                    has_spotify,
+                    has_jellyfin
+                );
+                Ok(tokens)
+            }
+            Err(e) => {
+                tracing::debug!("No tokens found in keyring: {}", e);
+                Ok(TokenStorage::default())
+            }
         }
     }
 
-    /// Save tokens to secure location
+    /// Load tokens directly from keyring
+    fn load_tokens_from_keyring() -> Result<TokenStorage, Box<dyn std::error::Error>> {
+        let spotify_entry = Entry::new("any-player", "spotify-token")?;
+        let jellyfin_entry = Entry::new("any-player", "jellyfin-api-key")?;
+
+        let spotify_token = match spotify_entry.get_password() {
+            Ok(json) => {
+                tracing::debug!("Found spotify token in keyring, attempting to deserialize");
+                match serde_json::from_str(&json) {
+                    Ok(token) => {
+                        tracing::debug!("Successfully deserialized spotify token");
+                        Some(token)
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to deserialize spotify token: {}", e);
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::debug!("No spotify token in keyring: {}", e);
+                None
+            }
+        };
+
+        let jellyfin_api_key = match jellyfin_entry.get_password() {
+            Ok(key) => {
+                tracing::debug!("Found jellyfin API key in keyring");
+                Some(key)
+            }
+            Err(e) => {
+                tracing::debug!("No jellyfin API key in keyring: {}", e);
+                None
+            }
+        };
+
+        // Return tokens (even if both are None)
+        Ok(TokenStorage {
+            spotify_token,
+            jellyfin_api_key,
+        })
+    }
+
+    /// Save tokens to secure keyring
     ///
     /// # Security Notes
     ///
-    /// Currently, tokens are stored in plain JSON with file permissions set to 0600 (user-only)
-    /// on Unix systems. This provides basic protection but is not cryptographically secure.
+    /// Tokens are stored using the keyring crate, which provides platform-specific
+    /// secure storage:
+    /// - **macOS**: Keychain (encrypted by the OS)
+    /// - **Windows**: Credential Manager (encrypted by the OS)
+    /// - **Linux**: Secret Service API (GNOME Keyring, KDE Wallet, etc.)
     ///
-    /// **Recommendations for production use:**
-    /// - **macOS**: Use the Keychain API via the `keyring` or `security-framework` crate
-    /// - **Windows**: Use the Credential Manager via the `keyring` or `windows` crate
-    /// - **Linux**: Use Secret Service API via the `keyring` or `secret-service` crate
-    /// - **Cross-platform**: Consider the `keyring` crate which provides a unified interface
-    ///
-    /// Alternatively, tokens could be encrypted using a key derived from the system
-    /// (e.g., via `ring` or `aes-gcm` crates) before writing to disk.
-    ///
-    /// For now, we rely on:
-    /// 1. OAuth tokens that expire and can be refreshed
-    /// 2. File system permissions (Unix: 0600, Windows: ACLs via OS defaults)
-    /// 3. User responsibility for system security
+    /// This is significantly more secure than file-based storage as the OS
+    /// handles encryption and access control automatically.
     pub fn save_tokens(tokens: &TokenStorage) -> Result<(), Box<dyn std::error::Error>> {
-        let config_dir = Self::config_dir()?;
-        let token_path = config_dir.join("tokens.json");
-        fs::create_dir_all(&config_dir)?;
+        tracing::debug!(
+            "Saving tokens to keyring - spotify: {}, jellyfin: {}",
+            tokens.spotify_token.is_some(),
+            tokens.jellyfin_api_key.is_some()
+        );
 
-        let content = serde_json::to_string_pretty(tokens)?;
-        fs::write(&token_path, content)?;
+        let spotify_entry = Entry::new("any-player", "spotify-token")?;
+        let jellyfin_entry = Entry::new("any-player", "jellyfin-api-key")?;
 
-        // Set secure permissions (600) on token file
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = fs::metadata(&token_path)?.permissions();
-            perms.set_mode(0o600);
-            fs::set_permissions(&token_path, perms)?;
+        // Save Spotify token if present
+        if let Some(ref token) = tokens.spotify_token {
+            let json = serde_json::to_string(token)?;
+            spotify_entry.set_password(&json)?;
+            tracing::debug!("Successfully saved spotify token to keyring");
+        } else {
+            // Delete the entry if token is None
+            let _ = spotify_entry.delete_credential();
+            tracing::debug!("Deleted spotify token from keyring");
+        }
+
+        // Save Jellyfin API key if present
+        if let Some(ref api_key) = tokens.jellyfin_api_key {
+            jellyfin_entry.set_password(api_key)?;
+            tracing::debug!("Successfully saved jellyfin API key to keyring");
+        } else {
+            // Delete the entry if api_key is None
+            let _ = jellyfin_entry.delete_credential();
+            tracing::debug!("Deleted jellyfin API key from keyring");
         }
 
         Ok(())
     }
 
-    /// Clear stored tokens
+    /// Clear stored tokens from keyring
     pub fn clear_tokens() -> Result<(), Box<dyn std::error::Error>> {
-        let config_dir = Self::config_dir()?;
-        let token_path = config_dir.join("tokens.json");
+        tracing::debug!("Clearing tokens from keyring");
 
-        if token_path.exists() {
-            fs::remove_file(&token_path)?;
-        }
+        let spotify_entry = Entry::new("any-player", "spotify-token")?;
+        let jellyfin_entry = Entry::new("any-player", "jellyfin-api-key")?;
+
+        // Attempt to delete both entries (ignore errors if they don't exist)
+        let _ = spotify_entry.delete_credential();
+        let _ = jellyfin_entry.delete_credential();
 
         Ok(())
     }
@@ -216,7 +277,6 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     #[test]
     fn test_default_config() {
@@ -263,11 +323,10 @@ mod tests {
             jellyfin_api_key: Some("test_api_key".to_string()),
         };
 
-        // Save tokens using the actual Config method
-        // This will save to the real config directory, which is fine for testing
+        // Save tokens using keyring
         Config::save_tokens(&tokens).expect("Failed to save tokens");
 
-        // Load tokens using the actual Config method
+        // Load tokens using keyring
         let loaded_tokens = Config::load_tokens().expect("Failed to load tokens");
 
         // Verify
@@ -277,71 +336,37 @@ mod tests {
         );
         assert!(loaded_tokens.spotify_token.is_none());
 
-        // Verify file permissions on Unix systems
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let config_dir = Config::config_dir().expect("Failed to get config dir");
-            let token_path = config_dir.join("tokens.json");
-            let metadata = fs::metadata(&token_path).expect("Failed to get file metadata");
-            let mode = metadata.permissions().mode();
-            // Check that only owner has read/write (0600)
-            assert_eq!(
-                mode & 0o777,
-                0o600,
-                "Token file should have 0600 permissions"
-            );
-        }
-
         // Cleanup
         let _ = Config::clear_tokens();
     }
 
     #[test]
     fn test_clear_tokens_nonexistent_file() {
-        // This should not panic when the file doesn't exist
-        // We can't easily test the actual clear_tokens function without mocking,
-        // but we can test the file removal logic
-        let temp_dir = std::env::temp_dir().join("any-player-test-clear");
-        let test_path = temp_dir.join("nonexistent_tokens.json");
-
-        // Ensure it doesn't exist
-        let _ = fs::remove_file(&test_path);
-
-        // This should handle the case gracefully
-        if test_path.exists() {
-            let result = fs::remove_file(&test_path);
-            assert!(result.is_ok());
-        }
-        // No assertion needed - just shouldn't panic
+        // This should not panic when tokens don't exist in keyring
+        let result = Config::clear_tokens();
+        assert!(result.is_ok());
     }
 
-    #[cfg(unix)]
     #[test]
-    fn test_token_file_permissions() {
-        use std::os::unix::fs::PermissionsExt;
+    fn test_keyring_storage() {
+        // Test storing and retrieving from keyring
+        let tokens = TokenStorage {
+            spotify_token: None,
+            jellyfin_api_key: Some("secure_test_key_123".to_string()),
+        };
 
-        let temp_dir = std::env::temp_dir().join("any-player-test-perms");
-        fs::create_dir_all(&temp_dir).unwrap();
-        let test_token_path = temp_dir.join("test_tokens_perms.json");
+        // Save to keyring
+        Config::save_tokens(&tokens).expect("Failed to save to keyring");
 
-        // Create test file
-        let tokens = TokenStorage::default();
-        let json = serde_json::to_string_pretty(&tokens).unwrap();
-        fs::write(&test_token_path, json).unwrap();
+        // Load from keyring
+        let loaded = Config::load_tokens().expect("Failed to load from keyring");
 
-        // Set secure permissions (600)
-        let mut perms = fs::metadata(&test_token_path).unwrap().permissions();
-        perms.set_mode(0o600);
-        fs::set_permissions(&test_token_path, perms).unwrap();
-
-        // Verify permissions
-        let metadata = fs::metadata(&test_token_path).unwrap();
-        let mode = metadata.permissions().mode();
-        assert_eq!(mode & 0o777, 0o600);
+        assert_eq!(
+            loaded.jellyfin_api_key,
+            Some("secure_test_key_123".to_string())
+        );
 
         // Cleanup
-        let _ = fs::remove_file(&test_token_path);
-        let _ = fs::remove_dir(&temp_dir);
+        Config::clear_tokens().expect("Failed to clear tokens");
     }
 }
