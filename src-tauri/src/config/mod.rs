@@ -2,7 +2,6 @@
 use rspotify::Token;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 /// Application configuration
