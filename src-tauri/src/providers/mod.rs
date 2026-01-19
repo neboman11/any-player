@@ -423,7 +423,12 @@ impl ProviderRegistry {
                 spotify::SpotifyProvider::with_default_oauth_and_cache(cache_path.clone());
 
             // Try to verify that the restored session is valid by checking premium status.
-            // If this succeeds, we assume the cached token is usable.
+            // This makes an authenticated API call which serves two purposes:
+            // 1. Confirms the cached token is valid and not expired
+            // 2. Updates the premium status flag for the user
+            //
+            // Note: If the API call succeeds but the token expires shortly after,
+            // the provider's refresh token mechanism will handle re-authentication.
             if spotify_provider.check_and_update_premium_status().await.is_ok() {
                 self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
                 return Ok(true);
