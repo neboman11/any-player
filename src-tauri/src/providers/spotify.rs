@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use futures::stream::StreamExt;
 use rspotify::{prelude::*, scopes, AuthCodePkceSpotify, Credentials, OAuth};
 
-/// Public Spotify Client ID - must match the one in playback/spotify_session.rs
-const SPOTIFY_CLIENT_ID: &str = "243bb6667db04143b6586d8598aed48b";
+/// Public Spotify Client ID - used across the application
+pub const SPOTIFY_CLIENT_ID: &str = "243bb6667db04143b6586d8598aed48b";
 
 /// Default OAuth redirect URI - must be localhost with specific port for Spotify
 const DEFAULT_REDIRECT_URI: &str = "http://127.0.0.1:8989/callback";
@@ -149,7 +149,8 @@ impl SpotifyProvider {
         // client's in-memory token (avoids depending on file-based token cache
         // which may not be configured).
         let token_mutex = client.get_token();
-        match token_mutex.lock().await.unwrap().as_ref() {
+        let token_guard = token_mutex.lock().await;
+        match token_guard.as_ref() {
             Some(token) => {
                 tracing::info!(
                     "Caching Spotify access token (len={})",
