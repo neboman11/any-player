@@ -78,7 +78,6 @@ pub fn run() {
             commands::get_spotify_playlist,
             commands::check_oauth_code,
             commands::disconnect_spotify,
-            commands::save_spotify_session,
             commands::restore_spotify_session,
             commands::clear_spotify_session,
             // Jellyfin commands
