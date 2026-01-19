@@ -1,11 +1,16 @@
 import { useState, useCallback, useEffect } from "react";
 import { tauriAPI } from "../api";
 
+// Time to wait for backend to process OAuth authentication (in milliseconds)
+const AUTH_PROCESSING_DELAY_MS = 1000;
+
 export function useSpotifyAuth() {
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [isPremium, setIsPremium] = useState<boolean | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
 
   // Check initial auth status
   useEffect(() => {
@@ -13,29 +18,29 @@ export function useSpotifyAuth() {
       try {
         const authenticated = await tauriAPI.isSpotifyAuthenticated();
         setIsConnected(authenticated);
+
+        if (authenticated) {
+          // Check premium status and session readiness
+          try {
+            const premium = await tauriAPI.checkSpotifyPremium();
+            setIsPremium(premium);
+          } catch (err) {
+            console.error("Error checking premium status:", err);
+          }
+
+          try {
+            const ready = await tauriAPI.isSpotifySessionReady();
+            setSessionReady(ready);
+          } catch (err) {
+            console.error("Error checking session status:", err);
+          }
+        }
       } catch (err) {
         console.error("Error checking Spotify status:", err);
       }
     };
 
     void checkStatus();
-  }, []);
-
-  // Listen for OAuth callback messages
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      const data = event.data;
-      if (data && data.type === "spotify-auth") {
-        if (data.code) {
-          void completeAuth(data.code);
-        } else if (data.error) {
-          setError(data.error);
-        }
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
   }, []);
 
   const getAuthUrl = useCallback(async (): Promise<string> => {
@@ -49,25 +54,9 @@ export function useSpotifyAuth() {
     }
   }, []);
 
-  const completeAuth = useCallback(async (code: string) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      await tauriAPI.authenticateSpotify(code);
-      setIsConnected(true);
-      setAuthUrl(null);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Authentication failed";
-      setError(message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
   const connect = useCallback(async () => {
     try {
-      console.log("Running Spotify Connect hook");
+      console.log("Starting Spotify authentication flow");
       setIsLoading(true);
       setError(null);
       const url = await getAuthUrl();
@@ -76,6 +65,7 @@ export function useSpotifyAuth() {
       // Try to open in browser
       if (window.__TAURI__?.shell) {
         try {
+          console.log("Opening Spotify auth URL in browser");
           await window.__TAURI__.shell.open(url);
         } catch (err) {
           console.error("Failed to open browser:", err);
@@ -84,6 +74,7 @@ export function useSpotifyAuth() {
       }
 
       // Start polling for auth completion
+      console.log("Starting polling for OAuth callback completion");
       await pollForAuth();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Connection failed";
@@ -103,8 +94,36 @@ export function useSpotifyAuth() {
         try {
           const hasCode = await tauriAPI.checkOAuthCode();
           if (hasCode) {
+            console.log(
+              "OAuth code received by backend - session initialization should be in progress",
+            );
             setIsConnected(true);
             setAuthUrl(null);
+
+            // Wait a moment for the backend to process the auth
+            await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
+
+            // Check if premium and session is ready
+            try {
+              const premium = await tauriAPI.checkSpotifyPremium();
+              setIsPremium(premium);
+              console.log("Premium status:", premium);
+
+              if (premium) {
+                const ready = await tauriAPI.isSpotifySessionReady();
+                setSessionReady(ready);
+                console.log("Session ready:", ready);
+
+                if (ready) {
+                  console.log("✓ Spotify session is initialized and ready");
+                } else {
+                  console.warn("⚠ Premium user but session not ready yet");
+                }
+              }
+            } catch (err) {
+              console.error("Error checking status after auth:", err);
+            }
+
             clearInterval(checkInterval);
             resolve();
           }
@@ -127,6 +146,8 @@ export function useSpotifyAuth() {
       setIsConnected(false);
       setError(null);
       setAuthUrl(null);
+      setIsPremium(null);
+      setSessionReady(false);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to disconnect";
@@ -138,6 +159,38 @@ export function useSpotifyAuth() {
     setAuthUrl(null);
   }, []);
 
+  const initializeSession = useCallback(async () => {
+    if (!isConnected || !isPremium) {
+      console.warn("Cannot initialize session: not connected or not premium");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+      console.log("Manually initializing Spotify session...");
+
+      await tauriAPI.initializeSpotifySessionFromProvider();
+
+      // Verify initialization
+      const ready = await tauriAPI.isSpotifySessionReady();
+      setSessionReady(ready);
+
+      if (ready) {
+        console.log("✓ Session initialized successfully");
+      } else {
+        setError("Session initialization completed but session not ready");
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to initialize session";
+      setError(message);
+      console.error("Session initialization error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isConnected, isPremium]);
+
   return {
     isConnected,
     isLoading,
@@ -146,5 +199,8 @@ export function useSpotifyAuth() {
     connect,
     disconnect,
     clearAuthUrl,
+    initializeSession,
+    isPremium,
+    sessionReady,
   };
 }

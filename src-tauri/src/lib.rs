@@ -8,6 +8,7 @@ pub use config::Config;
 pub use models::{PlaybackInfo, PlaybackState, Playlist, RepeatMode, Source, Track};
 pub use playback::PlaybackManager;
 pub use providers::{MusicProvider, ProviderError, ProviderRegistry};
+use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod commands;
 
@@ -17,11 +18,20 @@ use tokio::sync::Mutex;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize logging
-    tracing_subscriber::fmt::init();
+    let filter = filter::Targets::new()
+        .with_default(filter::LevelFilter::TRACE)
+        .with_target("any_player_lib", filter::LevelFilter::TRACE)
+        .with_target("glycin", filter::LevelFilter::INFO)
+        .with_target("hyper", filter::LevelFilter::INFO)
+        .with_target("zbus", filter::LevelFilter::INFO);
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     // Create application state
-    let playback = Arc::new(Mutex::new(PlaybackManager::new()));
     let providers = Arc::new(Mutex::new(ProviderRegistry::new()));
+    let playback = Arc::new(Mutex::new(PlaybackManager::new(providers.clone())));
     let oauth_code: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
     let app_state = commands::AppState {
@@ -49,13 +59,20 @@ pub fn run() {
             commands::set_repeat_mode,
             // Playlist commands
             commands::get_playlists,
+            commands::play_track,
             commands::queue_track,
             commands::clear_queue,
             // Spotify commands
             commands::get_spotify_auth_url,
             commands::authenticate_spotify,
             commands::is_spotify_authenticated,
+            commands::check_spotify_premium,
+            commands::initialize_spotify_session,
+            commands::initialize_spotify_session_from_provider,
+            commands::is_spotify_session_ready,
+            commands::refresh_spotify_token,
             commands::get_spotify_playlists,
+            commands::get_spotify_playlist,
             commands::check_oauth_code,
             commands::disconnect_spotify,
             // Jellyfin commands
@@ -67,12 +84,20 @@ pub fn run() {
             commands::search_jellyfin_playlists,
             commands::get_jellyfin_recently_played,
             commands::disconnect_jellyfin,
+            // Audio commands
+            commands::get_audio_file,
         ])
         .setup(move |_app| {
             // Start OAuth callback server in the Tauri runtime
             let oauth_code_clone = oauth_code_for_server.clone();
             tauri::async_runtime::spawn(start_oauth_server(oauth_code_clone));
             Ok(())
+        })
+        .on_window_event(|_window, event| {
+            // Clean up temporary audio files when the application is closing
+            if let tauri::WindowEvent::Destroyed = event {
+                commands::cleanup_all_temp_audio_files();
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -119,7 +144,7 @@ async fn handle_oauth_request(
     let mut reader = BufReader::new(reader);
     let mut request_line = String::new();
 
-    if let Ok(_) = reader.read_line(&mut request_line).await {
+    if (reader.read_line(&mut request_line).await).is_ok() {
         // Extract the request path
         if let Some(path) = request_line.split_whitespace().nth(1) {
             // Parse the authorization code from the callback URL

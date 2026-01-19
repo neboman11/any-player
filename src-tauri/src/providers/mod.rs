@@ -36,6 +36,9 @@ pub trait MusicProvider: Send + Sync {
     /// Get a specific playlist by ID
     async fn get_playlist(&self, id: &str) -> Result<Playlist, ProviderError>;
 
+    /// Get a specific track by ID
+    async fn get_track(&self, id: &str) -> Result<Track, ProviderError>;
+
     /// Search for tracks by query
     async fn search_tracks(&self, query: &str) -> Result<Vec<Track>, ProviderError>;
 
@@ -164,6 +167,30 @@ impl ProviderRegistry {
         }
     }
 
+    /// Get a specific Spotify track by ID
+    pub async fn get_spotify_track(&self, id: &str) -> Result<Track, ProviderError> {
+        if let Some(provider) = &self.spotify_provider {
+            let spotify = provider.lock().await;
+            spotify.get_track(id).await
+        } else {
+            Err(ProviderError(
+                "Spotify provider not authenticated".to_string(),
+            ))
+        }
+    }
+
+    /// Get a specific Spotify playlist by ID
+    pub async fn get_spotify_playlist(&self, id: &str) -> Result<Playlist, ProviderError> {
+        if let Some(provider) = &self.spotify_provider {
+            let spotify = provider.lock().await;
+            spotify.get_playlist(id).await
+        } else {
+            Err(ProviderError(
+                "Spotify provider not authenticated".to_string(),
+            ))
+        }
+    }
+
     /// Authenticate with Jellyfin
     pub async fn authenticate_jellyfin(
         &mut self,
@@ -192,6 +219,18 @@ impl ProviderRegistry {
         if let Some(provider) = &self.jellyfin_provider {
             let jellyfin = provider.lock().await;
             jellyfin.get_playlists().await
+        } else {
+            Err(ProviderError(
+                "Jellyfin provider not authenticated".to_string(),
+            ))
+        }
+    }
+
+    /// Get a specific Jellyfin track by ID
+    pub async fn get_jellyfin_track(&self, id: &str) -> Result<Track, ProviderError> {
+        if let Some(provider) = &self.jellyfin_provider {
+            let jellyfin = provider.lock().await;
+            jellyfin.get_track(id).await
         } else {
             Err(ProviderError(
                 "Jellyfin provider not authenticated".to_string(),
@@ -257,6 +296,48 @@ impl ProviderRegistry {
     pub async fn disconnect_spotify(&mut self) -> Result<(), ProviderError> {
         self.spotify_provider = None;
         Ok(())
+    }
+
+    /// Check if Spotify user has Premium subscription
+    ///
+    /// Returns Some(true) if user is premium, Some(false) if free tier,
+    /// or None if Spotify is not authenticated
+    pub async fn is_spotify_premium(&self) -> Option<bool> {
+        if let Some(provider) = &self.spotify_provider {
+            let spotify = provider.lock().await;
+            Some(spotify.is_premium())
+        } else {
+            None
+        }
+    }
+
+    /// Get Spotify access token for session initialization
+    ///
+    /// Returns the OAuth access token if authenticated, None otherwise.
+    /// This token can be used to initialize the librespot session.
+    pub async fn get_spotify_access_token(&self) -> Option<String> {
+        if let Some(provider) = &self.spotify_provider {
+            let spotify = provider.lock().await;
+            spotify.get_access_token().await
+        } else {
+            None
+        }
+    }
+
+    /// Refresh Spotify token and reinitialize session if needed
+    ///
+    /// This is called periodically to ensure the OAuth token stays valid.
+    /// After token refresh, the playback session may need to be reinitialized.
+    pub async fn refresh_spotify_token(&mut self) -> Result<(), ProviderError> {
+        if let Some(provider) = &self.spotify_provider {
+            let mut spotify = provider.lock().await;
+            spotify.refresh_token().await?;
+            Ok(())
+        } else {
+            Err(ProviderError(
+                "Spotify provider not authenticated".to_string(),
+            ))
+        }
     }
 
     /// Disconnect Jellyfin
