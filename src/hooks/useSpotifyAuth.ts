@@ -11,7 +11,6 @@ export function useSpotifyAuth() {
   const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [isPremium, setIsPremium] = useState<boolean | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
-  const [, forceUpdate] = useState({});
 
   const checkAuthStatus = useCallback(async () => {
     try {
@@ -20,7 +19,6 @@ export function useSpotifyAuth() {
       console.log("Backend auth status:", authenticated);
 
       setIsConnected(authenticated);
-      forceUpdate({}); // Force a re-render
       console.log("Updated isConnected state to:", authenticated);
 
       if (authenticated) {
@@ -71,25 +69,6 @@ export function useSpotifyAuth() {
     }
   }, []);
 
-  const completeAuth = useCallback(async (code: string) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      await tauriAPI.authenticateSpotify(code);
-      setIsConnected(true);
-      setAuthUrl(null);
-
-      // Save the session for persistence
-      await tauriAPI.saveSpotifySession();
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Authentication failed";
-      setError(message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
   const pollForAuth = useCallback(async () => {
     console.log(">>> pollForAuth started, waiting for OAuth callback...");
     let pollCount = 0;
@@ -110,8 +89,9 @@ export function useSpotifyAuth() {
             console.log(
               `Waiting ${AUTH_PROCESSING_DELAY_MS}ms for backend to complete auth...`,
             );
+            await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
 
-            // Simply re-check auth status from backend
+            // Re-check auth status from backend
             console.log("Re-checking authentication status from backend...");
             await checkAuthStatus();
             setAuthUrl(null);
@@ -170,9 +150,6 @@ export function useSpotifyAuth() {
       setAuthUrl(null);
       setIsPremium(null);
       setSessionReady(false);
-
-      // Clear saved session
-      await tauriAPI.clearSpotifySession();
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to disconnect";

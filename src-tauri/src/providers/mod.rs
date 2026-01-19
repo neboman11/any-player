@@ -318,7 +318,13 @@ impl ProviderRegistry {
         if let Ok(config_dir) = crate::config::Config::config_dir() {
             let cache_path = config_dir.join("spotify_cache.json");
             if cache_path.exists() {
-                let _ = std::fs::remove_file(cache_path);
+                if let Err(e) = std::fs::remove_file(&cache_path) {
+                    eprintln!(
+                        "Warning: failed to remove Spotify cache file ({}): {}",
+                        cache_path.display(),
+                        e
+                    );
+                }
             }
         }
 
@@ -414,13 +420,16 @@ impl ProviderRegistry {
         if cache_path.exists() {
             // Create provider with cache path - rspotify will automatically load from cache
             let mut spotify_provider =
-                spotify::SpotifyProvider::with_default_oauth_and_cache(cache_path);
+                spotify::SpotifyProvider::with_default_oauth_and_cache(cache_path.clone());
 
-            // Check if the cache restored a valid session
-            if spotify_provider.is_authenticated_status() {
-                // Check premium status after restoring from cache
-                let _ = spotify_provider.check_and_update_premium_status().await;
-
+            // Try to verify that the restored session is valid by checking premium status.
+            // This makes an authenticated API call which serves two purposes:
+            // 1. Confirms the cached token is valid and not expired
+            // 2. Updates the premium status flag for the user
+            //
+            // Note: If the API call succeeds but the token expires shortly after,
+            // the provider's refresh token mechanism will handle re-authentication.
+            if spotify_provider.check_and_update_premium_status().await.is_ok() {
                 self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
                 return Ok(true);
             }
@@ -435,9 +444,8 @@ impl ProviderRegistry {
         }
 
         // Create provider and try to restore with our tokens
-        let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth_and_cache(
-            config_dir.join("spotify_cache.json"),
-        );
+        let mut spotify_provider =
+            spotify::SpotifyProvider::with_default_oauth_and_cache(cache_path);
 
         if let Some(token) = tokens.spotify_token {
             spotify_provider.set_token(token).await?;

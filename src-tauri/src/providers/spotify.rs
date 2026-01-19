@@ -255,6 +255,7 @@ impl SpotifyProvider {
             if let Ok(guard) = token_guard {
                 guard.clone()
             } else {
+                eprintln!("Warning: failed to acquire token lock in get_token");
                 None
             }
         } else {
