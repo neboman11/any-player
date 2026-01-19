@@ -6,20 +6,24 @@ export function usePlaylists() {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const loadPlaylists = useCallback(async (source: TauriSource) => {
     try {
       setIsLoading(true);
       setError(null);
       const allPlaylists: Playlist[] = [];
+      let spotifyAuth = false;
+      let jellyfinAuth = false;
 
       // Load Spotify playlists if authenticated
       if (source === "spotify" || source === "all") {
         try {
-          const authenticated = await tauriAPI.isSpotifyAuthenticated();
-          if (authenticated) {
+          spotifyAuth = await tauriAPI.isSpotifyAuthenticated();
+          if (spotifyAuth) {
             const spotifyPlaylists = await tauriAPI.getSpotifyPlaylists();
             allPlaylists.push(...spotifyPlaylists);
+            console.log(`Loaded ${spotifyPlaylists.length} Spotify playlists`);
           }
         } catch (err) {
           console.error("Error loading Spotify playlists:", err);
@@ -29,10 +33,13 @@ export function usePlaylists() {
       // Load Jellyfin playlists if authenticated
       if (source === "jellyfin" || source === "all") {
         try {
-          const authenticated = await tauriAPI.isJellyfinAuthenticated();
-          if (authenticated) {
+          jellyfinAuth = await tauriAPI.isJellyfinAuthenticated();
+          if (jellyfinAuth) {
             const jellyfinPlaylists = await tauriAPI.getJellyfinPlaylists();
             allPlaylists.push(...jellyfinPlaylists);
+            console.log(
+              `Loaded ${jellyfinPlaylists.length} Jellyfin playlists`,
+            );
           }
         } catch (err) {
           console.error("Error loading Jellyfin playlists:", err);
@@ -40,7 +47,15 @@ export function usePlaylists() {
       }
 
       if (allPlaylists.length === 0) {
-        setError("No playlists found. Connect a service in Settings.");
+        if (!spotifyAuth && !jellyfinAuth) {
+          setError(
+            "No services connected. Connect Spotify or Jellyfin in Settings.",
+          );
+        } else {
+          setError(
+            "No playlists found. Create some playlists in your music service.",
+          );
+        }
       }
 
       setPlaylists(allPlaylists);
@@ -63,8 +78,12 @@ export function usePlaylists() {
         console.error("Error queueing playlist:", err);
       }
     },
-    []
+    [],
   );
+
+  const refresh = useCallback(() => {
+    setRefreshKey((prev) => prev + 1);
+  }, []);
 
   return {
     playlists,
@@ -72,5 +91,7 @@ export function usePlaylists() {
     error,
     loadPlaylists,
     queuePlaylist,
+    refresh,
+    refreshKey,
   };
 }

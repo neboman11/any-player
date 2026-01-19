@@ -35,6 +35,7 @@ pub fn run() {
     let oauth_code: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
     let providers_clone = providers.clone();
+    let playback_clone = playback.clone();
 
     let app_state = commands::AppState {
         playback,
@@ -98,9 +99,54 @@ pub fn run() {
             tauri::async_runtime::spawn(start_oauth_server(oauth_code_clone));
 
             // Try to restore Spotify session on startup
+            let playback_for_init = playback_clone.clone();
             tauri::async_runtime::block_on(async {
                 let mut providers = providers_clone.lock().await;
-                let _ = providers.restore_spotify_session().await;
+                match providers.restore_spotify_session().await {
+                    Ok(restored) => {
+                        if restored {
+                            tracing::info!("✓ Spotify session restored from cache on startup");
+
+                            // Auto-initialize session for premium users
+                            if let Some(true) = providers.is_spotify_premium().await {
+                                if let Some(access_token) =
+                                    providers.get_spotify_access_token().await
+                                {
+                                    tracing::info!(
+                                        "Auto-initializing Spotify session for premium user"
+                                    );
+                                    drop(providers);
+
+                                    let playback = playback_for_init.lock().await;
+                                    match playback.initialize_spotify_session(&access_token).await {
+                                        Ok(()) => {
+                                            if playback.is_spotify_session_ready().await {
+                                                tracing::info!(
+                                                    "✓ Spotify session auto-initialized and ready"
+                                                );
+                                            } else {
+                                                tracing::warn!(
+                                                    "Session initialized but not verified as ready"
+                                                );
+                                            }
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                "Failed to auto-initialize session: {}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            tracing::info!("No cached Spotify session found on startup");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to restore Spotify session: {}", e);
+                    }
+                }
             });
 
             Ok(())
