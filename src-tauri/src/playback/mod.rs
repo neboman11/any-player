@@ -40,7 +40,8 @@ impl VolumeGetter for NoOpVolume {
 struct RodioSink {
     // Keep the stream alive
     _stream: OutputStream,
-    sink: Sink,
+    // Wrap sink in Arc<Mutex> so we can share it with PlaybackHandle for direct control
+    sink: Arc<Mutex<Sink>>,
 }
 
 impl RodioSink {
@@ -51,8 +52,13 @@ impl RodioSink {
         let sink = Sink::try_new(&handle).map_err(|e| format!("Failed to create sink: {}", e))?;
         Ok(Self {
             _stream: stream,
-            sink,
+            sink: Arc::new(Mutex::new(sink)),
         })
+    }
+
+    /// Get a cloneable handle to the sink for direct control
+    fn get_sink_handle(&self) -> Arc<Mutex<Sink>> {
+        Arc::clone(&self.sink)
     }
 }
 
@@ -83,7 +89,10 @@ impl LibrespotSink for RodioSink {
                     LIBRESPOT_FALLBACK_SAMPLE_RATE,
                     samples_i16,
                 );
-                self.sink.append(source);
+                // Lock the sink to append samples
+                if let Ok(sink) = self.sink.try_lock() {
+                    sink.append(source);
+                }
             }
             _ => {
                 // Non-sample packets (e.g. encoded/ogg data) would require decoding;
@@ -91,6 +100,22 @@ impl LibrespotSink for RodioSink {
             }
         }
 
+        Ok(())
+    }
+
+    fn start(&mut self) -> librespot_playback::audio_backend::SinkResult<()> {
+        tracing::debug!("RodioSink::start() called - resuming playback");
+        if let Ok(sink) = self.sink.try_lock() {
+            sink.play();
+        }
+        Ok(())
+    }
+
+    fn stop(&mut self) -> librespot_playback::audio_backend::SinkResult<()> {
+        tracing::debug!("RodioSink::stop() called - pausing playback");
+        if let Ok(sink) = self.sink.try_lock() {
+            sink.pause();
+        }
         Ok(())
     }
 }
@@ -106,6 +131,9 @@ pub struct PlaybackHandle {
     duration_ms: Arc<AtomicU64>,
     /// Whether playback is paused
     is_paused: Arc<AtomicBool>,
+    /// Direct reference to rodio sink for immediate pause/play control
+    /// Using Arc<Mutex<Option<...>>> for interior mutability
+    sink: Arc<Mutex<Option<Arc<Mutex<Sink>>>>>,
 }
 
 impl PlaybackHandle {
@@ -115,7 +143,14 @@ impl PlaybackHandle {
             position_ms: Arc::new(AtomicU64::new(0)),
             duration_ms: Arc::new(AtomicU64::new(0)),
             is_paused: Arc::new(AtomicBool::new(false)),
+            sink: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Set the sink handle for direct pause/play control
+    pub async fn set_sink(&self, sink: Arc<Mutex<Sink>>) {
+        let mut sink_opt = self.sink.lock().await;
+        *sink_opt = Some(sink);
     }
 
     pub fn stop(&self) {
@@ -124,10 +159,32 @@ impl PlaybackHandle {
 
     pub fn pause(&self) {
         self.is_paused.store(true, Ordering::SeqCst);
+        // Directly pause the rodio sink for immediate effect
+        let sink_arc = self.sink.clone();
+        tokio::spawn(async move {
+            let sink_opt = sink_arc.lock().await;
+            if let Some(sink_handle) = sink_opt.as_ref() {
+                if let Ok(s) = sink_handle.try_lock() {
+                    tracing::warn!("PlaybackHandle::pause() - directly pausing rodio sink");
+                    s.pause();
+                }
+            }
+        });
     }
 
     pub fn resume(&self) {
         self.is_paused.store(false, Ordering::SeqCst);
+        // Directly resume the rodio sink for immediate effect
+        let sink_arc = self.sink.clone();
+        tokio::spawn(async move {
+            let sink_opt = sink_arc.lock().await;
+            if let Some(sink_handle) = sink_opt.as_ref() {
+                if let Ok(s) = sink_handle.try_lock() {
+                    tracing::warn!("PlaybackHandle::resume() - directly resuming rodio sink");
+                    s.play();
+                }
+            }
+        });
     }
 
     pub fn get_position(&self) -> u64 {
@@ -162,8 +219,11 @@ impl Default for PlaybackHandle {
 }
 
 /// Audio player for playback
+#[derive(Clone)]
 pub struct AudioPlayer {
     current_handle: Arc<Mutex<Option<PlaybackHandle>>>,
+    /// Store the active librespot player to keep it alive during playback
+    active_player: Arc<Mutex<Option<Arc<LibrespotPlayer>>>>,
 }
 
 /// Queue for managing playback
@@ -241,6 +301,7 @@ impl AudioPlayer {
     pub fn new() -> Self {
         Self {
             current_handle: Arc::new(Mutex::new(None)),
+            active_player: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -447,6 +508,7 @@ impl AudioPlayer {
         let handle_clone = handle.clone();
         let providers_clone = providers.clone();
         let track_id_for_fetch = clean_id.clone();
+        let audio_player_clone = self.clone();
 
         tokio::spawn(async move {
             let result = (|| async {
@@ -470,8 +532,13 @@ impl AudioPlayer {
                 // If a session was provided (manager created it), use it; otherwise obtain token and create one
                 if let Some(sess) = session {
                     tracing::info!("Using existing librespot Session from manager");
-                    Self::play_spotify_with_librespot(&track_id_for_fetch, &handle_clone, sess)
-                        .await?;
+                    Self::play_spotify_with_librespot(
+                        &audio_player_clone,
+                        &track_id_for_fetch,
+                        &handle_clone,
+                        sess,
+                    )
+                    .await?;
                 } else {
                     // Get the OAuth access token from the providers
                     let access_token = providers_locked
@@ -489,6 +556,7 @@ impl AudioPlayer {
                             tracing::info!("Librespot session created successfully");
                             // Use real streaming via librespot Player
                             Self::play_spotify_with_librespot(
+                                &audio_player_clone,
                                 &track_id_for_fetch,
                                 &handle_clone,
                                 session,
@@ -554,6 +622,7 @@ impl AudioPlayer {
 
     /// Play a Spotify track using librespot's real streaming
     async fn play_spotify_with_librespot(
+        audio_player: &AudioPlayer,
         track_id: &str,
         handle: &PlaybackHandle,
         _session: Session,
@@ -576,13 +645,25 @@ impl AudioPlayer {
         let config = PlayerConfig::default();
         let volume_getter = Box::new(NoOpVolume {});
 
-        // Sink builder: create a new RodioSink wrapped as librespot audio backend
-        let sink_builder = || -> Box<dyn LibrespotSink> {
-            // If creation fails we still return a boxed sink; unwrap is acceptable here
-            Box::new(RodioSink::new().expect("Failed to create RodioSink"))
+        // Create a shared sink handle that both the player and handle can access
+        // We create it here and share it
+        let shared_sink = Arc::new(Mutex::new(None::<Arc<Mutex<Sink>>>));
+        let shared_sink_for_builder = shared_sink.clone();
+
+        // Sink builder: create a new RodioSink and store its handle
+        let sink_builder = move || -> Box<dyn LibrespotSink> {
+            let rodio_sink = RodioSink::new().expect("Failed to create RodioSink");
+            let sink_handle = rodio_sink.get_sink_handle();
+
+            // Store the sink handle so we can access it later
+            if let Ok(mut shared) = shared_sink_for_builder.try_lock() {
+                *shared = Some(sink_handle);
+            }
+
+            Box::new(rodio_sink)
         };
 
-        // Create the player
+        // Create the player (this will call sink_builder once)
         let mut player =
             LibrespotPlayer::new(config, _session.clone(), volume_getter, sink_builder);
 
@@ -596,8 +677,110 @@ impl AudioPlayer {
             0,
         );
 
-        // Wait until end of track
-        player.await_end_of_track().await;
+        // Wait a moment for the sink_builder to be called during load
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Now retrieve the sink handle and set it in the playback handle
+        if let Ok(shared) = shared_sink.try_lock() {
+            if let Some(sink_handle) = shared.as_ref() {
+                // Set the sink handle in the playback handle for direct control
+                handle.set_sink(sink_handle.clone()).await;
+                tracing::info!(
+                    "Sink handle connected to PlaybackHandle for direct pause/play control"
+                );
+            } else {
+                tracing::warn!("Sink handle not available after load - sink_builder may not have been called yet");
+            }
+        }
+
+        // Store the player to keep it alive during playback
+        {
+            let mut active = audio_player.active_player.lock().await;
+            *active = Some(player);
+        }
+
+        // Spawn a task to monitor playback and track progress
+        let active_player = audio_player.active_player.clone();
+        let handle_clone = handle.clone();
+        tokio::spawn(async move {
+            let start_time = Instant::now();
+            let mut pause_time: Option<Instant> = None;
+            let mut accumulated_pause_duration = Duration::from_secs(0);
+            let mut last_paused_state = false;
+
+            // Wait for the player to finish or be stopped
+            loop {
+                if handle_clone.should_stop() {
+                    tracing::info!("Playback stopped by user");
+                    break;
+                }
+
+                // Check for pause state changes
+                let is_paused = handle_clone.is_paused();
+                if is_paused != last_paused_state {
+                    tracing::warn!(
+                        "Pause state changed: was={}, now={}",
+                        last_paused_state,
+                        is_paused
+                    );
+
+                    if is_paused {
+                        // Entering pause state
+                        tracing::info!("Playback paused - stopping position updates");
+                        pause_time = Some(Instant::now());
+                        // Note: Actual audio pause is handled by PlaybackHandle::pause()
+                        // which directly controls the rodio sink
+                    } else {
+                        // Exiting pause state (resuming)
+                        tracing::info!("Playback resumed - restarting position updates");
+                        if let Some(paused_at) = pause_time {
+                            accumulated_pause_duration += paused_at.elapsed();
+                            pause_time = None;
+                        }
+                        // Note: Actual audio resume is handled by PlaybackHandle::resume()
+                        // which directly controls the rodio sink
+                    }
+                    last_paused_state = is_paused;
+                }
+
+                // Calculate current position accounting for pauses
+                let elapsed = if let Some(paused_at) = pause_time {
+                    // Currently paused: use time up to pause
+                    start_time.elapsed() - accumulated_pause_duration - paused_at.elapsed()
+                } else {
+                    // Not paused: use full elapsed time minus accumulated pause duration
+                    start_time.elapsed() - accumulated_pause_duration
+                };
+
+                let position_ms = elapsed.as_millis() as u64;
+                handle_clone.set_position(position_ms);
+
+                // Check if we've reached the end based on duration
+                let duration_ms = handle_clone.get_duration();
+                if duration_ms > 0 && position_ms >= duration_ms {
+                    tracing::info!("Track playback completed based on duration");
+                    break;
+                }
+
+                // Also check if player is still active
+                {
+                    let active_lock = active_player.lock().await;
+                    if active_lock.is_none() {
+                        tracing::info!("Player no longer active");
+                        break;
+                    }
+                }
+
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+
+            // Clean up the player when done
+            {
+                let mut active = active_player.lock().await;
+                *active = None;
+                tracing::info!("Librespot player cleaned up");
+            }
+        });
 
         Ok(())
     }
@@ -754,6 +937,7 @@ impl PlaybackManager {
                                 let position = handle.get_position();
                                 let duration = handle.get_duration();
                                 let should_stop = handle.should_stop();
+                                let is_paused = handle.is_paused();
 
                                 let mut info = info_clone.lock().await;
                                 info.position_ms = position;
@@ -761,7 +945,16 @@ impl PlaybackManager {
                                     info.current_track.as_mut().unwrap().duration_ms = duration;
                                 }
 
-                                if should_stop || duration == 0 {
+                                // Update playback state based on pause status
+                                if is_paused {
+                                    info.state = PlaybackState::Paused;
+                                } else if !should_stop {
+                                    info.state = PlaybackState::Playing;
+                                }
+
+                                // Only stop if explicitly stopped, not if duration is 0
+                                if should_stop {
+                                    info.state = PlaybackState::Stopped;
                                     break;
                                 }
 
@@ -786,6 +979,7 @@ impl PlaybackManager {
                                 let position = handle.get_position();
                                 let duration = handle.get_duration();
                                 let should_stop = handle.should_stop();
+                                let is_paused = handle.is_paused();
 
                                 let mut info = info_clone.lock().await;
                                 info.position_ms = position;
@@ -793,7 +987,16 @@ impl PlaybackManager {
                                     info.current_track.as_mut().unwrap().duration_ms = duration;
                                 }
 
-                                if should_stop || duration == 0 {
+                                // Update playback state based on pause status
+                                if is_paused {
+                                    info.state = PlaybackState::Paused;
+                                } else if !should_stop {
+                                    info.state = PlaybackState::Playing;
+                                }
+
+                                // Only stop if explicitly stopped, not if duration is 0
+                                if should_stop {
+                                    info.state = PlaybackState::Stopped;
                                     break;
                                 }
 
