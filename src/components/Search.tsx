@@ -34,9 +34,10 @@ export function Search() {
         await playback.updateStatus();
 
         // Play actual audio if URL is available
-        if ((result as any).url) {
-          console.log("Playing audio from URL:", (result as any).url);
-          audio.playAudio((result as any).url);
+        if ("url" in result && typeof (result as { url?: unknown }).url === "string") {
+          const url = (result as { url: string }).url;
+          console.log("Playing audio from URL:", url);
+          audio.playAudio(url);
         }
       }
     },
