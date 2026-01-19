@@ -35,9 +35,8 @@ export function Search() {
 
         // Play actual audio if URL is available
         if ("url" in result && typeof (result as { url?: unknown }).url === "string") {
-          const url = (result as { url: string }).url;
-          console.log("Playing audio from URL:", url);
-          audio.playAudio(url);
+          console.log("Playing audio from URL:", result.url);
+          audio.playAudio((result as { url: string }).url);
         }
       }
     },
