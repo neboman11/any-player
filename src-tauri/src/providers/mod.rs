@@ -105,9 +105,14 @@ impl ProviderRegistry {
     /// Initialize Spotify provider with default OAuth configuration (PKCE - no secrets needed)
     pub fn get_spotify_auth_url_default(&mut self) -> Result<String, ProviderError> {
         // Use cache path from config
-        let cache_path = crate::config::Config::config_dir()
-            .map_err(|e| ProviderError(format!("Failed to get config dir: {}", e)))?
-            .join("spotify_cache.json");
+        let config_dir = crate::config::Config::config_dir()
+            .map_err(|e| ProviderError(format!("Failed to get config dir: {}", e)))?;
+
+        // Ensure config directory exists before setting cache path
+        std::fs::create_dir_all(&config_dir)
+            .map_err(|e| ProviderError(format!("Failed to create config directory: {}", e)))?;
+
+        let cache_path = config_dir.join("spotify_cache.json");
 
         let mut spotify_provider =
             spotify::SpotifyProvider::with_default_oauth_and_cache(cache_path);
@@ -397,18 +402,25 @@ impl ProviderRegistry {
     pub async fn restore_spotify_session(&mut self) -> Result<bool, ProviderError> {
         use crate::config::Config;
 
-        // Try to restore from rspotify's cache file first
-        let cache_path = Config::config_dir()
-            .map_err(|e| ProviderError(format!("Failed to get config dir: {}", e)))?
-            .join("spotify_cache.json");
+        // Get config directory and ensure it exists
+        let config_dir = Config::config_dir()
+            .map_err(|e| ProviderError(format!("Failed to get config dir: {}", e)))?;
+
+        std::fs::create_dir_all(&config_dir)
+            .map_err(|e| ProviderError(format!("Failed to create config directory: {}", e)))?;
+
+        let cache_path = config_dir.join("spotify_cache.json");
 
         if cache_path.exists() {
             // Create provider with cache path - rspotify will automatically load from cache
-            let spotify_provider =
+            let mut spotify_provider =
                 spotify::SpotifyProvider::with_default_oauth_and_cache(cache_path);
 
             // Check if the cache restored a valid session
             if spotify_provider.is_authenticated_status() {
+                // Check premium status after restoring from cache
+                let _ = spotify_provider.check_and_update_premium_status().await;
+
                 self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
                 return Ok(true);
             }
@@ -424,13 +436,14 @@ impl ProviderRegistry {
 
         // Create provider and try to restore with our tokens
         let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth_and_cache(
-            Config::config_dir()
-                .map_err(|e| ProviderError(format!("Failed to get config dir: {}", e)))?
-                .join("spotify_cache.json"),
+            config_dir.join("spotify_cache.json"),
         );
 
         if let Some(token) = tokens.spotify_token {
             spotify_provider.set_token(token).await?;
+            // Check premium status after setting token
+            let _ = spotify_provider.check_and_update_premium_status().await;
+
             self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
             Ok(true)
         } else {

@@ -166,6 +166,29 @@ impl SpotifyProvider {
         Ok(is_premium)
     }
 
+    /// Check and update premium status from Spotify API
+    pub async fn check_and_update_premium_status(&mut self) -> Result<(), ProviderError> {
+        match self.get_current_user_profile().await {
+            Ok(is_premium) => {
+                self.is_premium = is_premium;
+                if !is_premium {
+                    tracing::warn!(
+                        "Premium required for full Spotify playback. User has free tier account."
+                    );
+                }
+                Ok(())
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to check premium status: {}. Defaulting to free tier.",
+                    e
+                );
+                self.is_premium = false;
+                Err(e)
+            }
+        }
+    }
+
     /// Complete the authentication flow with an authorization code
     pub async fn authenticate_with_code(&mut self, code: &str) -> Result<(), ProviderError> {
         let client = self

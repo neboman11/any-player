@@ -1,8 +1,8 @@
 // Tauri command handlers for Any Player desktop app
 use crate::{PlaybackManager, PlaybackState, ProviderRegistry, RepeatMode};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
 
@@ -362,7 +362,9 @@ pub async fn authenticate_spotify(state: State<'_, AppState>, code: String) -> R
 #[tauri::command]
 pub async fn is_spotify_authenticated(state: State<'_, AppState>) -> Result<bool, String> {
     let providers = state.providers.lock().await;
-    Ok(providers.is_spotify_authenticated().await)
+    let authenticated = providers.is_spotify_authenticated().await;
+    tracing::debug!("is_spotify_authenticated query result: {}", authenticated);
+    Ok(authenticated)
 }
 
 /// Check if user has Spotify Premium
@@ -827,17 +829,17 @@ fn cleanup_old_temp_audio_files() {
         return;
     };
     let now = now_duration.as_secs();
-    
+
     let last = LAST_CLEANUP.load(Ordering::Relaxed);
     if now.saturating_sub(last) < CLEANUP_INTERVAL_SECONDS {
         return; // Skip cleanup if run too recently
     }
-    
+
     // Update last cleanup time
     LAST_CLEANUP.store(now, Ordering::Relaxed);
 
     let temp_dir = std::env::temp_dir();
-    
+
     if let Ok(entries) = std::fs::read_dir(&temp_dir) {
         for entry in entries.flatten() {
             if let Ok(file_name) = entry.file_name().into_string() {
@@ -849,7 +851,11 @@ fn cleanup_old_temp_audio_files() {
                             if let Ok(elapsed) = SystemTime::now().duration_since(modified) {
                                 if elapsed.as_secs() > TEMP_FILE_MAX_AGE_SECONDS {
                                     if let Err(e) = std::fs::remove_file(entry.path()) {
-                                        tracing::warn!("Failed to remove old temp file {}: {}", file_name, e);
+                                        tracing::warn!(
+                                            "Failed to remove old temp file {}: {}",
+                                            file_name,
+                                            e
+                                        );
                                     } else {
                                         tracing::info!("Cleaned up old temp file: {}", file_name);
                                     }
@@ -868,14 +874,18 @@ fn cleanup_old_temp_audio_files() {
 /// the application doesn't run long enough for the rate-limited cleanup to trigger
 pub fn cleanup_all_temp_audio_files() {
     let temp_dir = std::env::temp_dir();
-    
+
     if let Ok(entries) = std::fs::read_dir(&temp_dir) {
         for entry in entries.flatten() {
             if let Ok(file_name) = entry.file_name().into_string() {
                 // Only process our temporary audio files
                 if file_name.starts_with("any-player-audio-") && file_name.ends_with(".mp3") {
                     if let Err(e) = std::fs::remove_file(entry.path()) {
-                        tracing::warn!("Failed to remove temp file {} on shutdown: {}", file_name, e);
+                        tracing::warn!(
+                            "Failed to remove temp file {} on shutdown: {}",
+                            file_name,
+                            e
+                        );
                     } else {
                         tracing::debug!("Cleaned up temp file on shutdown: {}", file_name);
                     }
