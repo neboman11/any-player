@@ -1,6 +1,9 @@
 import { useState, useCallback, useEffect } from "react";
 import { tauriAPI } from "../api";
 
+// Time to wait for backend to process OAuth authentication (in milliseconds)
+const AUTH_PROCESSING_DELAY_MS = 1000;
+
 export function useSpotifyAuth() {
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -98,7 +101,7 @@ export function useSpotifyAuth() {
             setAuthUrl(null);
 
             // Wait a moment for the backend to process the auth
-            await new Promise((r) => setTimeout(r, 1000));
+            await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
 
             // Check if premium and session is ready
             try {

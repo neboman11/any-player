@@ -93,6 +93,12 @@ pub fn run() {
             tauri::async_runtime::spawn(start_oauth_server(oauth_code_clone));
             Ok(())
         })
+        .on_window_event(|_window, event| {
+            // Clean up temporary audio files when the application is closing
+            if let tauri::WindowEvent::Destroyed = event {
+                commands::cleanup_all_temp_audio_files();
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
