@@ -819,3 +819,25 @@ fn cleanup_old_temp_audio_files() {
         }
     }
 }
+
+/// Clean up all temporary audio files created by the application
+/// This is called on application shutdown to ensure cleanup happens even if
+/// the application doesn't run long enough for the rate-limited cleanup to trigger
+pub fn cleanup_all_temp_audio_files() {
+    let temp_dir = std::env::temp_dir();
+    
+    if let Ok(entries) = std::fs::read_dir(&temp_dir) {
+        for entry in entries.flatten() {
+            if let Ok(file_name) = entry.file_name().into_string() {
+                // Only process our temporary audio files
+                if file_name.starts_with("any-player-audio-") && file_name.ends_with(".mp3") {
+                    if let Err(e) = std::fs::remove_file(entry.path()) {
+                        tracing::warn!("Failed to remove temp file {} on shutdown: {}", file_name, e);
+                    } else {
+                        tracing::debug!("Cleaned up temp file on shutdown: {}", file_name);
+                    }
+                }
+            }
+        }
+    }
+}
