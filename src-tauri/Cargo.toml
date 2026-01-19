@@ -53,6 +53,7 @@ symphonia = "0.5"
 # Config management
 config = "0.13"
 dirs = "5.0"
+keyring = { version = "3.6", features = ["linux-native"] }
 
 # Utilities
 futures = "0.3"
