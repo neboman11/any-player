@@ -2,8 +2,18 @@
 use crate::{PlaybackManager, PlaybackState, ProviderRegistry, RepeatMode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::State;
 use tokio::sync::Mutex;
+
+/// Maximum age of temporary audio files before cleanup (1 hour)
+const TEMP_FILE_MAX_AGE_SECONDS: u64 = 3600;
+
+/// Minimum interval between cleanup runs (5 minutes)
+const CLEANUP_INTERVAL_SECONDS: u64 = 300;
+
+/// Last cleanup timestamp (in seconds since UNIX epoch)
+static LAST_CLEANUP: AtomicU64 = AtomicU64::new(0);
 
 /// Shared application state
 pub struct AppState {
@@ -717,11 +727,15 @@ pub async fn disconnect_jellyfin(state: State<'_, AppState>) -> Result<(), Strin
 }
 
 /// Download audio to a temporary file and return the path as a file:// URL
+/// Automatically cleans up old temporary audio files to prevent disk space issues
 #[tauri::command]
 pub async fn get_audio_file(url: String) -> Result<String, String> {
     use std::io::Write;
 
     tracing::info!("Downloading audio from: {}", url);
+
+    // Clean up old temporary audio files first
+    cleanup_old_temp_audio_files();
 
     // Fetch the audio file
     let response = reqwest::Client::new()
@@ -757,4 +771,51 @@ pub async fn get_audio_file(url: String) -> Result<String, String> {
     let file_url = format!("file://{}", file_path.display());
     tracing::info!("Audio saved to: {}", file_url);
     Ok(file_url)
+}
+
+/// Clean up old temporary audio files (older than 1 hour)
+/// Rate-limited to run at most once every 5 minutes to avoid expensive directory scans
+fn cleanup_old_temp_audio_files() {
+    use std::time::SystemTime;
+
+    // Check if enough time has passed since last cleanup
+    let Ok(now_duration) = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) else {
+        tracing::warn!("System time is before UNIX epoch, skipping cleanup");
+        return;
+    };
+    let now = now_duration.as_secs();
+    
+    let last = LAST_CLEANUP.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < CLEANUP_INTERVAL_SECONDS {
+        return; // Skip cleanup if run too recently
+    }
+    
+    // Update last cleanup time
+    LAST_CLEANUP.store(now, Ordering::Relaxed);
+
+    let temp_dir = std::env::temp_dir();
+    
+    if let Ok(entries) = std::fs::read_dir(&temp_dir) {
+        for entry in entries.flatten() {
+            if let Ok(file_name) = entry.file_name().into_string() {
+                // Only process our temporary audio files
+                if file_name.starts_with("any-player-audio-") && file_name.ends_with(".mp3") {
+                    // Check if file is older than configured max age
+                    if let Ok(metadata) = entry.metadata() {
+                        if let Ok(modified) = metadata.modified() {
+                            if let Ok(elapsed) = SystemTime::now().duration_since(modified) {
+                                if elapsed.as_secs() > TEMP_FILE_MAX_AGE_SECONDS {
+                                    if let Err(e) = std::fs::remove_file(entry.path()) {
+                                        tracing::warn!("Failed to remove old temp file {}: {}", file_name, e);
+                                    } else {
+                                        tracing::info!("Cleaned up old temp file: {}", file_name);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
