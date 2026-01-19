@@ -54,7 +54,7 @@ pub struct JellyfinConfig {
 }
 
 /// Token storage with file system protections
-/// 
+///
 /// Stores authentication tokens in a JSON file with restrictive file permissions
 /// on Unix systems (0600). Note: This is not cryptographically secure storage.
 /// On Windows, file permissions are not as restrictive. For production use with
@@ -286,12 +286,15 @@ mod tests {
             let metadata = fs::metadata(&token_path).expect("Failed to get file metadata");
             let mode = metadata.permissions().mode();
             // Check that only owner has read/write (0600)
-            assert_eq!(mode & 0o777, 0o600, "Token file should have 0600 permissions");
+            assert_eq!(
+                mode & 0o777,
+                0o600,
+                "Token file should have 0600 permissions"
+            );
         }
 
         // Cleanup
         let _ = Config::clear_tokens();
-    }
     }
 
     #[test]
