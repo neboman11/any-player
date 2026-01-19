@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { useSpotifyAuth, useJellyfinAuth } from "../hooks";
+import { ProviderStatus } from "./ProviderStatus";
 
 interface AuthModalProps {
   authUrl: string;
@@ -179,17 +180,21 @@ export function Settings() {
                 {spotify.isLoading
                   ? "Connecting..."
                   : spotify.isConnected
-                  ? "Disconnect Spotify"
-                  : "Connect Spotify"}
+                    ? "Disconnect Spotify"
+                    : "Connect Spotify"}
               </button>
-              <p id="spotify-status" className="status-text">
-                {spotify.isConnected ? "✓ Connected" : "✗ Not connected"}
-              </p>
-              {spotify.error && (
-                <p style={{ color: "red", fontSize: "0.9em" }}>
-                  Error: {spotify.error}
-                </p>
-              )}
+              <ProviderStatus
+                status={{
+                  isConnected: spotify.isConnected,
+                  isPremium: spotify.isPremium,
+                  sessionReady: spotify.sessionReady,
+                  error: spotify.error,
+                  isLoading: spotify.isLoading,
+                }}
+                onInitializeSession={spotify.initializeSession}
+                providerColor="#1DB954"
+                providerName="Spotify"
+              />
             </div>
             <div className="provider-item">
               <h4>Jellyfin</h4>

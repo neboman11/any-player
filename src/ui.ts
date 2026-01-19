@@ -116,10 +116,10 @@ export class UI {
     const searchBtn = document.getElementById("search-btn");
     const searchInput = document.getElementById("search-input");
     const searchTabs = document.querySelectorAll<HTMLButtonElement>(
-      ".search-tabs .tab-btn"
+      ".search-tabs .tab-btn",
     );
     const searchSourceTabs = document.querySelectorAll<HTMLButtonElement>(
-      ".search-source-tabs .tab-btn"
+      ".search-source-tabs .tab-btn",
     );
 
     searchBtn?.addEventListener("click", () => void this.performSearch());
@@ -147,7 +147,7 @@ export class UI {
 
   private setupPlaylistTabs(): void {
     const tabs = document.querySelectorAll<HTMLButtonElement>(
-      ".playlist-tabs .tab-btn"
+      ".playlist-tabs .tab-btn",
     );
     tabs.forEach((btn) => {
       btn.addEventListener("click", (e) => {
@@ -328,14 +328,14 @@ export class UI {
     try {
       // Get the active search tab (tracks or playlists)
       const activeTab = document.querySelector<HTMLButtonElement>(
-        ".search-tabs .tab-btn.active"
+        ".search-tabs .tab-btn.active",
       );
       const searchType =
         (activeTab?.dataset.type as SearchType | undefined) ?? "tracks";
 
       // Get the active source tab
       const activeSourceTab = document.querySelector<HTMLButtonElement>(
-        ".search-source-tabs .tab-btn.active"
+        ".search-source-tabs .tab-btn.active",
       );
       const source =
         (activeSourceTab?.dataset.source as TauriSource | undefined) ?? "all";
@@ -363,7 +363,7 @@ export class UI {
                 artist: track.artist,
                 type: "track" as const,
                 source: track.source,
-              }))
+              })),
             );
           } catch (error) {
             console.warn("Could not search Jellyfin tracks:", error);
@@ -373,9 +373,8 @@ export class UI {
         // Search for playlists
         if (source === "jellyfin" || source === "all") {
           try {
-            const jellyfinPlaylists = await tauriAPI.searchJellyfinPlaylists(
-              query
-            );
+            const jellyfinPlaylists =
+              await tauriAPI.searchJellyfinPlaylists(query);
             results = results.concat(
               jellyfinPlaylists.map((p: Playlist) => ({
                 id: p.id,
@@ -383,7 +382,7 @@ export class UI {
                 owner: p.owner,
                 type: "playlist" as const,
                 source: p.source,
-              }))
+              })),
             );
           } catch (error) {
             console.warn("Could not search Jellyfin playlists:", error);
@@ -660,6 +659,29 @@ export class UI {
       if (btnEl) btnEl.textContent = "Disconnect Spotify";
 
       console.log("Spotify authentication successful!");
+      // Try to initialize the librespot session on the backend using the
+      // provider-managed token. This ensures the session is actually
+      // prepared for premium playback when the UI shows connected state.
+      try {
+        await tauriAPI.initializeSpotifySessionFromProvider();
+        // Verify session readiness and reflect in the UI
+        const ready = await tauriAPI.isSpotifySessionReady();
+        const statusAfter = document.getElementById("spotify-status");
+        if (ready && statusAfter) {
+          statusAfter.textContent = "✓ Connected (session ready)";
+          statusAfter.className = "status connected";
+        } else if (statusAfter) {
+          statusAfter.textContent = "⚠ Connected (session not ready)";
+          statusAfter.className = "status warn";
+        }
+      } catch (err) {
+        console.warn("Failed to initialize Spotify session from UI:", err);
+        const statusAfter = document.getElementById("spotify-status");
+        if (statusAfter) {
+          statusAfter.textContent = "⚠ Connected (session init failed)";
+          statusAfter.className = "status warn";
+        }
+      }
     } catch (error) {
       console.error("Error completing Spotify auth:", error);
       const status = document.getElementById("spotify-status");
@@ -691,7 +713,7 @@ export class UI {
 
   private async performJellyfinConnection(
     url: string,
-    apiKey: string
+    apiKey: string,
   ): Promise<void> {
     try {
       const status = document.getElementById("jellyfin-status");
