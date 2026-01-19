@@ -9,9 +9,9 @@ export interface PlaybackStatus {
   shuffle: boolean;
   repeat_mode: "off" | "one" | "all";
   volume: number;
-  current_track?: Track;
-  position?: number;
-  duration?: number;
+  current_track: Track | null;
+  position: number;
+  duration: number;
 }
 
 export interface Track {
@@ -21,6 +21,7 @@ export interface Track {
   album?: string;
   duration?: number;
   source: "spotify" | "jellyfin";
+  url?: string;
 }
 
 export interface Playlist {
@@ -30,6 +31,8 @@ export interface Playlist {
   track_count: number;
   source: "spotify" | "jellyfin";
   image_url?: string;
+  tracks?: Track[];
+  description?: string;
 }
 
 export interface SearchResult {

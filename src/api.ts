@@ -10,7 +10,7 @@ declare global {
     __TAURI__: {
       invoke: (
         command: string,
-        args?: Record<string, unknown>
+        args?: Record<string, unknown>,
       ) => Promise<unknown>;
       shell?: {
         open: (url: string) => Promise<void>;
@@ -66,8 +66,12 @@ export class TauriAPI {
     return invoke<Playlist[]>("get_playlists", { source });
   }
 
+  async playTrack(trackId: string, source: string): Promise<void> {
+    return invoke<void>("play_track", { trackId, source });
+  }
+
   async queueTrack(trackId: string, source: string): Promise<void> {
-    return invoke<void>("queue_track", { track_id: trackId, source });
+    return invoke<void>("queue_track", { trackId, source });
   }
 
   async clearQueue(): Promise<void> {
@@ -87,8 +91,32 @@ export class TauriAPI {
     return invoke<boolean>("is_spotify_authenticated");
   }
 
+  async checkSpotifyPremium(): Promise<boolean> {
+    return invoke<boolean>("check_spotify_premium");
+  }
+
+  async initializeSpotifySession(accessToken: string): Promise<void> {
+    return invoke<void>("initialize_spotify_session", { accessToken });
+  }
+
+  async initializeSpotifySessionFromProvider(): Promise<void> {
+    return invoke<void>("initialize_spotify_session_from_provider");
+  }
+
+  async isSpotifySessionReady(): Promise<boolean> {
+    return invoke<boolean>("is_spotify_session_ready");
+  }
+
+  async refreshSpotifyToken(): Promise<void> {
+    return invoke<void>("refresh_spotify_token");
+  }
+
   async getSpotifyPlaylists(): Promise<Playlist[]> {
     return invoke<Playlist[]>("get_spotify_playlists");
+  }
+
+  async getSpotifyPlaylist(id: string): Promise<Playlist> {
+    return invoke<Playlist>("get_spotify_playlist", { id });
   }
 
   async checkOAuthCode(): Promise<boolean> {
@@ -145,6 +173,10 @@ export class TauriAPI {
 
   async disconnectJellyfin(): Promise<void> {
     return invoke<void>("disconnect_jellyfin");
+  }
+
+  async getAudioFile(url: string): Promise<string> {
+    return invoke<string>("get_audio_file", { url });
   }
 }
 
