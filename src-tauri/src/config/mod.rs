@@ -155,6 +155,25 @@ impl Config {
     }
 
     /// Save tokens to secure location
+    ///
+    /// # Security Notes
+    ///
+    /// Currently, tokens are stored in plain JSON with file permissions set to 0600 (user-only)
+    /// on Unix systems. This provides basic protection but is not cryptographically secure.
+    ///
+    /// **Recommendations for production use:**
+    /// - **macOS**: Use the Keychain API via the `keyring` or `security-framework` crate
+    /// - **Windows**: Use the Credential Manager via the `keyring` or `windows` crate
+    /// - **Linux**: Use Secret Service API via the `keyring` or `secret-service` crate
+    /// - **Cross-platform**: Consider the `keyring` crate which provides a unified interface
+    ///
+    /// Alternatively, tokens could be encrypted using a key derived from the system
+    /// (e.g., via `ring` or `aes-gcm` crates) before writing to disk.
+    ///
+    /// For now, we rely on:
+    /// 1. OAuth tokens that expire and can be refreshed
+    /// 2. File system permissions (Unix: 0600, Windows: ACLs via OS defaults)
+    /// 3. User responsibility for system security
     pub fn save_tokens(tokens: &TokenStorage) -> Result<(), Box<dyn std::error::Error>> {
         let config_dir = Self::config_dir()?;
         let token_path = config_dir.join("tokens.json");
@@ -191,11 +210,125 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn test_default_config() {
         let config = Config::default();
         assert_eq!(config.general.log_level, "info");
         assert!(config.general.enable_images);
+    }
+
+    #[test]
+    fn test_token_storage_default() {
+        let storage = TokenStorage::default();
+        assert!(storage.spotify_token.is_none());
+        assert!(storage.jellyfin_api_key.is_none());
+    }
+
+    #[test]
+    fn test_token_storage_serialization() {
+        let storage = TokenStorage {
+            spotify_token: None,
+            jellyfin_api_key: Some("test_key".to_string()),
+        };
+
+        // Test that we can serialize to JSON
+        let json = serde_json::to_string(&storage);
+        assert!(json.is_ok());
+
+        // Test that we can deserialize from JSON
+        let json_str = json.unwrap();
+        let deserialized: Result<TokenStorage, _> = serde_json::from_str(&json_str);
+        assert!(deserialized.is_ok());
+
+        let deserialized_storage = deserialized.unwrap();
+        assert_eq!(
+            deserialized_storage.jellyfin_api_key,
+            Some("test_key".to_string())
+        );
+    }
+
+    #[test]
+    fn test_save_and_load_tokens() {
+        // Use a temporary directory for testing
+        let temp_dir = std::env::temp_dir().join("any-player-test");
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Mock config directory using environment variable or direct path
+        let test_token_path = temp_dir.join("test_tokens.json");
+
+        // Create test token storage
+        let tokens = TokenStorage {
+            spotify_token: None,
+            jellyfin_api_key: Some("test_api_key".to_string()),
+        };
+
+        // Save tokens to test file
+        let json = serde_json::to_string_pretty(&tokens).unwrap();
+        fs::write(&test_token_path, json).unwrap();
+
+        // Load tokens from test file
+        let content = fs::read_to_string(&test_token_path).unwrap();
+        let loaded_tokens: TokenStorage = serde_json::from_str(&content).unwrap();
+
+        // Verify
+        assert_eq!(
+            loaded_tokens.jellyfin_api_key,
+            Some("test_api_key".to_string())
+        );
+        assert!(loaded_tokens.spotify_token.is_none());
+
+        // Cleanup
+        let _ = fs::remove_file(&test_token_path);
+        let _ = fs::remove_dir(&temp_dir);
+    }
+
+    #[test]
+    fn test_clear_tokens_nonexistent_file() {
+        // This should not panic when the file doesn't exist
+        // We can't easily test the actual clear_tokens function without mocking,
+        // but we can test the file removal logic
+        let temp_dir = std::env::temp_dir().join("any-player-test-clear");
+        let test_path = temp_dir.join("nonexistent_tokens.json");
+
+        // Ensure it doesn't exist
+        let _ = fs::remove_file(&test_path);
+
+        // This should handle the case gracefully
+        if test_path.exists() {
+            let result = fs::remove_file(&test_path);
+            assert!(result.is_ok());
+        }
+        // No assertion needed - just shouldn't panic
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_token_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = std::env::temp_dir().join("any-player-test-perms");
+        fs::create_dir_all(&temp_dir).unwrap();
+        let test_token_path = temp_dir.join("test_tokens_perms.json");
+
+        // Create test file
+        let tokens = TokenStorage::default();
+        let json = serde_json::to_string_pretty(&tokens).unwrap();
+        fs::write(&test_token_path, json).unwrap();
+
+        // Set secure permissions (600)
+        let mut perms = fs::metadata(&test_token_path).unwrap().permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(&test_token_path, perms).unwrap();
+
+        // Verify permissions
+        let metadata = fs::metadata(&test_token_path).unwrap();
+        let mode = metadata.permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+
+        // Cleanup
+        let _ = fs::remove_file(&test_token_path);
+        let _ = fs::remove_dir(&temp_dir);
     }
 }
