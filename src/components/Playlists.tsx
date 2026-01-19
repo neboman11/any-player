@@ -13,11 +13,6 @@ export function Playlists() {
   const audio = useAudioPlayback();
   const sources: TauriSource[] = ["all", "spotify", "jellyfin"];
 
-  // Reload playlists when component mounts (important after auth)
-  useEffect(() => {
-    void loadPlaylists(activeSource);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   // Reload playlists when activeSource or refreshKey changes
   useEffect(() => {
     void loadPlaylists(activeSource);
