@@ -2,7 +2,6 @@ use super::{MusicProvider, ProviderError};
 use crate::models::{Playlist, Source, Track};
 use async_trait::async_trait;
 use futures::stream::StreamExt;
-use rspotify::{prelude::*, scopes, AuthCodePkceSpotify, Credentials, OAuth};
 use rspotify::{prelude::*, scopes, AuthCodePkceSpotify, Credentials, OAuth, Token};
 use std::path::PathBuf;
 
@@ -95,49 +94,13 @@ impl SpotifyProvider {
 
         // Configure token cache
         client.config.token_cached = true;
-        client.config.cache_path = cache_path.clone();
+        client.config.cache_path = cache_path;
 
         Self {
             client: Some(client),
             is_authenticated: false,
             is_premium: false,
             access_token: None,
-        }
-    }
-
-    /// Create a new Spotify provider with default OAuth and configured cache path
-    pub fn with_default_oauth_and_cache(cache_path: PathBuf) -> Self {
-        // Use PKCE for public clients (desktop apps) that don't have/store a secret
-        let credentials = Credentials::new_pkce(SPOTIFY_CLIENT_ID);
-        let oauth = OAuth {
-            redirect_uri: DEFAULT_REDIRECT_URI.to_string(),
-            scopes: scopes!(
-                "playlist-read-private",
-                "playlist-read-collaborative",
-                "playlist-modify-public",
-                "playlist-modify-private",
-                "streaming",
-                "user-read-private",
-                "user-read-email",
-                "user-library-read",
-                "user-library-modify",
-                "user-top-read",
-                "user-read-recently-played"
-            ),
-            ..Default::default()
-        };
-
-        let mut client = AuthCodePkceSpotify::new(credentials, oauth);
-
-        // Configure token cache
-        client.config.token_cached = true;
-        client.config.cache_path = cache_path.clone();
-
-        Self {
-            client: Some(client),
-            redirect_uri: DEFAULT_REDIRECT_URI.to_string(),
-            cache_path: Some(cache_path),
-            is_authenticated: false,
         }
     }
 
@@ -294,8 +257,8 @@ impl SpotifyProvider {
     }
 
     /// Get the cache path if configured
-    pub fn get_cache_path(&self) -> Option<&PathBuf> {
-        self.cache_path.as_ref()
+    pub fn get_cache_path(&self) -> Option<PathBuf> {
+        self.client.as_ref().map(|c| c.config.cache_path.clone())
     }
 
     /// Check if provider is authenticated
