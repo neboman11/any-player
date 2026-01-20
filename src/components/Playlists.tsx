@@ -7,14 +7,16 @@ import type { TauriSource } from "../types";
 
 export function Playlists() {
   const [activeSource, setActiveSource] = useState<TauriSource>("all");
-  const { playlists, isLoading, error, loadPlaylists } = usePlaylists();
+  const { playlists, isLoading, error, loadPlaylists, refreshKey } =
+    usePlaylists();
   const playback = usePlayback();
   const audio = useAudioPlayback();
   const sources: TauriSource[] = ["all", "spotify", "jellyfin"];
 
+  // Reload playlists when activeSource or refreshKey changes
   useEffect(() => {
     void loadPlaylists(activeSource);
-  }, [activeSource, loadPlaylists]);
+  }, [activeSource, loadPlaylists, refreshKey]);
 
   const handlePlaylistClick = useCallback(
     async (playlistId: string, source: string) => {
@@ -52,7 +54,7 @@ export function Playlists() {
         console.error("Error playing playlist:", err);
       }
     },
-    [playback, audio]
+    [playback, audio],
   );
 
   return (

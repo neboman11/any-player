@@ -21,6 +21,7 @@ struct JellyfinUser {
     #[serde(rename = "Id")]
     id: String,
     #[serde(rename = "Name")]
+    #[allow(dead_code)]
     name: String,
 }
 
@@ -41,6 +42,7 @@ struct JellyfinItem {
     #[serde(rename = "ImageTags")]
     image_tags: Option<Value>,
     #[serde(rename = "UserData")]
+    #[allow(dead_code)]
     user_data: Option<Value>,
 }
 
@@ -49,10 +51,12 @@ struct JellyfinItemsResponse {
     #[serde(rename = "Items")]
     items: Vec<JellyfinItem>,
     #[serde(rename = "TotalRecordCount")]
+    #[allow(dead_code)]
     total_record_count: u32,
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 struct CreatePlaylistRequest {
     #[serde(rename = "Name")]
     name: String,
@@ -107,7 +111,8 @@ impl JellyfinProvider {
         let artist = item
             .artists
             .as_ref()
-            .and_then(|artists| artists.first()).cloned()
+            .and_then(|artists| artists.first())
+            .cloned()
             .unwrap_or_else(|| "Unknown Artist".to_string());
         let album = item
             .album

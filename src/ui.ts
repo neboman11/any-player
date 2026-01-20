@@ -348,7 +348,7 @@ export class UI {
           try {
             // Note: We'd need to implement search_spotify_tracks in the backend
             // For now, Spotify playlists are loaded via get_spotify_playlists
-          } catch (error) {
+          } catch {
             console.warn("Spotify track search not yet implemented");
           }
         }

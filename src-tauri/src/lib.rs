@@ -34,6 +34,9 @@ pub fn run() {
     let playback = Arc::new(Mutex::new(PlaybackManager::new(providers.clone())));
     let oauth_code: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
+    let providers_clone = providers.clone();
+    let playback_clone = playback.clone();
+
     let app_state = commands::AppState {
         playback,
         providers,
@@ -75,6 +78,8 @@ pub fn run() {
             commands::get_spotify_playlist,
             commands::check_oauth_code,
             commands::disconnect_spotify,
+            commands::restore_spotify_session,
+            commands::clear_spotify_session,
             // Jellyfin commands
             commands::authenticate_jellyfin,
             commands::is_jellyfin_authenticated,
@@ -91,6 +96,68 @@ pub fn run() {
             // Start OAuth callback server in the Tauri runtime
             let oauth_code_clone = oauth_code_for_server.clone();
             tauri::async_runtime::spawn(start_oauth_server(oauth_code_clone));
+
+            // Try to restore Spotify session on startup in the background
+            // This allows the UI to load immediately while authentication is being restored
+            let playback_for_init = playback_clone.clone();
+            tauri::async_runtime::spawn(async move {
+                // Restore session without holding the lock during the entire process
+                let restored = {
+                    let mut providers = providers_clone.lock().await;
+                    match providers.restore_spotify_session().await {
+                        Ok(restored) => {
+                            if restored {
+                                tracing::info!("✓ Spotify session restored from cache on startup");
+                            } else {
+                                tracing::info!("No cached Spotify session found on startup");
+                            }
+                            restored
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to restore Spotify session: {}", e);
+                            false
+                        }
+                    }
+                };
+
+                // Auto-initialize session for premium users without holding the providers lock
+                if restored {
+                    let is_premium = {
+                        let providers = providers_clone.lock().await;
+                        providers.is_spotify_premium().await
+                    };
+
+                    if let Some(true) = is_premium {
+                        let access_token = {
+                            let providers = providers_clone.lock().await;
+                            providers.get_spotify_access_token().await
+                        };
+
+                        if let Some(access_token) = access_token {
+                            tracing::info!("Auto-initializing Spotify session for premium user");
+
+                            let playback = playback_for_init.lock().await;
+                            match playback.initialize_spotify_session(&access_token).await {
+                                Ok(()) => {
+                                    if playback.is_spotify_session_ready().await {
+                                        tracing::info!(
+                                            "✓ Spotify session auto-initialized and ready"
+                                        );
+                                    } else {
+                                        tracing::warn!(
+                                            "Session initialized but not verified as ready"
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to auto-initialize session: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
             Ok(())
         })
         .on_window_event(|_window, event| {

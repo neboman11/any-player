@@ -1,6 +1,6 @@
 /// Playback management
 use crate::models::{PlaybackInfo, PlaybackState, RepeatMode, Track};
-use crate::providers::{ProviderRegistry, spotify::SPOTIFY_CLIENT_ID};
+use crate::providers::{spotify::SPOTIFY_CLIENT_ID, ProviderRegistry};
 use rodio::{Decoder, OutputStream, Sink, Source};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -66,7 +66,7 @@ impl LibrespotSink for RodioSink {
     fn write(
         &mut self,
         packet: AudioPacket,
-        converter: &mut Converter,
+        _converter: &mut Converter,
     ) -> librespot_playback::audio_backend::SinkResult<()> {
         match packet {
             AudioPacket::Samples(samples_f64) => {
@@ -264,7 +264,7 @@ impl PlaybackQueue {
         }
     }
 
-    pub fn next(&mut self) -> Option<&Track> {
+    pub fn next_track(&mut self) -> Option<&Track> {
         if self.current_index < self.tracks.len() - 1 {
             self.current_index += 1;
             self.current_track()
@@ -511,6 +511,7 @@ impl AudioPlayer {
         let audio_player_clone = self.clone();
 
         tokio::spawn(async move {
+            #[allow(clippy::redundant_closure_call)]
             let result = (|| async {
                 // Lock the providers registry to fetch track info and get session
                 let providers_locked = providers_clone.lock().await;
@@ -664,8 +665,7 @@ impl AudioPlayer {
         };
 
         // Create the player (this will call sink_builder once)
-        let mut player =
-            LibrespotPlayer::new(config, _session.clone(), volume_getter, sink_builder);
+        let player = LibrespotPlayer::new(config, _session.clone(), volume_getter, sink_builder);
 
         // Load and play the track
         let spotify_id = SpotifyId::from_base62(track_id)
@@ -1098,7 +1098,7 @@ impl PlaybackManager {
     /// Play next track
     pub async fn next_track(&self) -> Option<Track> {
         let mut queue = self.queue.lock().await;
-        if let Some(track) = queue.next() {
+        if let Some(track) = queue.next_track() {
             let mut info = self.info.lock().await;
             info.current_track = Some(track.clone());
             info.position_ms = 0;

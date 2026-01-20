@@ -53,6 +53,7 @@ symphonia = "0.5"
 # Config management
 config = "0.13"
 dirs = "5.0"
+keyring = { version = "3.6", features = ["linux-native"] }
 
 # Utilities
 futures = "0.3"
@@ -60,3 +61,6 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 url = "2.4"
 http = "1.0"
+
+[dev-dependencies]
+serial_test = "3.2"
