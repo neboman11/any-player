@@ -21,19 +21,15 @@ export function useSpotifyAuth() {
 
   const checkAuthStatus = useCallback(async () => {
     try {
-      console.log("=== Checking Spotify authentication status ===");
       const authenticated = await tauriAPI.isSpotifyAuthenticated();
-      console.log("Backend auth status:", authenticated);
 
       setIsConnected(authenticated);
-      console.log("Updated isConnected state to:", authenticated);
 
       if (authenticated) {
         // Check premium status and session readiness
         try {
           const premium = await tauriAPI.checkSpotifyPremium();
           setIsPremium(premium);
-          console.log("Premium status:", premium);
         } catch (err) {
           console.error("Error checking premium status:", err);
           setIsPremium(null);
@@ -42,7 +38,6 @@ export function useSpotifyAuth() {
         try {
           const ready = await tauriAPI.isSpotifySessionReady();
           setSessionReady(ready);
-          console.log("Session ready:", ready);
         } catch (err) {
           console.error("Error checking session status:", err);
           setSessionReady(false);
@@ -52,7 +47,6 @@ export function useSpotifyAuth() {
         setSessionReady(false);
       }
 
-      console.log("=== Auth status check complete ===");
       return authenticated;
     } catch (err) {
       console.error("Error checking Spotify status:", err);
@@ -77,29 +71,21 @@ export function useSpotifyAuth() {
   }, []);
 
   const pollForAuth = useCallback(async () => {
-    console.log(">>> pollForAuth started, waiting for OAuth callback...");
     let pollCount = 0;
     const maxPolls = 600; // 10 minutes at 1 second intervals
 
     return new Promise<void>((resolve) => {
       const checkInterval = setInterval(async () => {
         pollCount++;
-        console.log(`Polling attempt ${pollCount}...`);
         try {
           const hasCode = await tauriAPI.checkOAuthCode();
-          console.log("checkOAuthCode result:", hasCode);
           if (hasCode) {
-            console.log("OAuth code processed by backend");
             clearInterval(checkInterval);
 
             // Wait for backend to complete authentication
-            console.log(
-              `Waiting ${AUTH_PROCESSING_DELAY_MS}ms for backend to complete auth...`,
-            );
             await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
 
             // Re-check auth status from backend
-            console.log("Re-checking authentication status from backend...");
             await checkAuthStatus();
             setAuthUrl(null);
             setIsLoading(false);
