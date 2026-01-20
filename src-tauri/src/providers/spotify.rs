@@ -294,7 +294,10 @@ impl SpotifyProvider {
 
                             // Ensure premium status is updated based on the refreshed token
                             if let Err(err) = self.check_and_update_premium_status().await {
-                                tracing::warn!("Failed to update premium status after token refresh: {}", err);
+                                tracing::warn!(
+                                    "Failed to update premium status after token refresh: {}",
+                                    err
+                                );
                             }
 
                             return Ok(());
