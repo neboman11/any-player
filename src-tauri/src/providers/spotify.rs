@@ -254,18 +254,72 @@ impl SpotifyProvider {
 
     /// Set a token for the client (used for restoring sessions)
     pub async fn set_token(&mut self, token: Token) -> Result<(), ProviderError> {
-        // Basic validation: do not accept an already-expired token
-        if token.is_expired() {
-            return Err(ProviderError(
-                "Provided Spotify token is expired or invalid".to_string(),
-            ));
-        }
-
         let client = self
             .client
             .as_mut()
             .ok_or_else(|| ProviderError("Client not configured".to_string()))?;
 
+        // If the provided token is already expired, attempt to refresh it using its refresh token
+        if token.is_expired() {
+            if token.refresh_token.is_some() {
+                tracing::info!("Token is expired, attempting to refresh using refresh token");
+
+                // Temporarily set the expired token (containing the refresh token) on the client
+                // so that rspotify can perform the refresh operation
+                {
+                    let mut token_guard = client
+                        .token
+                        .lock()
+                        .await
+                        .map_err(|_| ProviderError("Failed to lock token".to_string()))?;
+                    *token_guard = Some(token.clone());
+                }
+
+                // Attempt to refresh the token via rspotify
+                match client.refresh_token().await {
+                    Ok(_) => {
+                        tracing::info!("Token refreshed successfully");
+                        // Read back the refreshed token from the client
+                        let token_guard = client
+                            .token
+                            .lock()
+                            .await
+                            .map_err(|_| ProviderError("Failed to lock token".to_string()))?;
+
+                        if let Some(refreshed_token) = token_guard.as_ref() {
+                            // Keep internal metadata in sync with the newly refreshed token
+                            self.access_token = Some(refreshed_token.access_token.clone());
+                            self.is_authenticated = true;
+                            drop(token_guard);
+
+                            // Ensure premium status is updated based on the refreshed token
+                            if let Err(err) = self.check_and_update_premium_status().await {
+                                tracing::warn!("Failed to update premium status after token refresh: {}", err);
+                            }
+
+                            return Ok(());
+                        } else {
+                            return Err(ProviderError(
+                                "Token refresh succeeded but no token found in client".to_string(),
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to refresh expired token: {}", e);
+                        return Err(ProviderError(format!(
+                            "Provided Spotify token is expired and refresh failed: {}",
+                            e
+                        )));
+                    }
+                }
+            } else {
+                return Err(ProviderError(
+                    "Provided Spotify token is expired and has no refresh token".to_string(),
+                ));
+            }
+        }
+
+        // Token is not expired, proceed with normal set operation
         // Save access token string before moving `token` into the guard
         let access_token = token.access_token.clone();
 
