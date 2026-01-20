@@ -270,7 +270,10 @@ impl SpotifyProvider {
         let access_token = token.access_token.clone();
 
         // Update the underlying client's token
-        let mut token_guard = client.token.lock().await
+        let mut token_guard = client
+            .token
+            .lock()
+            .await
             .map_err(|_| ProviderError("Failed to lock token".to_string()))?;
         *token_guard = Some(token);
         drop(token_guard);
@@ -281,7 +284,10 @@ impl SpotifyProvider {
 
         // Ensure premium status is updated based on the new token
         if let Err(err) = self.check_and_update_premium_status().await {
-            tracing::warn!("Failed to update premium status after setting token: {}", err);
+            tracing::warn!(
+                "Failed to update premium status after setting token: {}",
+                err
+            );
             // Don't fail the whole operation if premium check fails
             // The token is still valid for basic operations
         }

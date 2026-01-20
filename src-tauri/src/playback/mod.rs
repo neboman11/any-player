@@ -264,7 +264,7 @@ impl PlaybackQueue {
         }
     }
 
-    pub fn next(&mut self) -> Option<&Track> {
+    pub fn next_track(&mut self) -> Option<&Track> {
         if self.current_index < self.tracks.len() - 1 {
             self.current_index += 1;
             self.current_track()
@@ -511,6 +511,7 @@ impl AudioPlayer {
         let audio_player_clone = self.clone();
 
         tokio::spawn(async move {
+            #[allow(clippy::redundant_closure_call)]
             let result = (|| async {
                 // Lock the providers registry to fetch track info and get session
                 let providers_locked = providers_clone.lock().await;
@@ -1097,7 +1098,7 @@ impl PlaybackManager {
     /// Play next track
     pub async fn next_track(&self) -> Option<Track> {
         let mut queue = self.queue.lock().await;
-        if let Some(track) = queue.next() {
+        if let Some(track) = queue.next_track() {
             let mut info = self.info.lock().await;
             info.current_track = Some(track.clone());
             info.position_ms = 0;

@@ -68,6 +68,7 @@ pub struct PlaylistResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct JellyfinAuthRequest {
     pub url: String,
     #[serde(rename = "apiKey")]
