@@ -1,8 +1,15 @@
 import { useState, useCallback, useEffect } from "react";
 import { tauriAPI } from "../api";
 
-// Time to wait for backend to process OAuth authentication (in milliseconds)
-const AUTH_PROCESSING_DELAY_MS = 1000;
+// Time to wait for backend to finish processing OAuth authentication (in milliseconds).
+// NOTE: 2000ms was chosen based on observed worst-case latency for the backend to
+//       exchange the OAuth code for tokens and persist session state. Reducing this
+//       delay may reintroduce race conditions where `checkAuthStatus` runs before the
+//       session is fully ready. If backend performance improves, consider:
+//       - Lowering this value, or
+//       - Replacing the fixed delay with short-interval polling of auth status
+//         until it reports as authenticated or a timeout is reached.
+const AUTH_PROCESSING_DELAY_MS = 2000;
 
 export function useSpotifyAuth() {
   const [isConnected, setIsConnected] = useState(false);
@@ -12,36 +19,45 @@ export function useSpotifyAuth() {
   const [isPremium, setIsPremium] = useState<boolean | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
 
-  // Check initial auth status
-  useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const authenticated = await tauriAPI.isSpotifyAuthenticated();
-        setIsConnected(authenticated);
+  const checkAuthStatus = useCallback(async () => {
+    try {
+      const authenticated = await tauriAPI.isSpotifyAuthenticated();
 
-        if (authenticated) {
-          // Check premium status and session readiness
-          try {
-            const premium = await tauriAPI.checkSpotifyPremium();
-            setIsPremium(premium);
-          } catch (err) {
-            console.error("Error checking premium status:", err);
-          }
+      setIsConnected(authenticated);
 
-          try {
-            const ready = await tauriAPI.isSpotifySessionReady();
-            setSessionReady(ready);
-          } catch (err) {
-            console.error("Error checking session status:", err);
-          }
+      if (authenticated) {
+        // Check premium status and session readiness
+        try {
+          const premium = await tauriAPI.checkSpotifyPremium();
+          setIsPremium(premium);
+        } catch (err) {
+          console.error("Error checking premium status:", err);
+          setIsPremium(null);
         }
-      } catch (err) {
-        console.error("Error checking Spotify status:", err);
-      }
-    };
 
-    void checkStatus();
+        try {
+          const ready = await tauriAPI.isSpotifySessionReady();
+          setSessionReady(ready);
+        } catch (err) {
+          console.error("Error checking session status:", err);
+          setSessionReady(false);
+        }
+      } else {
+        setIsPremium(null);
+        setSessionReady(false);
+      }
+
+      return authenticated;
+    } catch (err) {
+      console.error("Error checking Spotify status:", err);
+      return false;
+    }
   }, []);
+
+  // Check initial auth status and load saved tokens
+  useEffect(() => {
+    void checkAuthStatus();
+  }, [checkAuthStatus]);
 
   const getAuthUrl = useCallback(async (): Promise<string> => {
     try {
@@ -53,6 +69,42 @@ export function useSpotifyAuth() {
       throw err;
     }
   }, []);
+
+  const pollForAuth = useCallback(async () => {
+    let pollCount = 0;
+    const maxPolls = 600; // 10 minutes at 1 second intervals
+
+    return new Promise<void>((resolve) => {
+      const checkInterval = setInterval(async () => {
+        pollCount++;
+        try {
+          const hasCode = await tauriAPI.checkOAuthCode();
+          if (hasCode) {
+            clearInterval(checkInterval);
+
+            // Wait for backend to complete authentication
+            await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
+
+            // Re-check auth status from backend
+            await checkAuthStatus();
+            setAuthUrl(null);
+            setIsLoading(false);
+
+            resolve();
+          }
+        } catch (err) {
+          console.error("Auth polling error:", err);
+        }
+
+        if (pollCount >= maxPolls) {
+          clearInterval(checkInterval);
+          setError("Authentication timeout");
+          setIsLoading(false);
+          resolve();
+        }
+      }, 1000);
+    });
+  }, [checkAuthStatus]);
 
   const connect = useCallback(async () => {
     try {
@@ -79,66 +131,9 @@ export function useSpotifyAuth() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Connection failed";
       setError(message);
-    } finally {
       setIsLoading(false);
     }
-  }, [getAuthUrl]);
-
-  const pollForAuth = useCallback(async () => {
-    let pollCount = 0;
-    const maxPolls = 600; // 10 minutes at 1 second intervals
-
-    return new Promise<void>((resolve) => {
-      const checkInterval = setInterval(async () => {
-        pollCount++;
-        try {
-          const hasCode = await tauriAPI.checkOAuthCode();
-          if (hasCode) {
-            console.log(
-              "OAuth code received by backend - session initialization should be in progress",
-            );
-            setIsConnected(true);
-            setAuthUrl(null);
-
-            // Wait a moment for the backend to process the auth
-            await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
-
-            // Check if premium and session is ready
-            try {
-              const premium = await tauriAPI.checkSpotifyPremium();
-              setIsPremium(premium);
-              console.log("Premium status:", premium);
-
-              if (premium) {
-                const ready = await tauriAPI.isSpotifySessionReady();
-                setSessionReady(ready);
-                console.log("Session ready:", ready);
-
-                if (ready) {
-                  console.log("✓ Spotify session is initialized and ready");
-                } else {
-                  console.warn("⚠ Premium user but session not ready yet");
-                }
-              }
-            } catch (err) {
-              console.error("Error checking status after auth:", err);
-            }
-
-            clearInterval(checkInterval);
-            resolve();
-          }
-        } catch (err) {
-          console.error("Auth polling error:", err);
-        }
-
-        if (pollCount >= maxPolls) {
-          clearInterval(checkInterval);
-          setError("Authentication timeout");
-          resolve();
-        }
-      }, 1000);
-    });
-  }, []);
+  }, [getAuthUrl, pollForAuth]);
 
   const disconnect = useCallback(async () => {
     try {
@@ -200,6 +195,7 @@ export function useSpotifyAuth() {
     disconnect,
     clearAuthUrl,
     initializeSession,
+    checkAuthStatus,
     isPremium,
     sessionReady,
   };

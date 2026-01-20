@@ -127,6 +127,14 @@ export class TauriAPI {
     return invoke<void>("disconnect_spotify");
   }
 
+  async restoreSpotifySession(): Promise<boolean> {
+    return invoke<boolean>("restore_spotify_session");
+  }
+
+  async clearSpotifySession(): Promise<void> {
+    return invoke<void>("clear_spotify_session");
+  }
+
   // Jellyfin commands
   async authenticateJellyfin(url: string, apiKey: string): Promise<void> {
     return invoke<void>("authenticate_jellyfin", {

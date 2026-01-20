@@ -2,7 +2,8 @@ use super::{MusicProvider, ProviderError};
 use crate::models::{Playlist, Source, Track};
 use async_trait::async_trait;
 use futures::stream::StreamExt;
-use rspotify::{prelude::*, scopes, AuthCodePkceSpotify, Credentials, OAuth};
+use rspotify::{prelude::*, scopes, AuthCodePkceSpotify, Credentials, OAuth, Token};
+use std::path::PathBuf;
 
 /// Public Spotify Client ID - used across the application
 pub const SPOTIFY_CLIENT_ID: &str = "243bb6667db04143b6586d8598aed48b";
@@ -35,8 +36,8 @@ impl SpotifyProvider {
         }
     }
 
-    /// Create a new Spotify provider with default OAuth configuration (PKCE - no secrets needed)
-    pub fn with_default_oauth() -> Self {
+    /// Helper method to create default OAuth configuration with PKCE
+    fn default_oauth_config() -> (Credentials, OAuth) {
         // Use PKCE for public clients (desktop apps) that don't have/store a secret
         let credentials = Credentials::new_pkce(SPOTIFY_CLIENT_ID);
         let oauth = OAuth {
@@ -56,8 +57,30 @@ impl SpotifyProvider {
             ),
             ..Default::default()
         };
+        (credentials, oauth)
+    }
 
+    /// Create a new Spotify provider with default OAuth configuration (PKCE - no secrets needed)
+    pub fn with_default_oauth() -> Self {
+        let (credentials, oauth) = Self::default_oauth_config();
         let client = AuthCodePkceSpotify::new(credentials, oauth);
+
+        Self {
+            client: Some(client),
+            is_authenticated: false,
+            is_premium: false,
+            access_token: None,
+        }
+    }
+
+    /// Create a new Spotify provider with default OAuth and configured cache path
+    pub fn with_default_oauth_and_cache(cache_path: PathBuf) -> Self {
+        let (credentials, oauth) = Self::default_oauth_config();
+        let mut client = AuthCodePkceSpotify::new(credentials, oauth);
+
+        // Configure token cache
+        client.config.token_cached = true;
+        client.config.cache_path = cache_path;
 
         Self {
             client: Some(client),
@@ -129,6 +152,29 @@ impl SpotifyProvider {
         Ok(is_premium)
     }
 
+    /// Check and update premium status from Spotify API
+    pub async fn check_and_update_premium_status(&mut self) -> Result<(), ProviderError> {
+        match self.get_current_user_profile().await {
+            Ok(is_premium) => {
+                self.is_premium = is_premium;
+                if !is_premium {
+                    tracing::warn!(
+                        "Premium required for full Spotify playback. User has free tier account."
+                    );
+                }
+                Ok(())
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to check premium status: {}. Defaulting to free tier.",
+                    e
+                );
+                self.is_premium = false;
+                Err(e)
+            }
+        }
+    }
+
     /// Complete the authentication flow with an authorization code
     pub async fn authenticate_with_code(&mut self, code: &str) -> Result<(), ProviderError> {
         let client = self
@@ -186,6 +232,129 @@ impl SpotifyProvider {
         }
 
         Ok(())
+    }
+
+    /// Get the current token if available
+    pub async fn get_token(&self) -> Option<Token> {
+        if let Some(client) = &self.client {
+            match client.token.lock().await {
+                Ok(guard) => guard.clone(),
+                Err(err) => {
+                    tracing::warn!(
+                        "Failed to acquire Spotify token mutex in get_token: {:?}",
+                        err
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Set a token for the client (used for restoring sessions)
+    pub async fn set_token(&mut self, token: Token) -> Result<(), ProviderError> {
+        let client = self
+            .client
+            .as_mut()
+            .ok_or_else(|| ProviderError("Client not configured".to_string()))?;
+
+        // If the provided token is already expired, attempt to refresh it using its refresh token
+        if token.is_expired() {
+            if token.refresh_token.is_some() {
+                tracing::info!("Token is expired, attempting to refresh using refresh token");
+
+                // Temporarily set the expired token (containing the refresh token) on the client
+                // so that rspotify can perform the refresh operation
+                {
+                    let mut token_guard = client
+                        .token
+                        .lock()
+                        .await
+                        .map_err(|_| ProviderError("Failed to lock token".to_string()))?;
+                    *token_guard = Some(token.clone());
+                }
+
+                // Attempt to refresh the token via rspotify
+                match client.refresh_token().await {
+                    Ok(_) => {
+                        tracing::info!("Token refreshed successfully");
+                        // Read back the refreshed token from the client
+                        let token_guard = client
+                            .token
+                            .lock()
+                            .await
+                            .map_err(|_| ProviderError("Failed to lock token".to_string()))?;
+
+                        if let Some(refreshed_token) = token_guard.as_ref() {
+                            // Keep internal metadata in sync with the newly refreshed token
+                            self.access_token = Some(refreshed_token.access_token.clone());
+                            self.is_authenticated = true;
+                            drop(token_guard);
+
+                            // Ensure premium status is updated based on the refreshed token
+                            if let Err(err) = self.check_and_update_premium_status().await {
+                                tracing::warn!(
+                                    "Failed to update premium status after token refresh: {}",
+                                    err
+                                );
+                            }
+
+                            return Ok(());
+                        } else {
+                            return Err(ProviderError(
+                                "Token refresh succeeded but no token found in client".to_string(),
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to refresh expired token: {}", e);
+                        return Err(ProviderError(format!(
+                            "Provided Spotify token is expired and refresh failed: {}",
+                            e
+                        )));
+                    }
+                }
+            } else {
+                return Err(ProviderError(
+                    "Provided Spotify token is expired and has no refresh token".to_string(),
+                ));
+            }
+        }
+
+        // Token is not expired, proceed with normal set operation
+        // Save access token string before moving `token` into the guard
+        let access_token = token.access_token.clone();
+
+        // Update the underlying client's token
+        let mut token_guard = client
+            .token
+            .lock()
+            .await
+            .map_err(|_| ProviderError("Failed to lock token".to_string()))?;
+        *token_guard = Some(token);
+        drop(token_guard);
+
+        // Keep internal metadata in sync with the newly set token
+        self.access_token = Some(access_token);
+        self.is_authenticated = true;
+
+        // Ensure premium status is updated based on the new token
+        if let Err(err) = self.check_and_update_premium_status().await {
+            tracing::warn!(
+                "Failed to update premium status after setting token: {}",
+                err
+            );
+            // Don't fail the whole operation if premium check fails
+            // The token is still valid for basic operations
+        }
+
+        Ok(())
+    }
+
+    /// Get the cache path if configured
+    pub fn get_cache_path(&self) -> Option<PathBuf> {
+        self.client.as_ref().map(|c| c.config.cache_path.clone())
     }
 
     /// Check if provider is authenticated
