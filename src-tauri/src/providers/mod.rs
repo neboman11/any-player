@@ -104,10 +104,6 @@ impl ProviderRegistry {
 
     /// Initialize Spotify provider with default OAuth configuration (PKCE - no secrets needed)
     pub fn get_spotify_auth_url_default(&mut self) -> Result<String, ProviderError> {
-        // Use cache path from config
-        let config_dir = crate::config::Config::config_dir()
-            .map_err(|e| ProviderError(format!("Failed to get config dir: {}", e)))?;
-
         // Use default OAuth without cache - keyring is our source of truth for token persistence
         let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth();
 
