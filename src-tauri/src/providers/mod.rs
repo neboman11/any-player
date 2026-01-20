@@ -108,14 +108,8 @@ impl ProviderRegistry {
         let config_dir = crate::config::Config::config_dir()
             .map_err(|e| ProviderError(format!("Failed to get config dir: {}", e)))?;
 
-        // Ensure config directory exists before setting cache path
-        std::fs::create_dir_all(&config_dir)
-            .map_err(|e| ProviderError(format!("Failed to create config directory: {}", e)))?;
-
-        let cache_path = config_dir.join("spotify_cache.json");
-
-        let mut spotify_provider =
-            spotify::SpotifyProvider::with_default_oauth_and_cache(cache_path);
+        // Use default OAuth without cache - keyring is our source of truth for token persistence
+        let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth();
 
         // PKCE requires mutable reference to generate verifier
         let auth_url = spotify_provider.get_auth_url()?;
@@ -153,9 +147,13 @@ impl ProviderRegistry {
             tracing::info!("Authentication with code successful");
 
             // Save the token after successful authentication
-            // Note: The provider mutex ensures that concurrent authenticate_spotify calls
-            // are serialized. While there's a theoretical race between load and save,
-            // it's extremely unlikely in a single-user desktop application context.
+            // Save the token after successful authentication
+            // The provider mutex in AppState ensures that concurrent authenticate_spotify
+            // calls are serialized at the command handler level. Within this function,
+            // we perform a load-modify-save sequence on the token storage. While there's
+            // a theoretical race if another process modifies the keyring between our load
+            // and save operations, this is extremely unlikely in a single-user desktop
+            // application context where only this process accesses these keyring entries.
             if let Some(token) = spotify.get_token().await {
                 tracing::info!("Retrieved token from provider, saving to keyring");
                 let mut tokens = crate::config::Config::load_tokens()
@@ -466,6 +464,7 @@ mod tests {
     use super::*;
     use crate::config::{Config, TokenStorage};
     use rspotify::Token;
+    use serial_test::serial;
 
     /// Helper to create a test token that's not expired
     fn create_valid_token() -> Token {
@@ -492,7 +491,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // Flaky: depends on keyring state from other tests
+    #[serial]
     async fn test_restore_spotify_session_no_cache_or_tokens() {
         // Clean up any existing cache and tokens
         let _ = Config::clear_tokens();
@@ -506,6 +505,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_restore_spotify_session_from_token_storage() {
         // Set up token storage with a valid token
         let tokens = TokenStorage {
@@ -513,7 +513,7 @@ mod tests {
             jellyfin_api_key: None,
         };
 
-        // Save tokens (this will create the tokens.json file)
+        // Save tokens to the system keyring
         Config::save_tokens(&tokens).expect("Failed to save test tokens");
 
         let mut registry = ProviderRegistry::new();
@@ -555,7 +555,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // Flaky: depends on keyring state from other tests
+    #[serial]
     async fn test_restore_spotify_session_error_handling() {
         // This test verifies that restore_spotify_session handles errors gracefully
         // when both cache and token storage mechanisms fail or are unavailable

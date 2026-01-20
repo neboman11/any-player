@@ -101,50 +101,64 @@ pub fn run() {
             // This allows the UI to load immediately while authentication is being restored
             let playback_for_init = playback_clone.clone();
             tauri::async_runtime::spawn(async move {
-                let mut providers = providers_clone.lock().await;
-                match providers.restore_spotify_session().await {
-                    Ok(restored) => {
-                        if restored {
-                            tracing::info!("✓ Spotify session restored from cache on startup");
-
-                            // Auto-initialize session for premium users
-                            if let Some(true) = providers.is_spotify_premium().await {
-                                if let Some(access_token) =
-                                    providers.get_spotify_access_token().await
-                                {
-                                    tracing::info!(
-                                        "Auto-initializing Spotify session for premium user"
-                                    );
-                                    drop(providers);
-
-                                    let playback = playback_for_init.lock().await;
-                                    match playback.initialize_spotify_session(&access_token).await {
-                                        Ok(()) => {
-                                            if playback.is_spotify_session_ready().await {
-                                                tracing::info!(
-                                                    "✓ Spotify session auto-initialized and ready"
-                                                );
-                                            } else {
-                                                tracing::warn!(
-                                                    "Session initialized but not verified as ready"
-                                                );
-                                            }
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!(
-                                                "Failed to auto-initialize session: {}",
-                                                e
-                                            );
-                                        }
-                                    }
-                                }
+                // Restore session without holding the lock during the entire process
+                let restored = {
+                    let mut providers = providers_clone.lock().await;
+                    match providers.restore_spotify_session().await {
+                        Ok(restored) => {
+                            if restored {
+                                tracing::info!("✓ Spotify session restored from cache on startup");
+                            } else {
+                                tracing::info!("No cached Spotify session found on startup");
                             }
-                        } else {
-                            tracing::info!("No cached Spotify session found on startup");
+                            restored
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to restore Spotify session: {}", e);
+                            false
                         }
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to restore Spotify session: {}", e);
+                };
+
+                // Auto-initialize session for premium users without holding the providers lock
+                if restored {
+                    let is_premium = {
+                        let providers = providers_clone.lock().await;
+                        providers.is_spotify_premium().await
+                    };
+
+                    if let Some(true) = is_premium {
+                        let access_token = {
+                            let providers = providers_clone.lock().await;
+                            providers.get_spotify_access_token().await
+                        };
+
+                        if let Some(access_token) = access_token {
+                            tracing::info!(
+                                "Auto-initializing Spotify session for premium user"
+                            );
+
+                            let playback = playback_for_init.lock().await;
+                            match playback.initialize_spotify_session(&access_token).await {
+                                Ok(()) => {
+                                    if playback.is_spotify_session_ready().await {
+                                        tracing::info!(
+                                            "✓ Spotify session auto-initialized and ready"
+                                        );
+                                    } else {
+                                        tracing::warn!(
+                                            "Session initialized but not verified as ready"
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to auto-initialize session: {}",
+                                        e
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
             });
