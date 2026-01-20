@@ -6,7 +6,7 @@ export function Search() {
   const [searchType, setSearchType] = useState<SearchType>("tracks");
   const [searchSource, setSearchSource] = useState<TauriSource>("all");
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const { results, isLoading, error, search, clearResults: _ } = useSearch();
+  const { results, isLoading, error, search } = useSearch();
   const playback = usePlayback();
   const audio = useAudioPlayback();
 
@@ -23,7 +23,7 @@ export function Search() {
         void handleSearch();
       }
     },
-    [handleSearch]
+    [handleSearch],
   );
 
   const handleResultClick = useCallback(
@@ -34,13 +34,16 @@ export function Search() {
         await playback.updateStatus();
 
         // Play actual audio if URL is available
-        if ("url" in result && typeof (result as { url?: unknown }).url === "string") {
+        if (
+          "url" in result &&
+          typeof (result as { url?: unknown }).url === "string"
+        ) {
           console.log("Playing audio from URL:", result.url);
           audio.playAudio((result as { url: string }).url);
         }
       }
     },
-    [playback, audio]
+    [playback, audio],
   );
 
   return (

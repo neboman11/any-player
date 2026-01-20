@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { usePlayback } from "../hooks";
 import { NowPlayingControls } from "./NowPlayingControls";
 import { ProgressBar } from "./ProgressBar";
@@ -6,28 +6,18 @@ import { VolumeControl } from "./VolumeControl";
 
 export function NowPlaying() {
   const playback = usePlayback();
-  const [currentTrack, setCurrentTrack] = useState<{
-    title: string;
-    artist: string;
-    album?: string;
-  }>({
-    title: "No track playing",
-    artist: "Select a track to play",
-  });
-
-  useEffect(() => {
+  const currentTrack = useMemo(() => {
     if (playback.playbackStatus?.current_track) {
-      setCurrentTrack({
+      return {
         title: playback.playbackStatus.current_track.title,
         artist: playback.playbackStatus.current_track.artist,
         album: playback.playbackStatus.current_track.album,
-      });
-    } else {
-      setCurrentTrack({
-        title: "No track playing",
-        artist: "Select a track to play",
-      });
+      };
     }
+    return {
+      title: "No track playing",
+      artist: "Select a track to play",
+    };
   }, [playback.playbackStatus?.current_track]);
 
   return (
