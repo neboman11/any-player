@@ -134,9 +134,7 @@ pub fn run() {
                         };
 
                         if let Some(access_token) = access_token {
-                            tracing::info!(
-                                "Auto-initializing Spotify session for premium user"
-                            );
+                            tracing::info!("Auto-initializing Spotify session for premium user");
 
                             let playback = playback_for_init.lock().await;
                             match playback.initialize_spotify_session(&access_token).await {
@@ -152,10 +150,7 @@ pub fn run() {
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::warn!(
-                                        "Failed to auto-initialize session: {}",
-                                        e
-                                    );
+                                    tracing::warn!("Failed to auto-initialize session: {}", e);
                                 }
                             }
                         }
