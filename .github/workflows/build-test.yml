@@ -270,7 +270,7 @@ jobs:
         working-directory: src-tauri
         run: |
           cargo install cargo-tarpaulin || true
-          cargo tarpaulin --out Xml --output-dir ../coverage || true
+          cargo tarpaulin --out Xml --output-dir ../coverage --exclude-files 'src-tauri/target/*' -- --test-threads=1 || true
         continue-on-error: true
 
       - name: Upload coverage report

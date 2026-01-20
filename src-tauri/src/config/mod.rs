@@ -340,6 +340,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires system keyring service
     fn test_keyring_storage() {
         // Test storing and retrieving from keyring
         let tokens = TokenStorage {
