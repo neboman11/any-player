@@ -466,14 +466,14 @@ mod tests {
     use super::*;
     use crate::config::{Config, TokenStorage};
     use rspotify::Token;
-    use std::time::{Duration, SystemTime};
 
     /// Helper to create a test token that's not expired
     fn create_valid_token() -> Token {
+        use chrono::{Duration as ChronoDuration, Utc};
         Token {
             access_token: "test_access_token".to_string(),
-            expires_in: Duration::from_secs(3600),
-            expires_at: Some(SystemTime::now() + Duration::from_secs(3600)),
+            expires_in: ChronoDuration::seconds(3600),
+            expires_at: Some(Utc::now() + ChronoDuration::seconds(3600)),
             refresh_token: Some("test_refresh_token".to_string()),
             scopes: Default::default(),
         }
@@ -481,10 +481,11 @@ mod tests {
 
     /// Helper to create an expired token
     fn create_expired_token() -> Token {
+        use chrono::{Duration as ChronoDuration, Utc};
         Token {
             access_token: "expired_access_token".to_string(),
-            expires_in: Duration::from_secs(3600),
-            expires_at: Some(SystemTime::now() - Duration::from_secs(3600)),
+            expires_in: ChronoDuration::seconds(3600),
+            expires_at: Some(Utc::now() - ChronoDuration::seconds(3600)),
             refresh_token: Some("test_refresh_token".to_string()),
             scopes: Default::default(),
         }
@@ -500,7 +501,7 @@ mod tests {
 
         // Should return Ok(false) when no cache or tokens exist
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 
     #[tokio::test]
@@ -565,7 +566,7 @@ mod tests {
 
         // Should return Ok(false) rather than panicking
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 
     #[tokio::test]
@@ -579,6 +580,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // Ignore by default as it requires a functioning keyring service
     async fn test_clear_tokens_and_restore() {
         // Set up some tokens
         let tokens = TokenStorage {
@@ -595,6 +597,6 @@ mod tests {
         let result = registry.restore_spotify_session().await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 }

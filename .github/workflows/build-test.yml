@@ -214,7 +214,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [backend-build]
     timeout-minutes: 10
-    if: ${{ !inputs.skip_tests }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_tests }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -273,7 +273,7 @@ jobs:
     name: Build Tauri (Linux)
     runs-on: ubuntu-22.04
     needs: [frontend-build, backend-test]
-    if: ${{ contains(inputs.build_platforms || 'linux,macos,windows', 'linux') }}
+    if: ${{ always() && !cancelled() && needs.frontend-build.result == 'success' && (needs.backend-test.result == 'success' || needs.backend-test.result == 'skipped') && contains(inputs.build_platforms || 'linux,macos,windows', 'linux') }}
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -343,12 +343,13 @@ jobs:
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
           retention-days: 30
+          if-no-files-found: warn
 
   tauri-build-macos:
     name: Build Tauri (macOS)
     runs-on: macos-latest
     needs: [frontend-build, backend-test]
-    if: ${{ contains(inputs.build_platforms || 'linux,macos,windows', 'macos') }}
+    if: ${{ always() && !cancelled() && needs.frontend-build.result == 'success' && (needs.backend-test.result == 'success' || needs.backend-test.result == 'skipped') && contains(inputs.build_platforms || 'linux,macos,windows', 'macos') }}
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -400,12 +401,13 @@ jobs:
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/macos/*.app
           retention-days: 30
+          if-no-files-found: warn
 
   tauri-build-windows:
     name: Build Tauri (Windows)
     runs-on: windows-latest
     needs: [frontend-build, backend-test]
-    if: ${{ contains(inputs.build_platforms || 'linux,macos,windows', 'windows') }}
+    if: ${{ always() && !cancelled() && needs.frontend-build.result == 'success' && (needs.backend-test.result == 'success' || needs.backend-test.result == 'skipped') && contains(inputs.build_platforms || 'linux,macos,windows', 'windows') }}
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -457,11 +459,23 @@ jobs:
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
           retention-days: 30
+          if-no-files-found: warn
 
   summary:
     name: Build Summary
     runs-on: ubuntu-latest
-    needs: [tauri-build-linux, tauri-build-macos, tauri-build-windows]
+    needs:
+      [
+        frontend-lint,
+        frontend-typecheck,
+        backend-lint,
+        frontend-build,
+        backend-build,
+        backend-test,
+        tauri-build-linux,
+        tauri-build-macos,
+        tauri-build-windows,
+      ]
     if: always()
     steps:
       - name: Generate summary
