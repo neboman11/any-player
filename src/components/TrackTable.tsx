@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
-import type { PlaylistTrack, ColumnPreferences } from "../types";
+import type { PlaylistTrack, ColumnPreferences, Track } from "../types";
 import { tauriAPI } from "../api";
 import "./TrackTable.css";
 
 interface TrackTableProps {
-  tracks: PlaylistTrack[];
+  tracks: PlaylistTrack[] | Track[];
   onRemoveTrack?: (trackId: number) => void;
   onReorderTrack?: (trackId: number, newPosition: number) => void;
-  onPlayTrack?: (track: PlaylistTrack) => void;
+  onPlayTrack?: (track: PlaylistTrack | Track) => void;
 }
 
 const DEFAULT_COLUMNS: ColumnPreferences = {
@@ -52,8 +52,8 @@ export function TrackTable({
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
-  const handleDragStart = (trackId: number) => {
-    setDraggedTrack(trackId);
+  const handleDragStart = (trackId: number | string) => {
+    setDraggedTrack(Number(trackId));
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -75,7 +75,10 @@ export function TrackTable({
     .map((index) => columnPrefs.columns[index])
     .filter((col) => col !== undefined);
 
-  const getColumnValue = (track: PlaylistTrack, column: string) => {
+  const getColumnValue = (track: PlaylistTrack | Track, column: string) => {
+    // Check if it's a PlaylistTrack (has track_source) or Track (has source)
+    const isPlaylistTrack = "track_source" in track;
+
     switch (column) {
       case "title":
         return track.title;
@@ -84,9 +87,11 @@ export function TrackTable({
       case "album":
         return track.album || "--";
       case "duration":
-        return formatDuration(track.duration_ms);
+        return formatDuration(track.duration_ms || 0);
       case "source":
-        return track.track_source;
+        return isPlaylistTrack
+          ? (track as PlaylistTrack).track_source
+          : (track as Track).source;
       default:
         return "";
     }
@@ -156,7 +161,7 @@ export function TrackTable({
                     className="remove-btn"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onRemoveTrack(track.id);
+                      onRemoveTrack(Number(track.id));
                     }}
                     aria-label="Remove track"
                   >

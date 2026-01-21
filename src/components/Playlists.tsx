@@ -1,24 +1,19 @@
 import { useState, useCallback, useEffect } from "react";
 import { usePlaylists, useCustomPlaylists } from "../hooks";
-import { usePlayback } from "../hooks";
-import { CustomPlaylistEditor } from "./CustomPlaylistEditor";
-import type { TauriSource, CustomPlaylist } from "../types";
+import { PlaylistViewer } from "./PlaylistViewer";
+import type { TauriSource, CustomPlaylist, Playlist } from "../types";
 
 export function Playlists() {
   const [activeSource, setActiveSource] = useState<TauriSource>("all");
   const [selectedCustomPlaylist, setSelectedCustomPlaylist] =
     useState<CustomPlaylist | null>(null);
+  const [selectedRegularPlaylist, setSelectedRegularPlaylist] =
+    useState<Playlist | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
 
-  const {
-    playlists,
-    isLoading,
-    error,
-    loadPlaylists,
-    playPlaylist,
-    refreshKey,
-  } = usePlaylists();
+  const { playlists, isLoading, error, loadPlaylists, refreshKey } =
+    usePlaylists();
 
   const {
     playlists: customPlaylists,
@@ -29,7 +24,6 @@ export function Playlists() {
     deletePlaylist,
   } = useCustomPlaylists();
 
-  const playback = usePlayback();
   const sources: TauriSource[] = ["all", "custom", "spotify", "jellyfin"];
 
   // Reload playlists when activeSource or refreshKey changes
@@ -39,7 +33,7 @@ export function Playlists() {
 
   const handlePlaylistClick = useCallback(
     async (playlistId: string, source: string) => {
-      // If it's a custom playlist, open the editor
+      // If it's a custom playlist, open it in the viewer
       if (source === "custom") {
         const playlist = customPlaylists.find((p) => p.id === playlistId);
         if (playlist) {
@@ -48,21 +42,13 @@ export function Playlists() {
         return;
       }
 
-      try {
-        console.log("Playing playlist:", playlistId, "from", source);
-
-        // Use the new playPlaylist method which handles everything
-        await playPlaylist(playlistId, source as TauriSource);
-
-        // Update playback status
-        await playback.updateStatus();
-
-        console.log("Playlist playback started");
-      } catch (err) {
-        console.error("Error playing playlist:", err);
+      // For regular playlists, find and open in viewer
+      const playlist = playlists.find((p) => p.id === playlistId);
+      if (playlist) {
+        setSelectedRegularPlaylist(playlist);
       }
     },
-    [playPlaylist, playback, customPlaylists],
+    [playlists, customPlaylists],
   );
 
   const handleCreatePlaylist = async () => {
@@ -98,14 +84,26 @@ export function Playlists() {
     setSelectedCustomPlaylist(null);
   };
 
-  // If viewing a custom playlist, show the editor
+  // If viewing a custom playlist, show the viewer
   if (selectedCustomPlaylist) {
     return (
-      <CustomPlaylistEditor
+      <PlaylistViewer
         playlist={selectedCustomPlaylist}
+        isCustom={true}
         onBack={() => setSelectedCustomPlaylist(null)}
         onUpdate={handleUpdatePlaylist}
         onDelete={handleDeletePlaylist}
+      />
+    );
+  }
+
+  // If viewing a regular playlist, show the viewer
+  if (selectedRegularPlaylist) {
+    return (
+      <PlaylistViewer
+        playlist={selectedRegularPlaylist}
+        isCustom={false}
+        onBack={() => setSelectedRegularPlaylist(null)}
       />
     );
   }
