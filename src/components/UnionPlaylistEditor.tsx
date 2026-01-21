@@ -4,6 +4,7 @@ import {
   useUnionPlaylistSources,
   useUnionPlaylistTracks,
   useCustomPlaylists,
+  usePlayback,
 } from "../hooks";
 import { tauriAPI } from "../api";
 import type {
@@ -42,6 +43,7 @@ export function UnionPlaylistEditor({
     playlist.id,
   );
   const { playlists: customPlaylists } = useCustomPlaylists();
+  const playback = usePlayback();
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(playlist.name);
   const [editDescription, setEditDescription] = useState(
@@ -161,9 +163,40 @@ export function UnionPlaylistEditor({
     }
   };
 
-  const handlePlayTrack = (track: Track | PlaylistTrack) => {
-    // TODO: Implement track playback
-    console.log("Play track:", track);
+  const handlePlayPlaylist = async () => {
+    try {
+      // For union playlists, we need to set the queue with all tracks and play the first one
+      if (tracks.length === 0) {
+        alert("No tracks in this union playlist");
+        return;
+      }
+
+      // Play the first track
+      const firstTrack = tracks[0];
+      const source = (firstTrack as Track).source || "Custom";
+      const capitalizedSource =
+        source.charAt(0).toUpperCase() + source.slice(1);
+
+      await playback.playTrack(String(firstTrack.id), capitalizedSource);
+      await playback.updateStatus();
+    } catch (err) {
+      console.error("Failed to play union playlist:", err);
+      alert("Failed to play playlist");
+    }
+  };
+
+  const handlePlayTrack = async (track: Track | PlaylistTrack) => {
+    try {
+      const trackId = String(track.id);
+      const source = (track as Track).source || "Custom";
+      const capitalizedSource =
+        source.charAt(0).toUpperCase() + source.slice(1);
+
+      await playback.playTrack(trackId, capitalizedSource);
+      await playback.updateStatus();
+    } catch (err) {
+      console.error("Failed to play track:", err);
+    }
   };
 
   const getSourcePlaylistName = (source: UnionPlaylistSource): string => {
@@ -245,6 +278,9 @@ export function UnionPlaylistEditor({
         <div className="header-actions">
           {!isEditing && (
             <>
+              <button className="play-btn" onClick={handlePlayPlaylist}>
+                ▶ Play All
+              </button>
               <button
                 className="add-track-btn"
                 onClick={() => setShowAddSource(!showAddSource)}

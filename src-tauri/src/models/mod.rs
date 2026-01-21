@@ -63,6 +63,8 @@ pub struct Playlist {
     pub owner: String,
     /// Cover art URL (if available)
     pub image_url: Option<String>,
+    /// Number of tracks in the playlist
+    pub track_count: usize,
     /// Tracks in this playlist
     pub tracks: Vec<Track>,
     /// Source provider
