@@ -29,16 +29,13 @@ tokio = { version = "1", features = ["full"] }
 
 # Spotify integration - rspotify for Web API, librespot for full song streaming
 rspotify = "0.12"
-# Use librespot from git (0.8 has vergen conflicts)
-librespot-core = { git = "https://github.com/librespot-org/librespot.git", branch = "dev" }
-librespot-playback = { git = "https://github.com/librespot-org/librespot.git", branch = "dev", features = [
-    "alsa-backend",
-] }
-librespot-connect = { git = "https://github.com/librespot-org/librespot.git", branch = "dev" }
-librespot-oauth = { git = "https://github.com/librespot-org/librespot.git", branch = "dev" }
+librespot-core = "0.8"
+librespot-playback = { version = "0.8.0", features = ["native-tls"] }
+librespot-connect = "0.8"
+librespot-oauth = "0.8"
 
 # HTTP and async
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+reqwest = { version = "0.11", features = ["json", "blocking"] }
 
 # JSON and serialization
 toml = "0.8"
