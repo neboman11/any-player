@@ -1153,10 +1153,10 @@ impl PlaybackManager {
     pub async fn next_track(&self) -> Option<Track> {
         let mut queue = self.queue.lock().await;
         if let Some(track) = queue.next_track() {
-            let mut info = self.info.lock().await;
-            info.current_track = Some(track.clone());
-            info.position_ms = 0;
-            Some(track.clone())
+            let track_clone = track.clone();
+            drop(queue); // Release the queue lock before calling play_track
+            self.play_track(track_clone.clone()).await;
+            Some(track_clone)
         } else {
             None
         }
@@ -1166,10 +1166,10 @@ impl PlaybackManager {
     pub async fn previous_track(&self) -> Option<Track> {
         let mut queue = self.queue.lock().await;
         if let Some(track) = queue.previous() {
-            let mut info = self.info.lock().await;
-            info.current_track = Some(track.clone());
-            info.position_ms = 0;
-            Some(track.clone())
+            let track_clone = track.clone();
+            drop(queue); // Release the queue lock before calling play_track
+            self.play_track(track_clone.clone()).await;
+            Some(track_clone)
         } else {
             None
         }
