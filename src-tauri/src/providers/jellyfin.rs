@@ -143,6 +143,15 @@ impl JellyfinProvider {
             self.base_url, item.id, user_id
         );
 
+        // Prepare authentication headers for streaming requests
+        let auth_headers = vec![
+            ("X-Emby-Token".to_string(), self.api_key.clone()),
+            ("X-Emby-Authorization".to_string(), format!(
+                "MediaBrowser Token=\"{}\", Client=\"AnyPlayer\", Device=\"AnyPlayer\", DeviceId=\"AnyPlayer\", Version=\"1.0.0\"",
+                self.api_key
+            )),
+        ];
+
         Track {
             id: item.id.clone(),
             title: item.name.clone(),
@@ -152,6 +161,7 @@ impl JellyfinProvider {
             image_url,
             source: Source::Jellyfin,
             url: Some(stream_url),
+            auth_headers: Some(auth_headers),
         }
     }
 

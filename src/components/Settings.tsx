@@ -1,6 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useSpotifyAuth, useJellyfinAuth } from "../hooks";
 import { ProviderStatus } from "./ProviderStatus";
+import { tauriAPI } from "../api";
 
 interface AuthModalProps {
   authUrl: string;
@@ -137,10 +138,31 @@ function AuthModal({ authUrl, onClose }: AuthModalProps) {
 export function Settings() {
   const [jellyfinUrl, setJellyfinUrl] = useState<string>("");
   const [jellyfinApiKey, setJellyfinApiKey] = useState<string>("");
+  const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [autoplay, setAutoplay] = useState<boolean>(false);
 
   const spotify = useSpotifyAuth();
   const jellyfin = useJellyfinAuth();
+
+  // Load stored Jellyfin credentials when component mounts or connection state changes
+  useEffect(() => {
+    const loadCredentials = async () => {
+      try {
+        const credentials = await tauriAPI.getJellyfinCredentials();
+        if (credentials) {
+          const [url, apiKey] = credentials;
+          setJellyfinUrl(url);
+          setJellyfinApiKey(apiKey);
+        }
+      } catch (err) {
+        console.error("Failed to load Jellyfin credentials:", err);
+      }
+    };
+
+    if (jellyfin.isConnected) {
+      void loadCredentials();
+    }
+  }, [jellyfin.isConnected]);
 
   const handleSpotifyConnect = useCallback(async () => {
     if (spotify.isConnected) {
@@ -157,6 +179,10 @@ export function Settings() {
   const handleJellyfinConnect = useCallback(async () => {
     if (jellyfin.isConnected) {
       await jellyfin.disconnect();
+      // Clear fields after disconnecting
+      setJellyfinUrl("");
+      setJellyfinApiKey("");
+      setShowApiKey(false);
     } else {
       await jellyfin.connect(jellyfinUrl, jellyfinApiKey);
     }
@@ -205,22 +231,56 @@ export function Settings() {
                 className="setting-input"
                 value={jellyfinUrl}
                 onChange={(e) => setJellyfinUrl(e.target.value)}
+                disabled={jellyfin.isConnected}
               />
-              <input
-                type="text"
-                id="jellyfin-api-key"
-                placeholder="API Key"
-                className="setting-input"
-                value={jellyfinApiKey}
-                onChange={(e) => setJellyfinApiKey(e.target.value)}
-              />
+              <div
+                style={{
+                  position: "relative",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  id="jellyfin-api-key"
+                  placeholder="API Key"
+                  className="setting-input"
+                  style={{ paddingRight: "40px" }}
+                  value={jellyfinApiKey}
+                  onChange={(e) => setJellyfinApiKey(e.target.value)}
+                  disabled={jellyfin.isConnected}
+                />
+                {jellyfinApiKey && (
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    style={{
+                      position: "absolute",
+                      right: "8px",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "4px 8px",
+                      fontSize: "16px",
+                      color: "#666",
+                    }}
+                    aria-label={showApiKey ? "Hide API key" : "Show API key"}
+                  >
+                    {showApiKey ? "👁️" : "👁️‍🗨️"}
+                  </button>
+                )}
+              </div>
               <button
                 id="jellyfin-connect-btn"
                 className="btn-primary"
                 onClick={handleJellyfinConnect}
                 disabled={jellyfin.isLoading}
               >
-                {jellyfin.isLoading ? "Connecting..." : "Connect Jellyfin"}
+                {jellyfin.isLoading
+                  ? "Connecting..."
+                  : jellyfin.isConnected
+                    ? "Disconnect Jellyfin"
+                    : "Connect Jellyfin"}
               </button>
               <p id="jellyfin-status" className="status-text">
                 {jellyfin.isConnected ? "✓ Connected" : "✗ Not connected"}
