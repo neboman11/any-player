@@ -15,8 +15,15 @@ export function Playlists() {
   const [showCreateTypeDialog, setShowCreateTypeDialog] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
 
-  const { playlists, isLoading, error, loadPlaylists, refreshKey } =
-    usePlaylists();
+  const {
+    playlists,
+    isLoading,
+    error,
+    loadPlaylists,
+    refreshKey,
+    isCached,
+    refresh,
+  } = usePlaylists();
 
   const {
     playlists: customPlaylists,
@@ -25,14 +32,19 @@ export function Playlists() {
     createPlaylist,
     updatePlaylist,
     deletePlaylist,
+    refresh: refreshCustomPlaylists,
   } = useCustomPlaylists();
 
   const sources: TauriSource[] = ["all", "custom", "spotify", "jellyfin"];
 
-  // Reload playlists when activeSource or refreshKey changes
+  // Load playlists from cache on mount, or reload if source changes or refresh is requested
   useEffect(() => {
-    void loadPlaylists(activeSource);
-  }, [activeSource, loadPlaylists, refreshKey]);
+    // If cache is available and we're on the initial load, use it
+    // Only reload when activeSource changes or when refresh is explicitly requested
+    if (!isCached || refreshKey > 0) {
+      void loadPlaylists(activeSource, refreshKey > 0);
+    }
+  }, [activeSource, loadPlaylists, refreshKey, isCached]);
 
   const handlePlaylistClick = useCallback(
     async (playlistId: string, source: string) => {
@@ -178,12 +190,32 @@ export function Playlists() {
       <div className="playlists-container">
         <div className="playlists-header">
           <h2>Your Playlists</h2>
-          <button
-            className="create-playlist-btn"
-            onClick={() => setShowCreateTypeDialog(true)}
-          >
-            + Create Playlist
-          </button>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              className="refresh-btn"
+              onClick={async () => {
+                refresh();
+                await refreshCustomPlaylists(true);
+              }}
+              title="Refresh playlists"
+              style={{
+                padding: "8px 12px",
+                backgroundColor: "#333",
+                border: "1px solid #555",
+                borderRadius: "4px",
+                cursor: "pointer",
+                color: "#fff",
+              }}
+            >
+              🔄 Refresh
+            </button>
+            <button
+              className="create-playlist-btn"
+              onClick={() => setShowCreateTypeDialog(true)}
+            >
+              + Create Playlist
+            </button>
+          </div>
         </div>
 
         {showCreateTypeDialog && (

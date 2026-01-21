@@ -118,6 +118,10 @@ pub struct PlaybackInfo {
     pub repeat_mode: RepeatMode,
     /// Volume (0-100)
     pub volume: u32,
+    /// Queue of tracks
+    pub queue: Vec<Track>,
+    /// Current index in queue
+    pub current_index: usize,
 }
 
 impl Default for PlaybackInfo {
@@ -129,6 +133,8 @@ impl Default for PlaybackInfo {
             shuffle: false,
             repeat_mode: RepeatMode::Off,
             volume: 50,
+            queue: Vec::new(),
+            current_index: 0,
         }
     }
 }

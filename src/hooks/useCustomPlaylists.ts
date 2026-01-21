@@ -7,17 +7,116 @@ import type {
   UnionPlaylistSource,
 } from "../types";
 
+const CACHE_VERSION = 1;
+
+interface CustomPlaylistCacheData {
+  version: number;
+  timestamp: number;
+  playlists: CustomPlaylist[];
+}
+
+// Singleton cache for custom playlists
+let customPlaylistCache: CustomPlaylist[] = [];
+let customCacheInitialized = false;
+
+// Disk cache helpers for custom playlists using Rust backend
+async function saveCustomToDiskCache(playlists: CustomPlaylist[]) {
+  try {
+    const cacheData: CustomPlaylistCacheData = {
+      version: CACHE_VERSION,
+      timestamp: Date.now(),
+      playlists,
+    };
+    await tauriAPI.writeCustomPlaylistsCache(JSON.stringify(cacheData));
+    console.log(`Saved ${playlists.length} custom playlists to disk cache`);
+  } catch (err) {
+    console.error("Failed to save custom playlists to disk cache:", err);
+  }
+}
+
+async function loadCustomFromDiskCache(): Promise<CustomPlaylist[] | null> {
+  try {
+    const cached = await tauriAPI.readCustomPlaylistsCache();
+    if (!cached) return null;
+
+    const cacheData: CustomPlaylistCacheData = JSON.parse(cached);
+
+    // Check version compatibility
+    if (cacheData.version !== CACHE_VERSION) {
+      console.log("Custom cache version mismatch, ignoring disk cache");
+      await tauriAPI.clearCustomPlaylistsCache();
+      return null;
+    }
+
+    console.log(
+      `Loaded ${cacheData.playlists.length} custom playlists from disk cache`,
+    );
+    return cacheData.playlists;
+  } catch (err) {
+    console.error("Failed to load custom playlists from disk cache:", err);
+    return null;
+  }
+}
+
+async function clearCustomDiskCache() {
+  try {
+    await tauriAPI.clearCustomPlaylistsCache();
+    console.log("Cleared custom playlists disk cache");
+  } catch (err) {
+    console.error("Failed to clear custom disk cache:", err);
+  }
+}
+
 export function useCustomPlaylists() {
-  const [playlists, setPlaylists] = useState<CustomPlaylist[]>([]);
+  const [playlists, setPlaylists] =
+    useState<CustomPlaylist[]>(customPlaylistCache);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPlaylists = useCallback(async () => {
+  // Load from disk cache on first mount
+  useEffect(() => {
+    if (!customCacheInitialized) {
+      loadCustomFromDiskCache()
+        .then((diskCache) => {
+          if (diskCache && diskCache.length > 0) {
+            customPlaylistCache = diskCache;
+            customCacheInitialized = true;
+            setPlaylists(diskCache);
+            console.log("Initialized custom playlists from disk cache");
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to load custom disk cache on mount:", err);
+        });
+    }
+  }, []);
+
+  const loadPlaylists = useCallback(async (forceReload = false) => {
+    // Use cache if available and not forcing reload
+    if (
+      customCacheInitialized &&
+      !forceReload &&
+      customPlaylistCache.length > 0
+    ) {
+      setPlaylists(customPlaylistCache);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
       const data = await tauriAPI.getCustomPlaylists();
       setPlaylists(data);
+
+      // Update cache
+      customPlaylistCache = data;
+      customCacheInitialized = true;
+
+      // Save to disk cache (async, don't await to avoid blocking)
+      saveCustomToDiskCache(data).catch((err) => {
+        console.error("Failed to save custom disk cache:", err);
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load playlists");
       console.error("Error loading custom playlists:", err);
@@ -42,7 +141,7 @@ export function useCustomPlaylists() {
           description,
           imageUrl,
         );
-        await loadPlaylists();
+        await loadPlaylists(true);
         return newPlaylist;
       } catch (err) {
         console.error("Error creating playlist:", err);
@@ -66,7 +165,7 @@ export function useCustomPlaylists() {
           description,
           imageUrl,
         );
-        await loadPlaylists();
+        await loadPlaylists(true);
       } catch (err) {
         console.error("Error updating playlist:", err);
         throw err;
@@ -79,7 +178,7 @@ export function useCustomPlaylists() {
     async (playlistId: string) => {
       try {
         await tauriAPI.deleteCustomPlaylist(playlistId);
-        await loadPlaylists();
+        await loadPlaylists(true);
       } catch (err) {
         console.error("Error deleting playlist:", err);
         throw err;
@@ -87,6 +186,15 @@ export function useCustomPlaylists() {
     },
     [loadPlaylists],
   );
+
+  const clearCache = useCallback(() => {
+    customPlaylistCache = [];
+    customCacheInitialized = false;
+    setPlaylists([]);
+    clearCustomDiskCache().catch((err) => {
+      console.error("Failed to clear custom disk cache:", err);
+    });
+  }, []);
 
   return {
     playlists,
@@ -96,6 +204,8 @@ export function useCustomPlaylists() {
     createPlaylist,
     updatePlaylist,
     deletePlaylist,
+    clearCache,
+    isCached: customCacheInitialized,
   };
 }
 

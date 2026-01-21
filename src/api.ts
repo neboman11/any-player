@@ -323,6 +323,31 @@ export class TauriAPI {
   async getUnionPlaylistTracks(unionPlaylistId: string): Promise<Track[]> {
     return invoke("get_union_playlist_tracks", { unionPlaylistId });
   }
+
+  // Cache commands
+  async writePlaylistsCache(data: string): Promise<void> {
+    return invoke("write_playlists_cache", { data });
+  }
+
+  async readPlaylistsCache(): Promise<string | null> {
+    return invoke("read_playlists_cache");
+  }
+
+  async clearPlaylistsCache(): Promise<void> {
+    return invoke("clear_playlists_cache");
+  }
+
+  async writeCustomPlaylistsCache(data: string): Promise<void> {
+    return invoke("write_custom_playlists_cache", { data });
+  }
+
+  async readCustomPlaylistsCache(): Promise<string | null> {
+    return invoke("read_custom_playlists_cache");
+  }
+
+  async clearCustomPlaylistsCache(): Promise<void> {
+    return invoke("clear_custom_playlists_cache");
+  }
 }
 
 // Create and export global instance

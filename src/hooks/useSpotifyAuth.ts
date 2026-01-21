@@ -55,8 +55,32 @@ export function useSpotifyAuth() {
   }, []);
 
   // Check initial auth status and load saved tokens
+  // Retry a few times to account for backend session restoration delay
   useEffect(() => {
-    void checkAuthStatus();
+    const checkWithRetry = async () => {
+      // Initial delay to allow backend to start session restoration
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Try up to 3 times
+      for (let i = 0; i < 3; i++) {
+        await checkAuthStatus();
+
+        // Check if we're now connected
+        const authenticated = await tauriAPI
+          .isSpotifyAuthenticated()
+          .catch(() => false);
+        if (authenticated) {
+          break; // Success, stop retrying
+        }
+
+        // Wait before next retry
+        if (i < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+      }
+    };
+
+    void checkWithRetry();
   }, [checkAuthStatus]);
 
   const getAuthUrl = useCallback(async (): Promise<string> => {

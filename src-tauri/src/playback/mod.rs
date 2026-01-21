@@ -265,7 +265,7 @@ impl PlaybackQueue {
     }
 
     pub fn next_track(&mut self) -> Option<&Track> {
-        if self.current_index < self.tracks.len() - 1 {
+        if !self.tracks.is_empty() && self.current_index < self.tracks.len() - 1 {
             self.current_index += 1;
             self.current_track()
         } else {
@@ -955,6 +955,20 @@ impl PlaybackManager {
 
     /// Set current track and start playing
     pub async fn play_track(&self, track: Track) {
+        // Update queue's current_index if this track is in the queue
+        {
+            let mut queue = self.queue.lock().await;
+            // Find the track in the queue and set current_index
+            if let Some(index) = queue.tracks.iter().position(|t| t.id == track.id) {
+                queue.current_index = index;
+                tracing::debug!(
+                    "Set queue current_index to {} for track: {}",
+                    index,
+                    track.title
+                );
+            }
+        }
+
         let mut info = self.info.lock().await;
         info.current_track = Some(track.clone());
         info.state = PlaybackState::Playing;
@@ -1201,7 +1215,12 @@ impl PlaybackManager {
 
     /// Get current playback info
     pub async fn get_info(&self) -> PlaybackInfo {
-        self.info.lock().await.clone()
+        let mut info = self.info.lock().await.clone();
+        let queue = self.queue.lock().await;
+        info.queue = queue.tracks.clone();
+        info.current_index = queue.current_index;
+        drop(queue);
+        info
     }
 
     /// Get current queue length

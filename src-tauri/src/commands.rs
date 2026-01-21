@@ -224,8 +224,11 @@ pub async fn play_track(
 ) -> Result<(), String> {
     let providers = state.providers.lock().await;
 
+    // Normalize source to lowercase
+    let normalized_source = source.to_lowercase();
+
     // Get the track from the appropriate provider
-    let track = match source.as_str() {
+    let track = match normalized_source.as_str() {
         "spotify" => providers
             .get_spotify_track(&track_id)
             .await
@@ -234,7 +237,15 @@ pub async fn play_track(
             .get_jellyfin_track(&track_id)
             .await
             .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
-        _ => return Err("Unknown source".to_string()),
+        "custom" => {
+            return Err("Playing custom tracks directly is not yet supported. Please play from a custom playlist instead.".to_string());
+        }
+        _ => {
+            return Err(format!(
+                "Unknown source: '{}'. Supported sources are: spotify, jellyfin",
+                source
+            ))
+        }
     };
 
     // Clear queue, add track, and start playing
@@ -254,8 +265,11 @@ pub async fn queue_track(
 ) -> Result<(), String> {
     let providers = state.providers.lock().await;
 
+    // Normalize source to lowercase
+    let normalized_source = source.to_lowercase();
+
     // Get the track from the appropriate provider
-    let track = match source.as_str() {
+    let track = match normalized_source.as_str() {
         "spotify" => providers
             .get_spotify_track(&track_id)
             .await
@@ -264,7 +278,15 @@ pub async fn queue_track(
             .get_jellyfin_track(&track_id)
             .await
             .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
-        _ => return Err("Unknown source".to_string()),
+        "custom" => {
+            return Err("Queuing custom tracks directly is not yet supported. Please queue from a custom playlist instead.".to_string());
+        }
+        _ => {
+            return Err(format!(
+                "Unknown source: '{}'. Supported sources are: spotify, jellyfin",
+                source
+            ))
+        }
     };
 
     // Queue the track
@@ -1326,4 +1348,50 @@ pub async fn get_union_playlist_tracks(
     }
 
     Ok(all_tracks)
+}
+
+// ============================================================================
+// Cache Commands
+// ============================================================================
+
+/// Write playlists cache to disk
+#[tauri::command]
+pub async fn write_playlists_cache(data: String) -> Result<(), String> {
+    crate::cache::write_playlists_cache(&data)
+        .map_err(|e| format!("Failed to write playlists cache: {}", e))
+}
+
+/// Read playlists cache from disk
+#[tauri::command]
+pub async fn read_playlists_cache() -> Result<Option<String>, String> {
+    crate::cache::read_playlists_cache()
+        .map_err(|e| format!("Failed to read playlists cache: {}", e))
+}
+
+/// Clear playlists cache
+#[tauri::command]
+pub async fn clear_playlists_cache() -> Result<(), String> {
+    crate::cache::clear_playlists_cache()
+        .map_err(|e| format!("Failed to clear playlists cache: {}", e))
+}
+
+/// Write custom playlists cache to disk
+#[tauri::command]
+pub async fn write_custom_playlists_cache(data: String) -> Result<(), String> {
+    crate::cache::write_custom_playlists_cache(&data)
+        .map_err(|e| format!("Failed to write custom playlists cache: {}", e))
+}
+
+/// Read custom playlists cache from disk
+#[tauri::command]
+pub async fn read_custom_playlists_cache() -> Result<Option<String>, String> {
+    crate::cache::read_custom_playlists_cache()
+        .map_err(|e| format!("Failed to read custom playlists cache: {}", e))
+}
+
+/// Clear custom playlists cache
+#[tauri::command]
+pub async fn clear_custom_playlists_cache() -> Result<(), String> {
+    crate::cache::clear_custom_playlists_cache()
+        .map_err(|e| format!("Failed to clear custom playlists cache: {}", e))
 }
