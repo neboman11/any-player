@@ -17,7 +17,7 @@ const DEFAULT_COLUMNS: ColumnPreferences = {
     title: 300,
     artist: 200,
     album: 200,
-    duration: 100,
+    duration_ms: 100,
     source: 100,
   },
 };
