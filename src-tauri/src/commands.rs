@@ -303,7 +303,6 @@ pub async fn play_playlist(
             .map_err(|e| format!("Failed to get Jellyfin playlist: {}", e))?,
         "custom" => {
             // Handle custom playlists from database
-            drop(providers);
             let db = state.database.lock().await;
             let playlist_tracks = db
                 .get_playlist_tracks(&playlist_id)
@@ -313,19 +312,44 @@ pub async fn play_playlist(
                 return Err("Playlist is empty".to_string());
             }
 
-            // Convert PlaylistTrack to Track
-            let tracks: Vec<crate::models::Track> =
-                playlist_tracks.iter().map(|pt| pt.to_track()).collect();
-
             drop(db);
+
+            // Fetch full track details with URLs from the original providers
+            let mut tracks_with_urls = Vec::new();
+            for pt in playlist_tracks {
+                let track_result = match pt.track_source.as_str() {
+                    "Spotify" | "spotify" => providers.get_spotify_track(&pt.track_id).await,
+                    "Jellyfin" | "jellyfin" => providers.get_jellyfin_track(&pt.track_id).await,
+                    _ => {
+                        // For custom or unknown sources, use the cached metadata without URL
+                        Ok(pt.to_track())
+                    }
+                };
+
+                match track_result {
+                    Ok(track) => tracks_with_urls.push(track),
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to fetch track {} from {}: {}. Using cached metadata.",
+                            pt.track_id,
+                            pt.track_source,
+                            e
+                        );
+                        // Fall back to cached metadata
+                        tracks_with_urls.push(pt.to_track());
+                    }
+                }
+            }
+
+            drop(providers);
 
             // Clear queue and add all tracks
             let playback = state.playback.lock().await;
             playback.clear_queue().await;
-            playback.queue_tracks(tracks.clone()).await;
+            playback.queue_tracks(tracks_with_urls.clone()).await;
 
             // Play the first track
-            playback.play_track(tracks[0].clone()).await;
+            playback.play_track(tracks_with_urls[0].clone()).await;
 
             return Ok(());
         }
