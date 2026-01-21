@@ -175,6 +175,10 @@ export class TauriAPI {
     return invoke<void>("disconnect_jellyfin");
   }
 
+  async getJellyfinCredentials(): Promise<[string, string] | null> {
+    return invoke<[string, string] | null>("get_jellyfin_credentials");
+  }
+
   async restoreJellyfinSession(): Promise<boolean> {
     return invoke<boolean>("restore_jellyfin_session");
   }

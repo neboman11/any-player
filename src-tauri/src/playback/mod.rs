@@ -305,7 +305,11 @@ impl AudioPlayer {
         }
     }
 
-    pub async fn play_url(&self, url: &str) -> Result<PlaybackHandle, String> {
+    pub async fn play_url(
+        &self,
+        url: &str,
+        auth_headers: Option<Vec<(String, String)>>,
+    ) -> Result<PlaybackHandle, String> {
         let url = url.to_string();
         let handle = PlaybackHandle::new();
         let handle_clone = handle.clone();
@@ -327,7 +331,7 @@ impl AudioPlayer {
             let result = tokio::task::spawn_blocking({
                 let url = url.clone();
                 let handle = handle_clone.clone();
-                move || Self::play_audio_blocking(&url, &handle)
+                move || Self::play_audio_blocking(&url, &handle, auth_headers)
             })
             .await;
 
@@ -347,7 +351,11 @@ impl AudioPlayer {
         Ok(handle)
     }
 
-    fn play_audio_blocking(url: &str, handle: &PlaybackHandle) -> Result<(), String> {
+    fn play_audio_blocking(
+        url: &str,
+        handle: &PlaybackHandle,
+        auth_headers: Option<Vec<(String, String)>>,
+    ) -> Result<(), String> {
         // Check if URL is a spotify: URI - would require session for full playback
         if url.starts_with("spotify:track:") {
             return Err(
@@ -364,19 +372,32 @@ impl AudioPlayer {
             ));
         }
 
-        Self::play_http_audio(url, handle)
+        Self::play_http_audio(url, handle, auth_headers)
     }
 
-    fn play_http_audio(url: &str, handle: &PlaybackHandle) -> Result<(), String> {
+    fn play_http_audio(
+        url: &str,
+        handle: &PlaybackHandle,
+        auth_headers: Option<Vec<(String, String)>>,
+    ) -> Result<(), String> {
         // Get audio output stream
         let (_stream, stream_handle) = OutputStream::try_default()
             .map_err(|e| format!("Failed to get audio output: {}", e))?;
 
         // Fetch audio data from URL
         let client = reqwest::blocking::Client::new();
-        let response = client
+        let mut request = client
             .get(url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+
+        // Add authentication headers if provided (e.g., for Jellyfin)
+        if let Some(headers) = auth_headers {
+            for (key, value) in headers {
+                request = request.header(key, value);
+            }
+        }
+
+        let response = request
             .send()
             .map_err(|e| format!("Failed to fetch audio: {}", e))?;
 
@@ -441,8 +462,8 @@ impl AudioPlayer {
                 if let Some(paused_at) = pause_time {
                     // Currently paused: use time up to pause, guarding against underflow
                     let paused_elapsed = paused_at.elapsed();
-                    let effective_elapsed = start_elapsed
-                        .saturating_sub(accumulated_pause_duration + paused_elapsed);
+                    let effective_elapsed =
+                        start_elapsed.saturating_sub(accumulated_pause_duration + paused_elapsed);
                     effective_elapsed.as_millis() as u64
                 } else {
                     // Not paused: use full elapsed time minus accumulated pause duration,
@@ -595,6 +616,7 @@ impl AudioPlayer {
                             Self::play_audio_stream(
                                 &format!("spotify:track:{}", track_id_for_fetch),
                                 &handle_clone,
+                                None,
                             )
                             .await?;
                         }
@@ -808,7 +830,11 @@ impl AudioPlayer {
     }
 
     /// Helper method to stream audio from a URL or Spotify URI
-    async fn play_audio_stream(url: &str, handle: &PlaybackHandle) -> Result<(), String> {
+    async fn play_audio_stream(
+        url: &str,
+        handle: &PlaybackHandle,
+        auth_headers: Option<Vec<(String, String)>>,
+    ) -> Result<(), String> {
         // For Spotify URIs, we provide full-track duration simulation
         // In a full implementation with real librespot, this would stream actual audio
         if url.starts_with("spotify:track:") {
@@ -818,9 +844,11 @@ impl AudioPlayer {
             let url_copy = url.to_string();
             let handle_clone = handle.clone();
 
-            tokio::task::spawn_blocking(move || Self::play_http_audio(&url_copy, &handle_clone))
-                .await
-                .map_err(|e| format!("Playback task failed: {}", e))?
+            tokio::task::spawn_blocking(move || {
+                Self::play_http_audio(&url_copy, &handle_clone, auth_headers)
+            })
+            .await
+            .map_err(|e| format!("Playback task failed: {}", e))?
         }
     }
 
@@ -992,7 +1020,11 @@ impl PlaybackManager {
                 }
             } else {
                 // HTTP URL - play as normal
-                match self.audio_player.play_url(url).await {
+                match self
+                    .audio_player
+                    .play_url(url, track.auth_headers.clone())
+                    .await
+                {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
                         let info_clone = self.info.clone();

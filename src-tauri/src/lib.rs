@@ -90,6 +90,7 @@ pub fn run() {
             commands::search_jellyfin_playlists,
             commands::get_jellyfin_recently_played,
             commands::disconnect_jellyfin,
+            commands::get_jellyfin_credentials,
             commands::restore_jellyfin_session,
             // Audio commands
             commands::get_audio_file,

@@ -823,6 +823,21 @@ pub async fn disconnect_jellyfin(state: State<'_, AppState>) -> Result<(), Strin
     Ok(())
 }
 
+/// Get stored Jellyfin credentials
+#[tauri::command]
+pub async fn get_jellyfin_credentials(
+    _state: State<'_, AppState>,
+) -> Result<Option<(String, String)>, String> {
+    use crate::config::Config;
+
+    let tokens = Config::load_tokens().map_err(|e| format!("Failed to load tokens: {}", e))?;
+
+    match (tokens.jellyfin_url, tokens.jellyfin_api_key) {
+        (Some(url), Some(api_key)) => Ok(Some((url, api_key))),
+        _ => Ok(None),
+    }
+}
+
 /// Restore Jellyfin session from saved credentials
 #[tauri::command]
 pub async fn restore_jellyfin_session(state: State<'_, AppState>) -> Result<bool, String> {
