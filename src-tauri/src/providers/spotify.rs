@@ -484,6 +484,7 @@ impl MusicProvider for SpotifyProvider {
                     .display_name
                     .unwrap_or_else(|| item.owner.id.to_string()),
                 image_url: item.images.first().map(|img| img.url.clone()),
+                track_count: item.tracks.total as usize,
                 tracks: Vec::new(),
                 source: Source::Spotify,
             });
@@ -511,14 +512,19 @@ impl MusicProvider for SpotifyProvider {
             .map_err(|e| ProviderError(format!("Invalid playlist ID: {}", e)))?;
 
         let playlist = client
-            .playlist(playlist_id, None, None)
+            .playlist(playlist_id.clone(), None, None)
             .await
             .map_err(|e| ProviderError(format!("Failed to fetch playlist: {}", e)))?;
 
         let mut tracks = Vec::new();
 
-        // Collect items from current page
-        for item in playlist.tracks.items {
+        // Use stream to get all tracks with pagination
+        use futures::stream::StreamExt;
+        let mut tracks_stream = client.playlist_items(playlist_id.clone(), None, None);
+        while let Some(track_result) = tracks_stream.next().await {
+            let item = track_result
+                .map_err(|e| ProviderError(format!("Failed to fetch playlist track: {}", e)))?;
+
             if let Some(rspotify::model::PlayableItem::Track(t)) = item.track {
                 let duration_ms = t.duration.num_milliseconds() as u64;
                 // Premium playback only - return spotify:track: URI for librespot
@@ -551,6 +557,7 @@ impl MusicProvider for SpotifyProvider {
                 .display_name
                 .unwrap_or_else(|| playlist.owner.id.to_string()),
             image_url: playlist.images.first().map(|img| img.url.clone()),
+            track_count: tracks.len(),
             tracks,
             source: Source::Spotify,
         })

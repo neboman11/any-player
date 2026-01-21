@@ -562,7 +562,7 @@ pub async fn get_spotify_playlists(
             id: p.id,
             name: p.name,
             description: p.description,
-            track_count: p.tracks.len(),
+            track_count: p.track_count,
             owner: p.owner,
             source: "spotify".to_string(),
         })
@@ -727,7 +727,7 @@ pub async fn get_jellyfin_playlists(
             id: p.id,
             name: p.name,
             description: p.description,
-            track_count: p.tracks.len(),
+            track_count: p.track_count,
             owner: p.owner,
             source: "jellyfin".to_string(),
         })
@@ -1090,8 +1090,52 @@ pub async fn get_custom_playlists(
     state: State<'_, AppState>,
 ) -> Result<Vec<CustomPlaylist>, String> {
     let db = state.database.lock().await;
-    db.get_all_playlists()
-        .map_err(|e| format!("Failed to get playlists: {}", e))
+    let mut playlists = db
+        .get_all_playlists()
+        .map_err(|e| format!("Failed to get playlists: {}", e))?;
+
+    // Calculate track count for union playlists
+    let providers = state.providers.lock().await;
+    for playlist in &mut playlists {
+        if playlist.playlist_type == "union" {
+            let sources = db
+                .get_union_playlist_sources(&playlist.id)
+                .map_err(|e| format!("Failed to get union playlist sources: {}", e))?;
+
+            let mut total_tracks: i64 = 0;
+            for source in sources {
+                match source.source_type.as_str() {
+                    "spotify" => {
+                        if let Ok(p) = providers
+                            .get_spotify_playlist(&source.source_playlist_id)
+                            .await
+                        {
+                            total_tracks += p.track_count as i64;
+                        }
+                    }
+                    "jellyfin" => {
+                        if let Ok(p) = providers
+                            .get_jellyfin_playlist(&source.source_playlist_id)
+                            .await
+                        {
+                            total_tracks += p.track_count as i64;
+                        }
+                    }
+                    "custom" => {
+                        if let Ok(tracks) = db.get_playlist_tracks(&source.source_playlist_id) {
+                            total_tracks += tracks.len() as i64;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            playlist.track_count = total_tracks;
+        }
+    }
+
+    drop(providers);
+    drop(db);
+    Ok(playlists)
 }
 
 #[tauri::command]

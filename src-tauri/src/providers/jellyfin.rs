@@ -44,6 +44,8 @@ struct JellyfinItem {
     #[serde(rename = "UserData")]
     #[allow(dead_code)]
     user_data: Option<Value>,
+    #[serde(rename = "ChildCount")]
+    child_count: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,12 +109,14 @@ impl JellyfinProvider {
 
     /// Create a fallback playlist with basic metadata when detailed metadata is unavailable
     fn create_fallback_playlist(&self, id: &str, tracks: Vec<Track>) -> Playlist {
+        let track_count = tracks.len();
         Playlist {
             id: id.to_string(),
             name: format!("Playlist {}", id),
             description: None,
             owner: "Jellyfin".to_string(),
             image_url: None,
+            track_count,
             tracks,
             source: Source::Jellyfin,
         }
@@ -175,6 +179,7 @@ impl JellyfinProvider {
             description: None,
             owner: "Jellyfin".to_string(),
             image_url,
+            track_count: item.child_count.unwrap_or(0) as usize,
             tracks: Vec::new(),
             source: Source::Jellyfin,
         }
@@ -317,37 +322,53 @@ impl MusicProvider for JellyfinProvider {
             .as_ref()
             .ok_or_else(|| ProviderError("User ID not available".to_string()))?;
 
-        // Get playlist items using the user-scoped endpoint
-        let items_url = format!(
-            "{}/Users/{}/Items?ParentId={}&Fields=AudioInfo,ParentId",
-            self.base_url, user_id, id
-        );
-        let items_response = self
-            .client
-            .get(&items_url)
-            .headers(self.build_headers())
-            .send()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to fetch playlist items: {}", e)))?;
+        // Fetch all playlist items with pagination
+        let mut all_tracks = Vec::new();
+        let limit = 300; // Jellyfin default limit
+        let mut start_index = 0;
 
-        if !items_response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Failed to fetch playlist items: HTTP {}",
-                items_response.status()
-            )));
+        loop {
+            let items_url = format!(
+                "{}/Users/{}/Items?ParentId={}&Fields=AudioInfo,ParentId&Limit={}&StartIndex={}",
+                self.base_url, user_id, id, limit, start_index
+            );
+            let items_response = self
+                .client
+                .get(&items_url)
+                .headers(self.build_headers())
+                .send()
+                .await
+                .map_err(|e| ProviderError(format!("Failed to fetch playlist items: {}", e)))?;
+
+            if !items_response.status().is_success() {
+                return Err(ProviderError(format!(
+                    "Failed to fetch playlist items: HTTP {}",
+                    items_response.status()
+                )));
+            }
+
+            let items_data: JellyfinItemsResponse = items_response
+                .json()
+                .await
+                .map_err(|e| ProviderError(format!("Failed to parse playlist items: {}", e)))?;
+
+            let tracks: Vec<Track> = items_data
+                .items
+                .into_iter()
+                .filter(|item| item.item_type == "Audio")
+                .map(|item| self.item_to_track(&item))
+                .collect();
+
+            let fetched_count = tracks.len();
+            all_tracks.extend(tracks);
+
+            // Check if we've fetched all items
+            if fetched_count < limit || all_tracks.len() >= items_data.total_record_count as usize {
+                break;
+            }
+
+            start_index += limit;
         }
-
-        let items_data: JellyfinItemsResponse = items_response
-            .json()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to parse playlist items: {}", e)))?;
-
-        let tracks: Vec<Track> = items_data
-            .items
-            .into_iter()
-            .filter(|item| item.item_type == "Audio")
-            .map(|item| self.item_to_track(&item))
-            .collect();
 
         // Try to get playlist metadata using the direct Playlists endpoint first
         let metadata_url = format!("{}/Playlists/{}", self.base_url, id);
@@ -363,15 +384,15 @@ impl MusicProvider for JellyfinProvider {
             if response.status().is_success() {
                 if let Ok(item) = response.json::<JellyfinItem>().await {
                     let mut playlist = self.item_to_playlist(&item);
-                    playlist.tracks = tracks;
+                    playlist.tracks = all_tracks;
                     return Ok(playlist);
                 }
             }
             // Fallback: create basic playlist from ID
-            self.create_fallback_playlist(id, tracks)
+            self.create_fallback_playlist(id, all_tracks)
         } else {
             // Fallback: create basic playlist from ID
-            self.create_fallback_playlist(id, tracks)
+            self.create_fallback_playlist(id, all_tracks)
         };
 
         Ok(playlist)
