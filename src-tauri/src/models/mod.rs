@@ -7,6 +7,7 @@ use std::fmt;
 pub enum Source {
     Spotify,
     Jellyfin,
+    Custom,
 }
 
 impl fmt::Display for Source {
@@ -14,6 +15,7 @@ impl fmt::Display for Source {
         match self {
             Source::Spotify => write!(f, "spotify"),
             Source::Jellyfin => write!(f, "jellyfin"),
+            Source::Custom => write!(f, "custom"),
         }
     }
 }

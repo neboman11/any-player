@@ -1,10 +1,16 @@
 import { useState, useCallback, useEffect } from "react";
-import { usePlaylists } from "../hooks";
+import { usePlaylists, useCustomPlaylists } from "../hooks";
 import { usePlayback } from "../hooks";
-import type { TauriSource } from "../types";
+import { CustomPlaylistEditor } from "./CustomPlaylistEditor";
+import type { TauriSource, CustomPlaylist } from "../types";
 
 export function Playlists() {
   const [activeSource, setActiveSource] = useState<TauriSource>("all");
+  const [selectedCustomPlaylist, setSelectedCustomPlaylist] =
+    useState<CustomPlaylist | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState("");
+
   const {
     playlists,
     isLoading,
@@ -13,8 +19,18 @@ export function Playlists() {
     playPlaylist,
     refreshKey,
   } = usePlaylists();
+
+  const {
+    playlists: customPlaylists,
+    loading: customLoading,
+    error: customError,
+    createPlaylist,
+    updatePlaylist,
+    deletePlaylist,
+  } = useCustomPlaylists();
+
   const playback = usePlayback();
-  const sources: TauriSource[] = ["all", "spotify", "jellyfin"];
+  const sources: TauriSource[] = ["all", "custom", "spotify", "jellyfin"];
 
   // Reload playlists when activeSource or refreshKey changes
   useEffect(() => {
@@ -23,6 +39,15 @@ export function Playlists() {
 
   const handlePlaylistClick = useCallback(
     async (playlistId: string, source: string) => {
+      // If it's a custom playlist, open the editor
+      if (source === "custom") {
+        const playlist = customPlaylists.find((p) => p.id === playlistId);
+        if (playlist) {
+          setSelectedCustomPlaylist(playlist);
+        }
+        return;
+      }
+
       try {
         console.log("Playing playlist:", playlistId, "from", source);
 
@@ -37,13 +62,116 @@ export function Playlists() {
         console.error("Error playing playlist:", err);
       }
     },
-    [playPlaylist, playback],
+    [playPlaylist, playback, customPlaylists],
   );
+
+  const handleCreatePlaylist = async () => {
+    if (!newPlaylistName.trim()) return;
+
+    try {
+      await createPlaylist(newPlaylistName.trim());
+      setNewPlaylistName("");
+      setShowCreateDialog(false);
+    } catch (err) {
+      console.error("Failed to create playlist:", err);
+      alert("Failed to create playlist");
+    }
+  };
+
+  const handleUpdatePlaylist = async (
+    name: string | null,
+    description: string | null,
+    imageUrl: string | null,
+  ) => {
+    if (!selectedCustomPlaylist) return;
+    await updatePlaylist(
+      selectedCustomPlaylist.id,
+      name,
+      description,
+      imageUrl,
+    );
+  };
+
+  const handleDeletePlaylist = async () => {
+    if (!selectedCustomPlaylist) return;
+    await deletePlaylist(selectedCustomPlaylist.id);
+    setSelectedCustomPlaylist(null);
+  };
+
+  // If viewing a custom playlist, show the editor
+  if (selectedCustomPlaylist) {
+    return (
+      <CustomPlaylistEditor
+        playlist={selectedCustomPlaylist}
+        onBack={() => setSelectedCustomPlaylist(null)}
+        onUpdate={handleUpdatePlaylist}
+        onDelete={handleDeletePlaylist}
+      />
+    );
+  }
+
+  // Get playlists to display based on active source
+  const getDisplayPlaylists = () => {
+    if (activeSource === "custom") {
+      return customPlaylists.map((p) => ({
+        id: p.id,
+        name: p.name,
+        owner: "You",
+        track_count: p.track_count,
+        source: "custom" as const,
+        description: p.description || undefined,
+      }));
+    }
+
+    if (activeSource === "all") {
+      const customAsList = customPlaylists.map((p) => ({
+        id: p.id,
+        name: p.name,
+        owner: "You",
+        track_count: p.track_count,
+        source: "custom" as const,
+        description: p.description || undefined,
+      }));
+      return [...customAsList, ...playlists];
+    }
+
+    return playlists;
+  };
+
+  const displayPlaylists = getDisplayPlaylists();
+  const isAnyLoading = isLoading || customLoading;
+  const anyError = error || customError;
 
   return (
     <section id="playlists" className="page">
       <div className="playlists-container">
-        <h2>Your Playlists</h2>
+        <div className="playlists-header">
+          <h2>Your Playlists</h2>
+          <button
+            className="create-playlist-btn"
+            onClick={() => setShowCreateDialog(true)}
+          >
+            + Create Playlist
+          </button>
+        </div>
+
+        {showCreateDialog && (
+          <div className="create-dialog">
+            <h3>Create New Playlist</h3>
+            <input
+              type="text"
+              placeholder="Playlist name"
+              value={newPlaylistName}
+              onChange={(e) => setNewPlaylistName(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && handleCreatePlaylist()}
+            />
+            <div className="dialog-actions">
+              <button onClick={handleCreatePlaylist}>Create</button>
+              <button onClick={() => setShowCreateDialog(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
         <div className="playlist-tabs">
           {sources.map((source) => (
             <button
@@ -57,16 +185,20 @@ export function Playlists() {
           ))}
         </div>
         <div className="playlists-grid" id="playlists-grid">
-          {isLoading && (
+          {isAnyLoading && (
             <div className="playlist-card loading">Loading playlists...</div>
           )}
-          {error && !isLoading && <div className="playlist-card">{error}</div>}
-          {!isLoading && !error && playlists.length === 0 && (
+          {anyError && !isAnyLoading && (
+            <div className="playlist-card">{anyError}</div>
+          )}
+          {!isAnyLoading && !anyError && displayPlaylists.length === 0 && (
             <div className="playlist-card">
-              No playlists found. Connect a service in Settings.
+              {activeSource === "custom"
+                ? "No custom playlists. Create one to get started!"
+                : "No playlists found. Connect a service in Settings."}
             </div>
           )}
-          {playlists.map((playlist) => (
+          {displayPlaylists.map((playlist) => (
             <div
               key={`${playlist.source}-${playlist.id}`}
               className="playlist-card"

@@ -186,6 +186,80 @@ export class TauriAPI {
   async getAudioFile(url: string): Promise<string> {
     return invoke<string>("get_audio_file", { url });
   }
+
+  // Custom playlist commands
+  async createCustomPlaylist(
+    name: string,
+    description: string | null,
+    imageUrl: string | null,
+  ): Promise<any> {
+    return invoke("create_custom_playlist", {
+      name,
+      description,
+      imageUrl,
+    });
+  }
+
+  async getCustomPlaylists(): Promise<any[]> {
+    return invoke("get_custom_playlists");
+  }
+
+  async getCustomPlaylist(playlistId: string): Promise<any | null> {
+    return invoke("get_custom_playlist", { playlistId });
+  }
+
+  async updateCustomPlaylist(
+    playlistId: string,
+    name: string | null,
+    description: string | null,
+    imageUrl: string | null,
+  ): Promise<void> {
+    return invoke("update_custom_playlist", {
+      playlistId,
+      name,
+      description,
+      imageUrl,
+    });
+  }
+
+  async deleteCustomPlaylist(playlistId: string): Promise<void> {
+    return invoke("delete_custom_playlist", { playlistId });
+  }
+
+  async addTrackToCustomPlaylist(
+    playlistId: string,
+    track: Track,
+  ): Promise<any> {
+    return invoke("add_track_to_custom_playlist", { playlistId, track });
+  }
+
+  async getCustomPlaylistTracks(playlistId: string): Promise<any[]> {
+    return invoke("get_custom_playlist_tracks", { playlistId });
+  }
+
+  async removeTrackFromCustomPlaylist(trackId: number): Promise<void> {
+    return invoke("remove_track_from_custom_playlist", { trackId });
+  }
+
+  async reorderCustomPlaylistTracks(
+    playlistId: string,
+    trackId: number,
+    newPosition: number,
+  ): Promise<void> {
+    return invoke("reorder_custom_playlist_tracks", {
+      playlistId,
+      trackId,
+      newPosition,
+    });
+  }
+
+  async getColumnPreferences(): Promise<any> {
+    return invoke("get_column_preferences");
+  }
+
+  async saveColumnPreferences(preferences: any): Promise<void> {
+    return invoke("save_column_preferences", { preferences });
+  }
 }
 
 // Create and export global instance
