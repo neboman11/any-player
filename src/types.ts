@@ -19,8 +19,8 @@ export interface Track {
   title: string;
   artist: string;
   album?: string;
-  duration?: number;
-  source: "spotify" | "jellyfin" | "custom";
+  duration_ms?: number;
+  source: "spotify" | "jellyfin" | "custom" | "Spotify" | "Jellyfin" | "Custom";
   url?: string;
 }
 
@@ -71,7 +71,7 @@ export interface SearchResult {
   artist?: string;
   owner?: string;
   type: "track" | "playlist";
-  source: "spotify" | "jellyfin" | "custom";
+  source: "spotify" | "jellyfin" | "custom" | "Spotify" | "Jellyfin" | "Custom";
 }
 
 export interface OAuthCallbackData {

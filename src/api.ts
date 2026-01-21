@@ -3,7 +3,14 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { PlaybackStatus, Playlist, Track } from "./types";
+import type {
+  PlaybackStatus,
+  Playlist,
+  Track,
+  CustomPlaylist,
+  PlaylistTrack,
+  ColumnPreferences,
+} from "./types";
 
 declare global {
   interface Window {
@@ -192,7 +199,7 @@ export class TauriAPI {
     name: string,
     description: string | null,
     imageUrl: string | null,
-  ): Promise<any> {
+  ): Promise<CustomPlaylist> {
     return invoke("create_custom_playlist", {
       name,
       description,
@@ -200,11 +207,11 @@ export class TauriAPI {
     });
   }
 
-  async getCustomPlaylists(): Promise<any[]> {
+  async getCustomPlaylists(): Promise<CustomPlaylist[]> {
     return invoke("get_custom_playlists");
   }
 
-  async getCustomPlaylist(playlistId: string): Promise<any | null> {
+  async getCustomPlaylist(playlistId: string): Promise<CustomPlaylist | null> {
     return invoke("get_custom_playlist", { playlistId });
   }
 
@@ -229,11 +236,11 @@ export class TauriAPI {
   async addTrackToCustomPlaylist(
     playlistId: string,
     track: Track,
-  ): Promise<any> {
+  ): Promise<PlaylistTrack> {
     return invoke("add_track_to_custom_playlist", { playlistId, track });
   }
 
-  async getCustomPlaylistTracks(playlistId: string): Promise<any[]> {
+  async getCustomPlaylistTracks(playlistId: string): Promise<PlaylistTrack[]> {
     return invoke("get_custom_playlist_tracks", { playlistId });
   }
 
@@ -253,11 +260,11 @@ export class TauriAPI {
     });
   }
 
-  async getColumnPreferences(): Promise<any> {
+  async getColumnPreferences(): Promise<ColumnPreferences> {
     return invoke("get_column_preferences");
   }
 
-  async saveColumnPreferences(preferences: any): Promise<void> {
+  async saveColumnPreferences(preferences: ColumnPreferences): Promise<void> {
     return invoke("save_column_preferences", { preferences });
   }
 }
