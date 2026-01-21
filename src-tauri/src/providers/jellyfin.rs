@@ -134,8 +134,9 @@ impl JellyfinProvider {
         let image_url = self.get_image_url(&item.id, &item.image_tags);
 
         // Generate the streaming URL for this track with required parameters
-        // The universal endpoint needs UserId, Container format, and optionally AudioCodec
-        // Authentication is handled via X-Emby-Token header to avoid exposing API key in URL
+        // The universal endpoint requires UserId, Container format, and optionally AudioCodec
+        // Authentication (API key) is handled via X-Emby-Token header to avoid exposing it in URL
+        // Note: UserId is a required parameter for the universal endpoint and is not sensitive data
         let user_id = self.user_id.as_deref().unwrap_or("");
         let stream_url = format!(
             "{}/Audio/{}/universal?UserId={}&Container=opus,mp3,aac,m4a,flac,webma,webm,wav,ogg&AudioCodec=aac,mp3,vorbis,opus",
@@ -224,8 +225,25 @@ impl MusicProvider for JellyfinProvider {
             ));
         }
 
-        // Use the first user (typically the admin/main user)
-        self.user_id = Some(users[0].id.clone());
+        // If a user_id was preconfigured on this provider, try to match it against the
+        // users returned by the server. This allows multi-user instances to explicitly
+        // select which user to act as.
+        //
+        // If no user_id is configured or the configured id is not found, we fall back
+        // to using the first user in the list (typically the admin/main user). This
+        // preserves existing behavior but means that, in multi-user setups, the caller
+        // SHOULD provide an explicit user_id if the default is not appropriate.
+        let selected_user_id = if let Some(ref configured_id) = self.user_id {
+            if users.iter().any(|u| &u.id == configured_id) {
+                configured_id.clone()
+            } else {
+                users[0].id.clone()
+            }
+        } else {
+            users[0].id.clone()
+        };
+
+        self.user_id = Some(selected_user_id);
         self.authenticated = true;
         Ok(())
     }

@@ -436,13 +436,21 @@ impl AudioPlayer {
             }
 
             // Update position only when not paused
-            let elapsed = if let Some(paused_at) = pause_time {
-                // Currently paused: use time up to pause
-                (start.elapsed() - accumulated_pause_duration - paused_at.elapsed()).as_millis()
-                    as u64
-            } else {
-                // Not paused: use full elapsed time minus accumulated pause duration
-                (start.elapsed() - accumulated_pause_duration).as_millis() as u64
+            let elapsed = {
+                let start_elapsed = start.elapsed();
+                if let Some(paused_at) = pause_time {
+                    // Currently paused: use time up to pause, guarding against underflow
+                    let paused_elapsed = paused_at.elapsed();
+                    let effective_elapsed = start_elapsed
+                        .saturating_sub(accumulated_pause_duration + paused_elapsed);
+                    effective_elapsed.as_millis() as u64
+                } else {
+                    // Not paused: use full elapsed time minus accumulated pause duration,
+                    // guarding against underflow
+                    let effective_elapsed =
+                        start_elapsed.saturating_sub(accumulated_pause_duration);
+                    effective_elapsed.as_millis() as u64
+                }
             };
 
             if elapsed != handle.get_position() {

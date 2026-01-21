@@ -65,7 +65,11 @@ http = "1.0"
 [dev-dependencies]
 serial_test = "3.2"
 
-# Override vergen dependencies to fix version conflicts
+# Override vergen dependencies to fix version conflicts.
+# NOTE: As of vergen_lib_0.1.6, the required fixes are not yet available via crates.io,
+# so we temporarily patch vergen-gitcl and vergen-lib to this specific git tag.
+# Once an equivalent or newer fixed version is published on crates.io (>= 0.1.6),
+# this [patch.crates-io] section should be removed and the crates.io versions used instead.
 [patch.crates-io]
 vergen-gitcl = { git = "https://github.com/rustyhorde/vergen.git", tag = "vergen_lib_0.1.6" }
 vergen-lib = { git = "https://github.com/rustyhorde/vergen.git", tag = "vergen_lib_0.1.6" }
