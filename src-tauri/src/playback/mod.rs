@@ -503,13 +503,7 @@ impl AudioPlayer {
         session: Option<Session>,
     ) -> Result<(), String> {
         // Extract clean track ID, stripping all spotify:track: prefixes
-        let mut clean_id = track_id.to_string();
-        while clean_id.starts_with("spotify:track:") {
-            clean_id = clean_id
-                .strip_prefix("spotify:track:")
-                .ok_or("Invalid Spotify URI format")?
-                .to_string();
-        }
+        let mut clean_id = track_id.trim_start_matches("spotify:track:").to_string();
 
         // Handle URL format
         if clean_id.contains("/track/") {

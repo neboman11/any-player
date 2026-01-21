@@ -105,6 +105,19 @@ impl JellyfinProvider {
         None
     }
 
+    /// Create a fallback playlist with basic metadata when detailed metadata is unavailable
+    fn create_fallback_playlist(&self, id: &str, tracks: Vec<Track>) -> Playlist {
+        Playlist {
+            id: id.to_string(),
+            name: format!("Playlist {}", id),
+            description: None,
+            owner: "Jellyfin".to_string(),
+            image_url: None,
+            tracks,
+            source: Source::Jellyfin,
+        }
+    }
+
     /// Convert Jellyfin item to Track
     fn item_to_track(&self, item: &JellyfinItem) -> Track {
         let duration_ms = item.runtime_ticks.map(|ticks| ticks / 10_000).unwrap_or(0);
@@ -122,10 +135,11 @@ impl JellyfinProvider {
 
         // Generate the streaming URL for this track with required parameters
         // The universal endpoint needs UserId, Container format, and optionally AudioCodec
+        // Authentication is handled via X-Emby-Token header to avoid exposing API key in URL
         let user_id = self.user_id.as_deref().unwrap_or("");
         let stream_url = format!(
-            "{}/Audio/{}/universal?UserId={}&Container=opus,mp3,aac,m4a,flac,webma,webm,wav,ogg&AudioCodec=aac,mp3,vorbis,opus&api_key={}",
-            self.base_url, item.id, user_id, self.api_key
+            "{}/Audio/{}/universal?UserId={}&Container=opus,mp3,aac,m4a,flac,webma,webm,wav,ogg&AudioCodec=aac,mp3,vorbis,opus",
+            self.base_url, item.id, user_id
         );
 
         Track {
@@ -181,8 +195,8 @@ impl MusicProvider for JellyfinProvider {
             )));
         }
 
-        // Get list of users and pick the first one (since API keys don't have a "current user")
-        // Alternative: use /Users endpoint to get all users and select the first/admin user
+        // Get list of users from the /Users endpoint and pick the first one
+        // (since API keys don't have a "current user"; typically this is the admin/main user)
         let users_url = format!("{}/Users", self.base_url);
         let users_response = self
             .client
@@ -326,26 +340,10 @@ impl MusicProvider for JellyfinProvider {
                 }
             }
             // Fallback: create basic playlist from ID
-            Playlist {
-                id: id.to_string(),
-                name: format!("Playlist {}", id),
-                description: None,
-                owner: "Jellyfin".to_string(),
-                image_url: None,
-                tracks,
-                source: Source::Jellyfin,
-            }
+            self.create_fallback_playlist(id, tracks)
         } else {
             // Fallback: create basic playlist from ID
-            Playlist {
-                id: id.to_string(),
-                name: format!("Playlist {}", id),
-                description: None,
-                owner: "Jellyfin".to_string(),
-                image_url: None,
-                tracks,
-                source: Source::Jellyfin,
-            }
+            self.create_fallback_playlist(id, tracks)
         };
 
         Ok(playlist)
