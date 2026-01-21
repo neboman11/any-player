@@ -10,6 +10,7 @@ import type {
   CustomPlaylist,
   PlaylistTrack,
   ColumnPreferences,
+  UnionPlaylistSource,
 } from "./types";
 
 declare global {
@@ -270,6 +271,57 @@ export class TauriAPI {
 
   async saveColumnPreferences(preferences: ColumnPreferences): Promise<void> {
     return invoke("save_column_preferences", { preferences });
+  }
+
+  // Union playlist commands
+  async createUnionPlaylist(
+    name: string,
+    description: string | null,
+    imageUrl: string | null,
+  ): Promise<CustomPlaylist> {
+    return invoke("create_union_playlist", {
+      name,
+      description,
+      imageUrl,
+    });
+  }
+
+  async addSourceToUnionPlaylist(
+    unionPlaylistId: string,
+    sourceType: string,
+    sourcePlaylistId: string,
+  ): Promise<UnionPlaylistSource> {
+    return invoke("add_source_to_union_playlist", {
+      unionPlaylistId,
+      sourceType,
+      sourcePlaylistId,
+    });
+  }
+
+  async getUnionPlaylistSources(
+    unionPlaylistId: string,
+  ): Promise<UnionPlaylistSource[]> {
+    return invoke("get_union_playlist_sources", { unionPlaylistId });
+  }
+
+  async removeSourceFromUnionPlaylist(sourceId: number): Promise<void> {
+    return invoke("remove_source_from_union_playlist", { sourceId });
+  }
+
+  async reorderUnionPlaylistSources(
+    unionPlaylistId: string,
+    sourceId: number,
+    newPosition: number,
+  ): Promise<void> {
+    return invoke("reorder_union_playlist_sources", {
+      unionPlaylistId,
+      sourceId,
+      newPosition,
+    });
+  }
+
+  async getUnionPlaylistTracks(unionPlaylistId: string): Promise<Track[]> {
+    return invoke("get_union_playlist_tracks", { unionPlaylistId });
   }
 }
 

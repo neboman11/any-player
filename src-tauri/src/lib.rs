@@ -123,6 +123,13 @@ pub fn run() {
             commands::reorder_custom_playlist_tracks,
             commands::get_column_preferences,
             commands::save_column_preferences,
+            // Union playlist commands
+            commands::create_union_playlist,
+            commands::add_source_to_union_playlist,
+            commands::get_union_playlist_sources,
+            commands::remove_source_from_union_playlist,
+            commands::reorder_union_playlist_sources,
+            commands::get_union_playlist_tracks,
         ])
         .setup(move |_app| {
             // Start OAuth callback server in the Tauri runtime

@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { usePlaylists, useCustomPlaylists } from "../hooks";
 import { PlaylistViewer } from "./PlaylistViewer";
+import { UnionPlaylistEditor } from "./UnionPlaylistEditor";
+import { tauriAPI } from "../api";
 import type { TauriSource, CustomPlaylist, Playlist } from "../types";
 
 export function Playlists() {
@@ -10,6 +12,7 @@ export function Playlists() {
   const [selectedRegularPlaylist, setSelectedRegularPlaylist] =
     useState<Playlist | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showCreateTypeDialog, setShowCreateTypeDialog] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
 
   const { playlists, isLoading, error, loadPlaylists, refreshKey } =
@@ -64,6 +67,25 @@ export function Playlists() {
     }
   };
 
+  const handleCreateUnionPlaylist = async () => {
+    if (!newPlaylistName.trim()) return;
+
+    try {
+      const newPlaylist = await tauriAPI.createUnionPlaylist(
+        newPlaylistName.trim(),
+        null,
+        null,
+      );
+      setNewPlaylistName("");
+      setShowCreateTypeDialog(false);
+      // Open the newly created union playlist for editing
+      setSelectedCustomPlaylist(newPlaylist);
+    } catch (err) {
+      console.error("Failed to create union playlist:", err);
+      alert("Failed to create union playlist");
+    }
+  };
+
   const handleUpdatePlaylist = async (
     name: string | null,
     description: string | null,
@@ -84,8 +106,19 @@ export function Playlists() {
     setSelectedCustomPlaylist(null);
   };
 
-  // If viewing a custom playlist, show the viewer
+  // If viewing a custom playlist, check if it's a union playlist
   if (selectedCustomPlaylist) {
+    if (selectedCustomPlaylist.playlist_type === "union") {
+      return (
+        <UnionPlaylistEditor
+          playlist={selectedCustomPlaylist}
+          onBack={() => setSelectedCustomPlaylist(null)}
+          onUpdate={handleUpdatePlaylist}
+          onDelete={handleDeletePlaylist}
+        />
+      );
+    }
+
     return (
       <PlaylistViewer
         playlist={selectedCustomPlaylist}
@@ -147,11 +180,44 @@ export function Playlists() {
           <h2>Your Playlists</h2>
           <button
             className="create-playlist-btn"
-            onClick={() => setShowCreateDialog(true)}
+            onClick={() => setShowCreateTypeDialog(true)}
           >
             + Create Playlist
           </button>
         </div>
+
+        {showCreateTypeDialog && (
+          <div className="create-dialog">
+            <h3>Create New Playlist</h3>
+            <div className="playlist-type-buttons">
+              <button
+                className="type-btn"
+                onClick={() => {
+                  setShowCreateTypeDialog(false);
+                  setShowCreateDialog(true);
+                }}
+              >
+                <strong>Standard Playlist</strong>
+                <small>Store tracks directly in this playlist</small>
+              </button>
+              <button
+                className="type-btn"
+                onClick={() => {
+                  setShowCreateTypeDialog(false);
+                  setShowCreateDialog(true);
+                }}
+              >
+                <strong>Union Playlist</strong>
+                <small>Combine tracks from multiple playlists</small>
+              </button>
+            </div>
+            <div className="dialog-actions">
+              <button onClick={() => setShowCreateTypeDialog(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {showCreateDialog && (
           <div className="create-dialog">
@@ -164,8 +230,16 @@ export function Playlists() {
               onKeyPress={(e) => e.key === "Enter" && handleCreatePlaylist()}
             />
             <div className="dialog-actions">
-              <button onClick={handleCreatePlaylist}>Create</button>
-              <button onClick={() => setShowCreateDialog(false)}>Cancel</button>
+              <button onClick={handleCreatePlaylist}>Create Standard</button>
+              <button onClick={handleCreateUnionPlaylist}>Create Union</button>
+              <button
+                onClick={() => {
+                  setShowCreateDialog(false);
+                  setNewPlaylistName("");
+                }}
+              >
+                Cancel
+              </button>
             </div>
           </div>
         )}

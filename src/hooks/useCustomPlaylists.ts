@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { tauriAPI } from "../api";
-import type { CustomPlaylist, PlaylistTrack, Track } from "../types";
+import type {
+  CustomPlaylist,
+  PlaylistTrack,
+  Track,
+  UnionPlaylistSource,
+} from "../types";
 
 export function useCustomPlaylists() {
   const [playlists, setPlaylists] = useState<CustomPlaylist[]>([]);
@@ -178,5 +183,133 @@ export function useCustomPlaylistTracks(playlistId: string | null) {
     addTrack,
     removeTrack,
     reorderTrack,
+  };
+}
+
+export function useUnionPlaylistSources(unionPlaylistId: string | null) {
+  const [sources, setSources] = useState<UnionPlaylistSource[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadSources = useCallback(async () => {
+    if (!unionPlaylistId) {
+      setSources([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await tauriAPI.getUnionPlaylistSources(unionPlaylistId);
+      setSources(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load sources");
+      console.error("Error loading union playlist sources:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [unionPlaylistId]);
+
+  useEffect(() => {
+    loadSources();
+  }, [loadSources]);
+
+  const addSource = useCallback(
+    async (sourceType: string, sourcePlaylistId: string) => {
+      if (!unionPlaylistId) return;
+
+      try {
+        await tauriAPI.addSourceToUnionPlaylist(
+          unionPlaylistId,
+          sourceType,
+          sourcePlaylistId,
+        );
+        await loadSources();
+      } catch (err) {
+        console.error("Error adding source:", err);
+        throw err;
+      }
+    },
+    [unionPlaylistId, loadSources],
+  );
+
+  const removeSource = useCallback(
+    async (sourceId: number) => {
+      try {
+        await tauriAPI.removeSourceFromUnionPlaylist(sourceId);
+        await loadSources();
+      } catch (err) {
+        console.error("Error removing source:", err);
+        throw err;
+      }
+    },
+    [loadSources],
+  );
+
+  const reorderSource = useCallback(
+    async (sourceId: number, newPosition: number) => {
+      if (!unionPlaylistId) return;
+
+      try {
+        await tauriAPI.reorderUnionPlaylistSources(
+          unionPlaylistId,
+          sourceId,
+          newPosition,
+        );
+        await loadSources();
+      } catch (err) {
+        console.error("Error reordering source:", err);
+        throw err;
+      }
+    },
+    [unionPlaylistId, loadSources],
+  );
+
+  return {
+    sources,
+    loading,
+    error,
+    refresh: loadSources,
+    addSource,
+    removeSource,
+    reorderSource,
+  };
+}
+
+export function useUnionPlaylistTracks(unionPlaylistId: string | null) {
+  const [tracks, setTracks] = useState<Track[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadTracks = useCallback(async () => {
+    if (!unionPlaylistId) {
+      setTracks([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await tauriAPI.getUnionPlaylistTracks(unionPlaylistId);
+      setTracks(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load tracks");
+      console.error("Error loading union playlist tracks:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [unionPlaylistId]);
+
+  useEffect(() => {
+    loadTracks();
+  }, [loadTracks]);
+
+  return {
+    tracks,
+    loading,
+    error,
+    refresh: loadTracks,
   };
 }

@@ -1058,7 +1058,7 @@ pub fn cleanup_all_temp_audio_files() {
 // Custom Playlist Commands
 // ============================================================================
 
-use crate::database::{ColumnPreferences, CustomPlaylist, PlaylistTrack};
+use crate::database::{ColumnPreferences, CustomPlaylist, PlaylistTrack, UnionPlaylistSource};
 use crate::models::Track;
 
 #[tauri::command]
@@ -1071,6 +1071,18 @@ pub async fn create_custom_playlist(
     let db = state.database.lock().await;
     db.create_playlist(name, description, image_url)
         .map_err(|e| format!("Failed to create playlist: {}", e))
+}
+
+#[tauri::command]
+pub async fn create_union_playlist(
+    state: State<'_, AppState>,
+    name: String,
+    description: Option<String>,
+    image_url: Option<String>,
+) -> Result<CustomPlaylist, String> {
+    let db = state.database.lock().await;
+    db.create_playlist_with_type(name, description, image_url, "union".to_string())
+        .map_err(|e| format!("Failed to create union playlist: {}", e))
 }
 
 #[tauri::command]
@@ -1175,4 +1187,99 @@ pub async fn save_column_preferences(
     let db = state.database.lock().await;
     db.save_column_preferences(&preferences)
         .map_err(|e| format!("Failed to save column preferences: {}", e))
+}
+
+#[tauri::command]
+pub async fn add_source_to_union_playlist(
+    state: State<'_, AppState>,
+    union_playlist_id: String,
+    source_type: String,
+    source_playlist_id: String,
+) -> Result<UnionPlaylistSource, String> {
+    let db = state.database.lock().await;
+    db.add_source_to_union_playlist(&union_playlist_id, &source_type, &source_playlist_id)
+        .map_err(|e| format!("Failed to add source to union playlist: {}", e))
+}
+
+#[tauri::command]
+pub async fn get_union_playlist_sources(
+    state: State<'_, AppState>,
+    union_playlist_id: String,
+) -> Result<Vec<UnionPlaylistSource>, String> {
+    let db = state.database.lock().await;
+    db.get_union_playlist_sources(&union_playlist_id)
+        .map_err(|e| format!("Failed to get union playlist sources: {}", e))
+}
+
+#[tauri::command]
+pub async fn remove_source_from_union_playlist(
+    state: State<'_, AppState>,
+    source_id: i64,
+) -> Result<(), String> {
+    let db = state.database.lock().await;
+    db.remove_source_from_union_playlist(source_id)
+        .map_err(|e| format!("Failed to remove source from union playlist: {}", e))
+}
+
+#[tauri::command]
+pub async fn reorder_union_playlist_sources(
+    state: State<'_, AppState>,
+    union_playlist_id: String,
+    source_id: i64,
+    new_position: i64,
+) -> Result<(), String> {
+    let db = state.database.lock().await;
+    db.reorder_union_sources(&union_playlist_id, source_id, new_position)
+        .map_err(|e| format!("Failed to reorder union playlist sources: {}", e))
+}
+
+#[tauri::command]
+pub async fn get_union_playlist_tracks(
+    state: State<'_, AppState>,
+    union_playlist_id: String,
+) -> Result<Vec<Track>, String> {
+    let db = state.database.lock().await;
+    let providers = state.providers.lock().await;
+
+    // Get all source playlists
+    let sources = db
+        .get_union_playlist_sources(&union_playlist_id)
+        .map_err(|e| format!("Failed to get union playlist sources: {}", e))?;
+
+    let mut all_tracks = Vec::new();
+
+    for source in sources {
+        match source.source_type.as_str() {
+            "spotify" => {
+                match providers
+                    .get_spotify_playlist(&source.source_playlist_id)
+                    .await
+                {
+                    Ok(playlist) => all_tracks.extend(playlist.tracks),
+                    Err(e) => eprintln!("Failed to get Spotify playlist tracks: {}", e),
+                }
+            }
+            "jellyfin" => {
+                match providers
+                    .get_jellyfin_playlist(&source.source_playlist_id)
+                    .await
+                {
+                    Ok(playlist) => all_tracks.extend(playlist.tracks),
+                    Err(e) => eprintln!("Failed to get Jellyfin playlist tracks: {}", e),
+                }
+            }
+            "custom" => {
+                // Get tracks from custom playlist
+                let tracks = db
+                    .get_playlist_tracks(&source.source_playlist_id)
+                    .map_err(|e| format!("Failed to get custom playlist tracks: {}", e))?;
+                all_tracks.extend(tracks.into_iter().map(|t| t.to_track()));
+            }
+            _ => {
+                eprintln!("Unknown source type: {}", source.source_type);
+            }
+        }
+    }
+
+    Ok(all_tracks)
 }

@@ -43,6 +43,16 @@ export interface CustomPlaylist {
   created_at: number;
   updated_at: number;
   track_count: number;
+  playlist_type: string; // "standard" or "union"
+}
+
+export interface UnionPlaylistSource {
+  id: number;
+  union_playlist_id: string;
+  source_type: string;
+  source_playlist_id: string;
+  position: number;
+  added_at: number;
 }
 
 export interface PlaylistTrack {
@@ -57,6 +67,15 @@ export interface PlaylistTrack {
   album: string | null;
   duration_ms: number | null;
   image_url: string | null;
+}
+
+export interface UnionPlaylistSource {
+  id: number;
+  union_playlist_id: string;
+  source_type: string; // "spotify", "jellyfin", "custom"
+  source_playlist_id: string;
+  position: number;
+  added_at: number;
 }
 
 export interface ColumnPreferences {
