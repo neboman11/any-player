@@ -281,6 +281,45 @@ pub async fn clear_queue(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Play a playlist by loading all its tracks
+#[tauri::command]
+pub async fn play_playlist(
+    state: State<'_, AppState>,
+    playlist_id: String,
+    source: String,
+) -> Result<(), String> {
+    let providers = state.providers.lock().await;
+
+    // Get the playlist with all tracks from the appropriate provider
+    let playlist = match source.as_str() {
+        "spotify" => providers
+            .get_spotify_playlist(&playlist_id)
+            .await
+            .map_err(|e| format!("Failed to get Spotify playlist: {}", e))?,
+        "jellyfin" => providers
+            .get_jellyfin_playlist(&playlist_id)
+            .await
+            .map_err(|e| format!("Failed to get Jellyfin playlist: {}", e))?,
+        _ => return Err("Unknown source".to_string()),
+    };
+
+    if playlist.tracks.is_empty() {
+        return Err("Playlist is empty".to_string());
+    }
+
+    drop(providers);
+
+    // Clear queue and add all tracks from the playlist
+    let playback = state.playback.lock().await;
+    playback.clear_queue().await;
+    playback.queue_tracks(playlist.tracks.clone()).await;
+
+    // Play the first track
+    playback.play_track(playlist.tracks[0].clone()).await;
+
+    Ok(())
+}
+
 /// Helper function to initialize Spotify session for premium users
 /// Consolidates the duplicated logic from authenticate_spotify and check_oauth_code
 async fn initialize_premium_session_if_needed(state: &AppState) -> Result<(), String> {
@@ -589,12 +628,25 @@ pub async fn authenticate_jellyfin(
     url: String,
     api_key: String,
 ) -> Result<(), String> {
+    use crate::config::Config;
+
     let mut providers = state.providers.lock().await;
 
     providers
         .authenticate_jellyfin(&url, &api_key)
         .await
-        .map_err(|e| format!("Failed to authenticate Jellyfin: {}", e))
+        .map_err(|e| format!("Failed to authenticate Jellyfin: {}", e))?;
+
+    // Save credentials to secure storage after successful authentication
+    let mut tokens = Config::load_tokens().map_err(|e| format!("Failed to load tokens: {}", e))?;
+    tokens.jellyfin_api_key = Some(api_key);
+    tokens.jellyfin_url = Some(url);
+    Config::save_tokens(&tokens)
+        .map_err(|e| format!("Failed to save Jellyfin credentials: {}", e))?;
+
+    tracing::info!("Jellyfin credentials saved to secure storage");
+
+    Ok(())
 }
 
 /// Check if Jellyfin is connected and authenticated
@@ -750,12 +802,37 @@ pub async fn get_jellyfin_recently_played(
 /// Disconnect and revoke Jellyfin authentication
 #[tauri::command]
 pub async fn disconnect_jellyfin(state: State<'_, AppState>) -> Result<(), String> {
+    use crate::config::Config;
+
     let mut providers = state.providers.lock().await;
 
     providers
         .disconnect_jellyfin()
         .await
-        .map_err(|e| format!("Failed to disconnect Jellyfin: {}", e))
+        .map_err(|e| format!("Failed to disconnect Jellyfin: {}", e))?;
+
+    // Clear stored Jellyfin credentials from secure storage
+    let mut tokens = Config::load_tokens().map_err(|e| format!("Failed to load tokens: {}", e))?;
+    tokens.jellyfin_api_key = None;
+    tokens.jellyfin_url = None;
+    Config::save_tokens(&tokens)
+        .map_err(|e| format!("Failed to clear Jellyfin credentials: {}", e))?;
+
+    tracing::info!("Jellyfin credentials cleared from secure storage");
+
+    Ok(())
+}
+
+/// Restore Jellyfin session from saved credentials
+#[tauri::command]
+pub async fn restore_jellyfin_session(state: State<'_, AppState>) -> Result<bool, String> {
+    let mut providers = state.providers.lock().await;
+
+    // Try to restore session using the provider registry
+    providers
+        .restore_jellyfin_session()
+        .await
+        .map_err(|e| format!("Failed to restore Jellyfin session: {}", e))
 }
 
 /// Download audio to a temporary file and return the path as a file:// URL

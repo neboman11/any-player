@@ -388,6 +388,33 @@ impl ProviderRegistry {
         Ok(())
     }
 
+    /// Restore Jellyfin session from saved credentials
+    pub async fn restore_jellyfin_session(&mut self) -> Result<bool, ProviderError> {
+        use crate::config::Config;
+
+        tracing::info!("Starting Jellyfin session restoration from keyring");
+
+        // Load credentials from keyring
+        let tokens = Config::load_tokens()
+            .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+
+        if tokens.jellyfin_api_key.is_none() || tokens.jellyfin_url.is_none() {
+            tracing::info!("No Jellyfin credentials found in keyring");
+            return Ok(false);
+        }
+
+        let api_key = tokens.jellyfin_api_key.unwrap();
+        let url = tokens.jellyfin_url.unwrap();
+
+        tracing::info!("Found Jellyfin credentials in keyring, authenticating");
+
+        // Authenticate with stored credentials
+        self.authenticate_jellyfin(&url, &api_key).await?;
+
+        tracing::info!("Jellyfin session restored successfully");
+        Ok(true)
+    }
+
     /// Get Spotify provider for token access (internal use)
     pub fn get_spotify_provider(
         &self,
@@ -507,6 +534,7 @@ mod tests {
         let tokens = TokenStorage {
             spotify_token: Some(create_valid_token()),
             jellyfin_api_key: None,
+            jellyfin_url: None,
         };
 
         // Save tokens to the system keyring
@@ -534,6 +562,7 @@ mod tests {
         let tokens = TokenStorage {
             spotify_token: Some(create_expired_token()),
             jellyfin_api_key: None,
+            jellyfin_url: None,
         };
 
         // Save tokens
@@ -585,6 +614,7 @@ mod tests {
         let tokens = TokenStorage {
             spotify_token: Some(create_valid_token()),
             jellyfin_api_key: Some("test_key".to_string()),
+            jellyfin_url: Some("http://localhost:8096".to_string()),
         };
         Config::save_tokens(&tokens).expect("Failed to save tokens");
 
