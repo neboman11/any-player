@@ -1,6 +1,7 @@
+/// Any Player - Multi-Source Music Client
+pub mod cache;
 pub mod config;
 pub mod database;
-/// Any Player - Multi-Source Music Client
 pub mod models;
 pub mod playback;
 pub mod providers;
@@ -130,6 +131,13 @@ pub fn run() {
             commands::remove_source_from_union_playlist,
             commands::reorder_union_playlist_sources,
             commands::get_union_playlist_tracks,
+            // Cache commands
+            commands::write_playlists_cache,
+            commands::read_playlists_cache,
+            commands::clear_playlists_cache,
+            commands::write_custom_playlists_cache,
+            commands::read_custom_playlists_cache,
+            commands::clear_custom_playlists_cache,
         ])
         .setup(move |_app| {
             // Start OAuth callback server in the Tauri runtime

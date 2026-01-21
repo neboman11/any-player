@@ -173,11 +173,11 @@ export function UnionPlaylistEditor({
 
       // Play the first track
       const firstTrack = tracks[0];
-      const source = (firstTrack as Track).source || "Custom";
-      const capitalizedSource =
-        source.charAt(0).toUpperCase() + source.slice(1);
+      const source = (firstTrack as Track).source || "custom";
+      // Normalize source to lowercase
+      const normalizedSource = source.toLowerCase();
 
-      await playback.playTrack(String(firstTrack.id), capitalizedSource);
+      await playback.playTrack(String(firstTrack.id), normalizedSource);
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play union playlist:", err);
@@ -188,11 +188,11 @@ export function UnionPlaylistEditor({
   const handlePlayTrack = async (track: Track | PlaylistTrack) => {
     try {
       const trackId = String(track.id);
-      const source = (track as Track).source || "Custom";
-      const capitalizedSource =
-        source.charAt(0).toUpperCase() + source.slice(1);
+      const source = (track as Track).source || "custom";
+      // Normalize source to lowercase
+      const normalizedSource = source.toLowerCase();
 
-      await playback.playTrack(trackId, capitalizedSource);
+      await playback.playTrack(trackId, normalizedSource);
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play track:", err);

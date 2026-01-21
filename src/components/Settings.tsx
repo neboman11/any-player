@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useSpotifyAuth, useJellyfinAuth } from "../hooks";
+import { useSpotifyAuth, useJellyfinAuth, usePlaylists } from "../hooks";
 import { ProviderStatus } from "./ProviderStatus";
 import { tauriAPI } from "../api";
 
@@ -143,6 +143,7 @@ export function Settings() {
 
   const spotify = useSpotifyAuth();
   const jellyfin = useJellyfinAuth();
+  const { clearCache, loadPlaylists } = usePlaylists();
 
   // Load stored Jellyfin credentials when component mounts or connection state changes
   useEffect(() => {
@@ -167,26 +168,53 @@ export function Settings() {
   const handleSpotifyConnect = useCallback(async () => {
     if (spotify.isConnected) {
       await spotify.disconnect();
+      // Clear playlist cache when disconnecting
+      clearCache();
     } else {
       try {
         await spotify.connect();
+        // Reload playlists after successfully connecting
+        // Wait a bit for the connection to be fully established
+        setTimeout(async () => {
+          try {
+            const isAuth = await tauriAPI.isSpotifyAuthenticated();
+            if (isAuth) {
+              await loadPlaylists("all", true);
+            }
+          } catch (err) {
+            console.error("Failed to reload playlists:", err);
+          }
+        }, 1000);
       } catch (err) {
         console.error("Spotify connection error:", err);
       }
     }
-  }, [spotify]);
+  }, [spotify, clearCache, loadPlaylists]);
 
   const handleJellyfinConnect = useCallback(async () => {
     if (jellyfin.isConnected) {
       await jellyfin.disconnect();
+      // Clear playlist cache when disconnecting
+      clearCache();
       // Clear fields after disconnecting
       setJellyfinUrl("");
       setJellyfinApiKey("");
       setShowApiKey(false);
     } else {
       await jellyfin.connect(jellyfinUrl, jellyfinApiKey);
+      // Reload playlists after successfully connecting
+      setTimeout(async () => {
+        try {
+          const isAuth = await tauriAPI.isJellyfinAuthenticated();
+          if (isAuth) {
+            await loadPlaylists("all", true);
+          }
+        } catch (err) {
+          console.error("Failed to reload playlists:", err);
+        }
+      }, 1000);
     }
-  }, [jellyfin, jellyfinUrl, jellyfinApiKey]);
+  }, [jellyfin, jellyfinUrl, jellyfinApiKey, clearCache, loadPlaylists]);
 
   return (
     <section id="settings" className="page">

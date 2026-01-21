@@ -7,11 +7,27 @@ export function useJellyfinAuth() {
   const [error, setError] = useState<string | null>(null);
 
   // Check initial auth status
+  // Retry a few times to account for backend session restoration delay
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const authenticated = await tauriAPI.isJellyfinAuthenticated();
-        setIsConnected(authenticated);
+        // Initial delay to allow backend to start session restoration
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // Try up to 3 times
+        for (let i = 0; i < 3; i++) {
+          const authenticated = await tauriAPI.isJellyfinAuthenticated();
+          setIsConnected(authenticated);
+
+          if (authenticated) {
+            break; // Success, stop retrying
+          }
+
+          // Wait before next retry
+          if (i < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+          }
+        }
       } catch (err) {
         console.error("Error checking Jellyfin status:", err);
       }

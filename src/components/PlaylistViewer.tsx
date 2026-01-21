@@ -128,11 +128,10 @@ export function PlaylistViewer({
         source = (track as Track).source || (playlist as Playlist).source;
       }
 
-      // Capitalize source for backend
-      const capitalizedSource =
-        source.charAt(0).toUpperCase() + source.slice(1);
+      // Normalize source to lowercase for backend
+      const normalizedSource = source.toLowerCase();
 
-      await playback.playTrack(trackId, capitalizedSource);
+      await playback.playTrack(trackId, normalizedSource);
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play track:", err);
