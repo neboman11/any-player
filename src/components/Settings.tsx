@@ -307,10 +307,93 @@ export function Settings() {
             </label>
           </div>
         </div>
+
+        <ColumnPreferencesSection />
       </div>
       {spotify.authUrl && (
         <AuthModal authUrl={spotify.authUrl} onClose={spotify.clearAuthUrl} />
       )}
     </section>
+  );
+}
+
+function ColumnPreferencesSection() {
+  const [columns, setColumns] = useState<string[]>([
+    "title",
+    "artist",
+    "album",
+    "duration",
+    "source",
+  ]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadPreferences = async () => {
+      try {
+        const prefs = await tauriAPI.getColumnPreferences();
+        setColumns(prefs.columns);
+      } catch (err) {
+        console.error("Failed to load column preferences:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadPreferences();
+  }, []);
+
+  const toggleColumn = async (column: string) => {
+    const newColumns = columns.includes(column)
+      ? columns.filter((c) => c !== column)
+      : [...columns, column];
+
+    setColumns(newColumns);
+
+    try {
+      // Get current preferences
+      const currentPrefs = await tauriAPI.getColumnPreferences();
+
+      // Update with new columns
+      await tauriAPI.saveColumnPreferences({
+        ...currentPrefs,
+        columns: newColumns,
+        column_order: newColumns.map((_, i) => i),
+      });
+    } catch (err) {
+      console.error("Failed to save column preferences:", err);
+    }
+  };
+
+  const allColumns = ["title", "artist", "album", "duration", "source"];
+
+  if (loading) {
+    return (
+      <div className="settings-section">
+        <h3>Track Table Columns</h3>
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-section">
+      <h3>Track Table Columns</h3>
+      <p className="section-description">
+        Choose which columns to display in custom playlist track tables
+      </p>
+      <div className="column-preferences">
+        {allColumns.map((column) => (
+          <div key={column} className="setting-item">
+            <label>
+              <input
+                type="checkbox"
+                checked={columns.includes(column)}
+                onChange={() => toggleColumn(column)}
+              />
+              {column.charAt(0).toUpperCase() + column.slice(1)}
+            </label>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

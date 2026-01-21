@@ -7,4 +7,6 @@ export { NowPlayingControls } from "./NowPlayingControls";
 export { ProgressBar } from "./ProgressBar";
 export { VolumeControl } from "./VolumeControl";
 export { ProviderStatus } from "./ProviderStatus";
+export { TrackTable } from "./TrackTable";
+export { CustomPlaylistEditor } from "./CustomPlaylistEditor";
 export type { ProviderStatusInfo, ProviderStatusProps } from "./ProviderStatus";

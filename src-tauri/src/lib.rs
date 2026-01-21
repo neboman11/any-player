@@ -1,10 +1,12 @@
 pub mod config;
+pub mod database;
 /// Any Player - Multi-Source Music Client
 pub mod models;
 pub mod playback;
 pub mod providers;
 
 pub use config::Config;
+pub use database::Database;
 pub use models::{PlaybackInfo, PlaybackState, Playlist, RepeatMode, Source, Track};
 pub use playback::PlaybackManager;
 pub use providers::{MusicProvider, ProviderError, ProviderRegistry};
@@ -29,6 +31,18 @@ pub fn run() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Initialize database
+    let db_path = dirs::data_dir()
+        .expect("Failed to get data directory")
+        .join("any-player")
+        .join("playlists.db");
+
+    std::fs::create_dir_all(db_path.parent().unwrap()).expect("Failed to create data directory");
+
+    let database = Arc::new(Mutex::new(
+        Database::new(db_path).expect("Failed to initialize database"),
+    ));
+
     // Create application state
     let providers = Arc::new(Mutex::new(ProviderRegistry::new()));
     let playback = Arc::new(Mutex::new(PlaybackManager::new(providers.clone())));
@@ -41,6 +55,7 @@ pub fn run() {
         playback,
         providers,
         oauth_code: oauth_code.clone(),
+        database,
     };
 
     let oauth_code_for_server = oauth_code.clone();
@@ -94,6 +109,18 @@ pub fn run() {
             commands::restore_jellyfin_session,
             // Audio commands
             commands::get_audio_file,
+            // Custom playlist commands
+            commands::create_custom_playlist,
+            commands::get_custom_playlists,
+            commands::get_custom_playlist,
+            commands::update_custom_playlist,
+            commands::delete_custom_playlist,
+            commands::add_track_to_custom_playlist,
+            commands::get_custom_playlist_tracks,
+            commands::remove_track_from_custom_playlist,
+            commands::reorder_custom_playlist_tracks,
+            commands::get_column_preferences,
+            commands::save_column_preferences,
         ])
         .setup(move |_app| {
             // Start OAuth callback server in the Tauri runtime
