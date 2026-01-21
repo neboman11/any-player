@@ -81,6 +81,18 @@ export function usePlaylists() {
     [],
   );
 
+  const playPlaylist = useCallback(
+    async (playlistId: string, source: TauriSource) => {
+      try {
+        if (source === "all") return;
+        await tauriAPI.playPlaylist(playlistId, source);
+      } catch (err) {
+        console.error("Error playing playlist:", err);
+      }
+    },
+    [],
+  );
+
   const refresh = useCallback(() => {
     setRefreshKey((prev) => prev + 1);
   }, []);
@@ -91,6 +103,7 @@ export function usePlaylists() {
     error,
     loadPlaylists,
     queuePlaylist,
+    playPlaylist,
     refresh,
     refreshKey,
   };

@@ -120,6 +120,14 @@ impl JellyfinProvider {
             .unwrap_or_else(|| "Unknown Album".to_string());
         let image_url = self.get_image_url(&item.id, &item.image_tags);
 
+        // Generate the streaming URL for this track with required parameters
+        // The universal endpoint needs UserId, Container format, and optionally AudioCodec
+        let user_id = self.user_id.as_deref().unwrap_or("");
+        let stream_url = format!(
+            "{}/Audio/{}/universal?UserId={}&Container=opus,mp3,aac,m4a,flac,webma,webm,wav,ogg&AudioCodec=aac,mp3,vorbis,opus&api_key={}",
+            self.base_url, item.id, user_id, self.api_key
+        );
+
         Track {
             id: item.id.clone(),
             title: item.name.clone(),
@@ -128,7 +136,7 @@ impl JellyfinProvider {
             duration_ms,
             image_url,
             source: Source::Jellyfin,
-            url: None,
+            url: Some(stream_url),
         }
     }
 
@@ -173,24 +181,37 @@ impl MusicProvider for JellyfinProvider {
             )));
         }
 
-        // Get current user info
-        let user_url = format!("{}/Users/Me", self.base_url);
-        let user_response = self
+        // Get list of users and pick the first one (since API keys don't have a "current user")
+        // Alternative: use /Users endpoint to get all users and select the first/admin user
+        let users_url = format!("{}/Users", self.base_url);
+        let users_response = self
             .client
-            .get(&user_url)
+            .get(&users_url)
             .headers(self.build_headers())
             .send()
             .await
-            .map_err(|e| ProviderError(format!("Failed to get user info: {}", e)))?;
+            .map_err(|e| ProviderError(format!("Failed to get users: {}", e)))?;
 
-        if user_response.status().is_success() {
-            let user: JellyfinUser = user_response
-                .json()
-                .await
-                .map_err(|e| ProviderError(format!("Failed to parse user info: {}", e)))?;
-            self.user_id = Some(user.id);
+        if !users_response.status().is_success() {
+            return Err(ProviderError(format!(
+                "Failed to get user list: HTTP {}",
+                users_response.status()
+            )));
         }
 
+        let users: Vec<JellyfinUser> = users_response
+            .json()
+            .await
+            .map_err(|e| ProviderError(format!("Failed to parse users: {}", e)))?;
+
+        if users.is_empty() {
+            return Err(ProviderError(
+                "No users found on Jellyfin server".to_string(),
+            ));
+        }
+
+        // Use the first user (typically the admin/main user)
+        self.user_id = Some(users[0].id.clone());
         self.authenticated = true;
         Ok(())
     }
@@ -254,31 +275,11 @@ impl MusicProvider for JellyfinProvider {
             .as_ref()
             .ok_or_else(|| ProviderError("User ID not available".to_string()))?;
 
-        // GET /Users/{userId}/Items/{id}
-        let url = format!("{}/Users/{}/Items/{}", self.base_url, user_id, id);
-
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to fetch playlist: {}", e)))?;
-
-        if !response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Failed to fetch playlist: HTTP {}",
-                response.status()
-            )));
-        }
-
-        let item: JellyfinItem = response
-            .json()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to parse playlist: {}", e)))?;
-
-        // Get playlist items
-        let items_url = format!("{}/Playlists/{}/Items", self.base_url, id);
+        // Get playlist items using the user-scoped endpoint
+        let items_url = format!(
+            "{}/Users/{}/Items?ParentId={}&Fields=AudioInfo,ParentId",
+            self.base_url, user_id, id
+        );
         let items_response = self
             .client
             .get(&items_url)
@@ -286,6 +287,13 @@ impl MusicProvider for JellyfinProvider {
             .send()
             .await
             .map_err(|e| ProviderError(format!("Failed to fetch playlist items: {}", e)))?;
+
+        if !items_response.status().is_success() {
+            return Err(ProviderError(format!(
+                "Failed to fetch playlist items: HTTP {}",
+                items_response.status()
+            )));
+        }
 
         let items_data: JellyfinItemsResponse = items_response
             .json()
@@ -299,8 +307,47 @@ impl MusicProvider for JellyfinProvider {
             .map(|item| self.item_to_track(&item))
             .collect();
 
-        let mut playlist = self.item_to_playlist(&item);
-        playlist.tracks = tracks;
+        // Try to get playlist metadata using the direct Playlists endpoint first
+        let metadata_url = format!("{}/Playlists/{}", self.base_url, id);
+        let metadata_response = self
+            .client
+            .get(&metadata_url)
+            .headers(self.build_headers())
+            .send()
+            .await;
+
+        // If direct endpoint works, use it; otherwise fall back to basic metadata
+        let playlist = if let Ok(response) = metadata_response {
+            if response.status().is_success() {
+                if let Ok(item) = response.json::<JellyfinItem>().await {
+                    let mut playlist = self.item_to_playlist(&item);
+                    playlist.tracks = tracks;
+                    return Ok(playlist);
+                }
+            }
+            // Fallback: create basic playlist from ID
+            Playlist {
+                id: id.to_string(),
+                name: format!("Playlist {}", id),
+                description: None,
+                owner: "Jellyfin".to_string(),
+                image_url: None,
+                tracks,
+                source: Source::Jellyfin,
+            }
+        } else {
+            // Fallback: create basic playlist from ID
+            Playlist {
+                id: id.to_string(),
+                name: format!("Playlist {}", id),
+                description: None,
+                owner: "Jellyfin".to_string(),
+                image_url: None,
+                tracks,
+                source: Source::Jellyfin,
+            }
+        };
+
         Ok(playlist)
     }
 

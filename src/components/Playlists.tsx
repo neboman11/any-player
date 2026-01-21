@@ -1,16 +1,19 @@
 import { useState, useCallback, useEffect } from "react";
 import { usePlaylists } from "../hooks";
 import { usePlayback } from "../hooks";
-import { useAudioPlayback } from "../hooks";
-import { tauriAPI } from "../api";
 import type { TauriSource } from "../types";
 
 export function Playlists() {
   const [activeSource, setActiveSource] = useState<TauriSource>("all");
-  const { playlists, isLoading, error, loadPlaylists, refreshKey } =
-    usePlaylists();
+  const {
+    playlists,
+    isLoading,
+    error,
+    loadPlaylists,
+    playPlaylist,
+    refreshKey,
+  } = usePlaylists();
   const playback = usePlayback();
-  const audio = useAudioPlayback();
   const sources: TauriSource[] = ["all", "spotify", "jellyfin"];
 
   // Reload playlists when activeSource or refreshKey changes
@@ -21,40 +24,20 @@ export function Playlists() {
   const handlePlaylistClick = useCallback(
     async (playlistId: string, source: string) => {
       try {
-        console.log("Fetching playlist:", playlistId, "from", source);
-        let playlist;
+        console.log("Playing playlist:", playlistId, "from", source);
 
-        if (source === "spotify") {
-          playlist = await tauriAPI.getSpotifyPlaylist(playlistId);
-        } else if (source === "jellyfin") {
-          playlist = await tauriAPI.getJellyfinPlaylist(playlistId);
-        }
+        // Use the new playPlaylist method which handles everything
+        await playPlaylist(playlistId, source as TauriSource);
 
-        console.log("Got playlist:", playlist);
+        // Update playback status
+        await playback.updateStatus();
 
-        if (playlist && playlist.tracks && playlist.tracks.length > 0) {
-          const track = playlist.tracks[0];
-          console.log("Playing track:", track);
-
-          // Tell backend to start playback
-          await playback.playTrack(track.id, source);
-          await playback.updateStatus();
-
-          // Play actual audio if URL is available
-          if (track.url) {
-            console.log("Playing audio from URL:", track.url);
-            audio.playAudio(track.url);
-          }
-
-          console.log("Playback started");
-        } else {
-          console.log("Playlist has no tracks or is undefined");
-        }
+        console.log("Playlist playback started");
       } catch (err) {
         console.error("Error playing playlist:", err);
       }
     },
-    [playback, audio],
+    [playPlaylist, playback],
   );
 
   return (

@@ -412,23 +412,41 @@ impl AudioPlayer {
         // Track playback progress
         let start = Instant::now();
         let mut last_update = Instant::now();
+        let mut pause_time: Option<Instant> = None;
+        let mut accumulated_pause_duration = Duration::from_secs(0);
 
         loop {
             if handle.should_stop() {
                 break;
             }
 
-            // Update position
-            let elapsed = start.elapsed().as_millis() as u64;
-            if elapsed != handle.get_position() {
-                handle.set_position(elapsed);
-            }
-
-            // Handle pause/resume
-            if handle.is_paused() {
+            // Handle pause/resume and track pause duration
+            let is_paused = handle.is_paused();
+            if is_paused {
                 sink.pause();
+                if pause_time.is_none() {
+                    pause_time = Some(Instant::now());
+                }
             } else {
                 sink.play();
+                if let Some(paused_at) = pause_time {
+                    accumulated_pause_duration += paused_at.elapsed();
+                    pause_time = None;
+                }
+            }
+
+            // Update position only when not paused
+            let elapsed = if let Some(paused_at) = pause_time {
+                // Currently paused: use time up to pause
+                (start.elapsed() - accumulated_pause_duration - paused_at.elapsed()).as_millis()
+                    as u64
+            } else {
+                // Not paused: use full elapsed time minus accumulated pause duration
+                (start.elapsed() - accumulated_pause_duration).as_millis() as u64
+            };
+
+            if elapsed != handle.get_position() {
+                handle.set_position(elapsed);
             }
 
             std::thread::sleep(Duration::from_millis(100));
@@ -484,21 +502,23 @@ impl AudioPlayer {
         providers: Arc<Mutex<ProviderRegistry>>,
         session: Option<Session>,
     ) -> Result<(), String> {
-        // Extract clean track ID
-        let clean_id = if track_id.starts_with("spotify:track:") {
-            track_id
+        // Extract clean track ID, stripping all spotify:track: prefixes
+        let mut clean_id = track_id.to_string();
+        while clean_id.starts_with("spotify:track:") {
+            clean_id = clean_id
                 .strip_prefix("spotify:track:")
                 .ok_or("Invalid Spotify URI format")?
-                .to_string()
-        } else if track_id.contains("/track/") {
-            track_id
+                .to_string();
+        }
+
+        // Handle URL format
+        if clean_id.contains("/track/") {
+            clean_id = clean_id
                 .split('/')
                 .next_back()
-                .unwrap_or(track_id)
-                .to_string()
-        } else {
-            track_id.to_string()
-        };
+                .unwrap_or(&clean_id)
+                .to_string();
+        }
 
         tracing::info!(
             "Starting Spotify track playback via librespot: {}",
