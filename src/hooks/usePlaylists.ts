@@ -87,6 +87,9 @@ export function usePlaylists() {
         if (source === "all") return;
         await tauriAPI.playPlaylist(playlistId, source);
       } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to play playlist";
+        setError(message);
         console.error("Error playing playlist:", err);
       }
     },
