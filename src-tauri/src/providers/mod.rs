@@ -286,6 +286,18 @@ impl ProviderRegistry {
         }
     }
 
+    /// Search tracks on Spotify
+    pub async fn search_spotify_tracks(&self, query: &str) -> Result<Vec<Track>, ProviderError> {
+        if let Some(provider) = &self.spotify_provider {
+            let spotify = provider.lock().await;
+            spotify.search_tracks(query).await
+        } else {
+            Err(ProviderError(
+                "Spotify provider not authenticated".to_string(),
+            ))
+        }
+    }
+
     /// Search playlists on Jellyfin
     pub async fn search_jellyfin_playlists(
         &self,

@@ -775,6 +775,33 @@ pub async fn search_jellyfin_tracks(
         .collect())
 }
 
+/// Search tracks on Spotify
+#[tauri::command]
+pub async fn search_spotify_tracks(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<Vec<TrackInfo>, String> {
+    let providers = state.providers.lock().await;
+
+    let tracks = providers
+        .search_spotify_tracks(&query)
+        .await
+        .map_err(|e| format!("Failed to search Spotify tracks: {}", e))?;
+
+    Ok(tracks
+        .into_iter()
+        .map(|t| TrackInfo {
+            id: t.id,
+            title: t.title,
+            artist: t.artist,
+            album: t.album,
+            duration: t.duration_ms,
+            source: "spotify".to_string(),
+            url: t.url,
+        })
+        .collect())
+}
+
 /// Search playlists on Jellyfin
 #[tauri::command]
 pub async fn search_jellyfin_playlists(
