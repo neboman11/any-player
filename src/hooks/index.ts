@@ -7,4 +7,6 @@ export { useJellyfinAuth } from "./useJellyfinAuth";
 export {
   useCustomPlaylists,
   useCustomPlaylistTracks,
+  useUnionPlaylistSources,
+  useUnionPlaylistTracks,
 } from "./useCustomPlaylists";

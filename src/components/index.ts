@@ -9,5 +9,6 @@ export { VolumeControl } from "./VolumeControl";
 export { ProviderStatus } from "./ProviderStatus";
 export { TrackTable } from "./TrackTable";
 export { CustomPlaylistEditor } from "./CustomPlaylistEditor";
+export { UnionPlaylistEditor } from "./UnionPlaylistEditor";
 export { PlaylistViewer } from "./PlaylistViewer";
 export type { ProviderStatusInfo, ProviderStatusProps } from "./ProviderStatus";
