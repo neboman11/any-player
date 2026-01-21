@@ -22,8 +22,16 @@ export function useSearch() {
         if (searchType === "tracks") {
           if (source === "spotify" || source === "all") {
             try {
-              // TODO: Add Spotify search when API is available
-              console.log("Searching Spotify tracks...");
+              const spotifyTracks = await tauriAPI.searchSpotifyTracks(query);
+              searchResults.push(
+                ...spotifyTracks.map((track) => ({
+                  id: track.id,
+                  name: track.title,
+                  artist: track.artist,
+                  type: "track" as const,
+                  source: track.source,
+                })),
+              );
             } catch (err) {
               console.error("Spotify search error:", err);
             }
@@ -39,7 +47,7 @@ export function useSearch() {
                   artist: track.artist,
                   type: "track" as const,
                   source: track.source,
-                }))
+                })),
               );
             } catch (err) {
               console.error("Jellyfin search error:", err);
@@ -49,9 +57,8 @@ export function useSearch() {
           // Playlists
           if (source === "jellyfin" || source === "all") {
             try {
-              const jellyfinPlaylists = await tauriAPI.searchJellyfinPlaylists(
-                query
-              );
+              const jellyfinPlaylists =
+                await tauriAPI.searchJellyfinPlaylists(query);
               searchResults.push(
                 ...jellyfinPlaylists.map((playlist) => ({
                   id: playlist.id,
@@ -59,7 +66,7 @@ export function useSearch() {
                   owner: playlist.owner,
                   type: "playlist" as const,
                   source: playlist.source,
-                }))
+                })),
               );
             } catch (err) {
               console.error("Jellyfin search error:", err);
@@ -80,7 +87,7 @@ export function useSearch() {
         setIsLoading(false);
       }
     },
-    []
+    [],
   );
 
   const clearResults = useCallback(() => {

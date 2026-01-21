@@ -107,6 +107,8 @@ pub fn run() {
             commands::disconnect_jellyfin,
             commands::get_jellyfin_credentials,
             commands::restore_jellyfin_session,
+            // Search commands
+            commands::search_spotify_tracks,
             // Audio commands
             commands::get_audio_file,
             // Custom playlist commands

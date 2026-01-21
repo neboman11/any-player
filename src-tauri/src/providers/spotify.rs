@@ -556,16 +556,55 @@ impl MusicProvider for SpotifyProvider {
         })
     }
     async fn search_tracks(&self, query: &str) -> Result<Vec<Track>, ProviderError> {
-        let _client = self
+        let client = self
             .client
             .as_ref()
             .ok_or_else(|| ProviderError("Not authenticated".to_string()))?;
 
-        // TODO: Implement track search using rspotify search API
-        Err(ProviderError(format!(
-            "Track search not yet implemented for query: {}",
-            query
-        )))
+        use rspotify::model::SearchType;
+
+        let search_result = client
+            .search(query, SearchType::Track, None, None, Some(20), None)
+            .await
+            .map_err(|e| ProviderError(format!("Failed to search Spotify tracks: {}", e)))?;
+
+        let tracks = if let rspotify::model::SearchResult::Tracks(page) = search_result {
+            page.items
+                .iter()
+                .map(|track| {
+                    let artists = track
+                        .artists
+                        .iter()
+                        .map(|a| a.name.clone())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    let album_name = track.album.name.clone();
+                    let duration_ms = track.duration.num_milliseconds() as u64;
+                    let image_url = track.album.images.first().map(|img| img.url.clone());
+
+                    Track {
+                        id: track
+                            .id
+                            .as_ref()
+                            .map(|id| id.to_string())
+                            .unwrap_or_default(),
+                        title: track.name.clone(),
+                        artist: artists,
+                        album: album_name,
+                        duration_ms,
+                        image_url,
+                        source: Source::Spotify,
+                        url: track.external_urls.get("spotify").cloned(),
+                        auth_headers: None,
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        Ok(tracks)
     }
 
     async fn search_playlists(&self, query: &str) -> Result<Vec<Playlist>, ProviderError> {

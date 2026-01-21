@@ -170,6 +170,10 @@ export class TauriAPI {
     return invoke<Track[]>("search_jellyfin_tracks", { query });
   }
 
+  async searchSpotifyTracks(query: string): Promise<Track[]> {
+    return invoke<Track[]>("search_spotify_tracks", { query });
+  }
+
   async searchJellyfinPlaylists(query: string): Promise<Playlist[]> {
     return invoke<Playlist[]>("search_jellyfin_playlists", { query });
   }
