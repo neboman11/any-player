@@ -122,6 +122,9 @@ pub struct PlaybackInfo {
     pub queue: Vec<Track>,
     /// Current index in queue
     pub current_index: usize,
+    /// Shuffle order: maps shuffle position to original queue index
+    /// When shuffle is enabled, this array defines the play order
+    pub shuffle_order: Vec<usize>,
 }
 
 impl Default for PlaybackInfo {
@@ -135,6 +138,7 @@ impl Default for PlaybackInfo {
             volume: 50,
             queue: Vec::new(),
             current_index: 0,
+            shuffle_order: Vec::new(),
         }
     }
 }

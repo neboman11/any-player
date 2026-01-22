@@ -39,9 +39,11 @@ export function UnionPlaylistEditor({
     addSource,
     removeSource,
   } = useUnionPlaylistSources(playlist.id);
-  const { tracks, loading: tracksLoading } = useUnionPlaylistTracks(
-    playlist.id,
-  );
+  const {
+    tracks,
+    loading: tracksLoading,
+    refresh: refreshTracks,
+  } = useUnionPlaylistTracks(playlist.id);
   const { playlists: customPlaylists } = useCustomPlaylists();
   const playback = usePlayback();
   const [isEditing, setIsEditing] = useState(false);
@@ -150,6 +152,10 @@ export function UnionPlaylistEditor({
     }
   };
 
+  const handleRefresh = async () => {
+    await refreshTracks(true);
+  };
+
   const handleRemoveSource = async (sourceId: number) => {
     if (!confirm("Remove this playlist from the union?")) {
       return;
@@ -165,19 +171,15 @@ export function UnionPlaylistEditor({
 
   const handlePlayPlaylist = async () => {
     try {
-      // For union playlists, we need to set the queue with all tracks and play the first one
+      // For union playlists, send the cached tracks directly to start playback immediately
+      // The backend will start playing right away and enrich track details in the background
       if (tracks.length === 0) {
         alert("No tracks in this union playlist");
         return;
       }
 
-      // Play the first track
-      const firstTrack = tracks[0];
-      const source = (firstTrack as Track).source || "custom";
-      // Normalize source to lowercase
-      const normalizedSource = source.toLowerCase();
-
-      await playback.playTrack(String(firstTrack.id), normalizedSource);
+      // Use the optimized immediate playback API
+      await tauriAPI.playTracksImmediate(tracks);
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play union playlist:", err);
@@ -286,6 +288,13 @@ export function UnionPlaylistEditor({
                 onClick={() => setShowAddSource(!showAddSource)}
               >
                 + Add Playlist
+              </button>
+              <button
+                className="refresh-btn"
+                onClick={handleRefresh}
+                title="Refresh tracks"
+              >
+                ⟳ Refresh
               </button>
               <button className="edit-btn" onClick={() => setIsEditing(true)}>
                 Edit

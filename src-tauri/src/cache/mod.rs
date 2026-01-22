@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 const PLAYLISTS_CACHE_FILE: &str = "playlists_cache.json";
 const CUSTOM_PLAYLISTS_CACHE_FILE: &str = "custom_playlists_cache.json";
+const CUSTOM_PLAYLIST_TRACKS_CACHE_PREFIX: &str = "custom_playlist_tracks_";
+const UNION_PLAYLIST_TRACKS_CACHE_PREFIX: &str = "union_playlist_tracks_";
 
 /// Get the XDG cache directory for the application
 fn get_cache_dir() -> Result<PathBuf> {
@@ -92,6 +94,51 @@ pub fn read_custom_playlists_cache() -> Result<Option<String>> {
 /// Clear custom playlists cache
 pub fn clear_custom_playlists_cache() -> Result<()> {
     clear_cache(CUSTOM_PLAYLISTS_CACHE_FILE)
+}
+
+/// Write custom playlist tracks to cache
+pub fn write_custom_playlist_tracks_cache(playlist_id: &str, data: &str) -> Result<()> {
+    let filename = format!(
+        "{}{}.json",
+        CUSTOM_PLAYLIST_TRACKS_CACHE_PREFIX, playlist_id
+    );
+    write_cache(&filename, &data)
+}
+
+/// Read custom playlist tracks from cache
+pub fn read_custom_playlist_tracks_cache(playlist_id: &str) -> Result<Option<String>> {
+    let filename = format!(
+        "{}{}.json",
+        CUSTOM_PLAYLIST_TRACKS_CACHE_PREFIX, playlist_id
+    );
+    read_cache(&filename)
+}
+
+/// Clear custom playlist tracks cache
+pub fn clear_custom_playlist_tracks_cache(playlist_id: &str) -> Result<()> {
+    let filename = format!(
+        "{}{}.json",
+        CUSTOM_PLAYLIST_TRACKS_CACHE_PREFIX, playlist_id
+    );
+    clear_cache(&filename)
+}
+
+/// Write union playlist tracks to cache
+pub fn write_union_playlist_tracks_cache(playlist_id: &str, data: &str) -> Result<()> {
+    let filename = format!("{}{}.json", UNION_PLAYLIST_TRACKS_CACHE_PREFIX, playlist_id);
+    write_cache(&filename, &data)
+}
+
+/// Read union playlist tracks from cache
+pub fn read_union_playlist_tracks_cache(playlist_id: &str) -> Result<Option<String>> {
+    let filename = format!("{}{}.json", UNION_PLAYLIST_TRACKS_CACHE_PREFIX, playlist_id);
+    read_cache(&filename)
+}
+
+/// Clear union playlist tracks cache
+pub fn clear_union_playlist_tracks_cache(playlist_id: &str) -> Result<()> {
+    let filename = format!("{}{}.json", UNION_PLAYLIST_TRACKS_CACHE_PREFIX, playlist_id);
+    clear_cache(&filename)
 }
 
 #[cfg(test)]

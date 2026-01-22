@@ -90,6 +90,20 @@ export class TauriAPI {
     return invoke<void>("play_playlist", { playlistId, source });
   }
 
+  async playTracksImmediate(tracks: Track[]): Promise<void> {
+    // Convert Track objects to the format expected by the backend
+    const trackInfos = tracks.map((track) => ({
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      album: track.album || "",
+      duration: track.duration_ms || 0,
+      source: typeof track.source === "string" ? track.source : track.source,
+      url: track.url || null,
+    }));
+    return invoke<void>("play_tracks_immediate", { tracks: trackInfos });
+  }
+
   // Spotify commands
   async getSpotifyAuthUrl(): Promise<string> {
     return invoke<string>("get_spotify_auth_url");
@@ -347,6 +361,40 @@ export class TauriAPI {
 
   async clearCustomPlaylistsCache(): Promise<void> {
     return invoke("clear_custom_playlists_cache");
+  }
+
+  async writeCustomPlaylistTracksCache(
+    playlistId: string,
+    data: string,
+  ): Promise<void> {
+    return invoke("write_custom_playlist_tracks_cache", { playlistId, data });
+  }
+
+  async readCustomPlaylistTracksCache(
+    playlistId: string,
+  ): Promise<string | null> {
+    return invoke("read_custom_playlist_tracks_cache", { playlistId });
+  }
+
+  async clearCustomPlaylistTracksCache(playlistId: string): Promise<void> {
+    return invoke("clear_custom_playlist_tracks_cache", { playlistId });
+  }
+
+  async writeUnionPlaylistTracksCache(
+    playlistId: string,
+    data: string,
+  ): Promise<void> {
+    return invoke("write_union_playlist_tracks_cache", { playlistId, data });
+  }
+
+  async readUnionPlaylistTracksCache(
+    playlistId: string,
+  ): Promise<string | null> {
+    return invoke("read_union_playlist_tracks_cache", { playlistId });
+  }
+
+  async clearUnionPlaylistTracksCache(playlistId: string): Promise<void> {
+    return invoke("clear_union_playlist_tracks_cache", { playlistId });
   }
 }
 

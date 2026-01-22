@@ -81,6 +81,10 @@ pub struct ProviderRegistry {
     jellyfin_provider: Option<Arc<tokio::sync::Mutex<jellyfin::JellyfinProvider>>>,
 }
 
+// Explicitly mark as Send + Sync since all fields use Arc which is thread-safe
+unsafe impl Send for ProviderRegistry {}
+unsafe impl Sync for ProviderRegistry {}
+
 impl ProviderRegistry {
     pub fn new() -> Self {
         Self {
@@ -444,6 +448,21 @@ impl ProviderRegistry {
             tokens.spotify_token.is_some()
         } else {
             false
+        }
+    }
+
+    /// Get authentication headers for a specific source
+    /// Returns None for sources that don't require authentication headers
+    pub async fn get_auth_headers(&self, source: Source) -> Option<Vec<(String, String)>> {
+        match source {
+            Source::Jellyfin => {
+                if let Some(provider_mutex) = &self.jellyfin_provider {
+                    let provider = provider_mutex.lock().await;
+                    return Some(provider.get_auth_headers());
+                }
+                None
+            }
+            _ => None,
         }
     }
 

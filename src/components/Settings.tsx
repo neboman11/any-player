@@ -145,6 +145,24 @@ export function Settings() {
   const jellyfin = useJellyfinAuth();
   const { clearCache, loadPlaylists } = usePlaylists();
 
+  // Refresh authentication status when Settings page is mounted/visible
+  useEffect(() => {
+    const refreshAuthStatus = async () => {
+      // Refresh Spotify auth status
+      if (spotify.checkAuthStatus) {
+        await spotify.checkAuthStatus();
+      }
+
+      // Refresh Jellyfin auth status
+      if (jellyfin.checkAuthStatus) {
+        await jellyfin.checkAuthStatus();
+      }
+    };
+
+    void refreshAuthStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount - we want to refresh status when Settings page loads
+
   // Load stored Jellyfin credentials when component mounts or connection state changes
   useEffect(() => {
     const loadCredentials = async () => {
