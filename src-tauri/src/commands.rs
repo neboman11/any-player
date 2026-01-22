@@ -151,6 +151,19 @@ pub async fn toggle_play_pause(state: State<'_, AppState>) -> Result<(), String>
 pub async fn next_track(state: State<'_, AppState>) -> Result<(), String> {
     let playback = { state.playback.lock().await };
     let _ = playback.next_track().await;
+
+    // Trigger eager loading for upcoming tracks in the background
+    let playback_arc = state.playback.clone();
+    let providers_arc = state.providers.clone();
+    tokio::spawn(async move {
+        let pb = playback_arc.lock().await;
+        let info = pb.get_info().await;
+        let current_idx = info.current_index;
+        drop(pb);
+
+        enrich_queued_tracks_eager(playback_arc, providers_arc, current_idx).await;
+    });
+
     Ok(())
 }
 
@@ -326,41 +339,122 @@ pub async fn play_playlist(
         "custom" => {
             // Handle custom playlists from database
             let db = state.database.lock().await;
-            let playlist_tracks = db
-                .get_playlist_tracks(&playlist_id)
-                .map_err(|e| format!("Failed to get custom playlist tracks: {}", e))?;
 
-            if playlist_tracks.is_empty() {
-                return Err("Playlist is empty".to_string());
-            }
+            // Check if this is a union playlist
+            let playlist_info = db
+                .get_playlist(&playlist_id)
+                .map_err(|e| format!("Failed to get playlist info: {}", e))?
+                .ok_or_else(|| format!("Playlist not found: {}", playlist_id))?;
 
-            drop(db);
+            let tracks_with_urls = if playlist_info.playlist_type == "union" {
+                // For union playlists, get tracks from all source playlists
+                let sources = db
+                    .get_union_playlist_sources(&playlist_id)
+                    .map_err(|e| format!("Failed to get union playlist sources: {}", e))?;
 
-            // Fetch full track details with URLs from the original providers
-            let mut tracks_with_urls = Vec::new();
-            for pt in playlist_tracks {
-                let track_result = match pt.track_source.as_str() {
-                    "Spotify" | "spotify" => providers.get_spotify_track(&pt.track_id).await,
-                    "Jellyfin" | "jellyfin" => providers.get_jellyfin_track(&pt.track_id).await,
-                    _ => {
-                        // For custom or unknown sources, use the cached metadata without URL
-                        Ok(pt.to_track())
-                    }
-                };
+                drop(db); // Release database lock before provider calls
 
-                match track_result {
-                    Ok(track) => tracks_with_urls.push(track),
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to fetch track {} from {}: {}. Using cached metadata.",
-                            pt.track_id,
-                            pt.track_source,
-                            e
-                        );
-                        // Fall back to cached metadata
-                        tracks_with_urls.push(pt.to_track());
+                let mut all_tracks = Vec::new();
+
+                for source in sources {
+                    match source.source_type.as_str() {
+                        "spotify" => {
+                            match providers
+                                .get_spotify_playlist(&source.source_playlist_id)
+                                .await
+                            {
+                                Ok(playlist) => {
+                                    all_tracks.extend(playlist.tracks);
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to get Spotify playlist {}: {}",
+                                        source.source_playlist_id,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                        "jellyfin" => {
+                            match providers
+                                .get_jellyfin_playlist(&source.source_playlist_id)
+                                .await
+                            {
+                                Ok(playlist) => {
+                                    all_tracks.extend(playlist.tracks);
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to get Jellyfin playlist {}: {}",
+                                        source.source_playlist_id,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                        "custom" => {
+                            let db = state.database.lock().await;
+                            match db.get_playlist_tracks(&source.source_playlist_id) {
+                                Ok(tracks) => {
+                                    all_tracks.extend(tracks.into_iter().map(|t| t.to_track()));
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to get custom playlist {}: {}",
+                                        source.source_playlist_id,
+                                        e
+                                    );
+                                }
+                            }
+                            drop(db);
+                        }
+                        _ => {
+                            tracing::warn!("Unknown source type: {}", source.source_type);
+                        }
                     }
                 }
+
+                all_tracks
+            } else {
+                // For standard custom playlists, get tracks normally
+                let playlist_tracks = db
+                    .get_playlist_tracks(&playlist_id)
+                    .map_err(|e| format!("Failed to get custom playlist tracks: {}", e))?;
+
+                drop(db);
+
+                // Fetch full track details with URLs from the original providers
+                let mut tracks = Vec::new();
+                for pt in playlist_tracks {
+                    let track_result = match pt.track_source.as_str() {
+                        "Spotify" | "spotify" => providers.get_spotify_track(&pt.track_id).await,
+                        "Jellyfin" | "jellyfin" => providers.get_jellyfin_track(&pt.track_id).await,
+                        _ => {
+                            // For custom or unknown sources, use the cached metadata without URL
+                            Ok(pt.to_track())
+                        }
+                    };
+
+                    match track_result {
+                        Ok(track) => tracks.push(track),
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to fetch track {} from {}: {}. Using cached metadata.",
+                                pt.track_id,
+                                pt.track_source,
+                                e
+                            );
+                            // Fall back to cached metadata
+                            tracks.push(pt.to_track());
+                        }
+                    }
+                }
+
+                tracks
+            };
+
+            if tracks_with_urls.is_empty() {
+                return Err("Playlist is empty".to_string());
             }
 
             drop(providers);
@@ -370,8 +464,50 @@ pub async fn play_playlist(
             playback.clear_queue().await;
             playback.queue_tracks(tracks_with_urls.clone()).await;
 
-            // Play the first track
-            playback.play_track(tracks_with_urls[0].clone()).await;
+            // Check if shuffle is enabled and generate shuffle order if needed
+            let info = playback.get_info().await;
+            if info.shuffle {
+                // Access the queue to generate shuffle order
+                let queue_arc = playback.get_queue_arc();
+                let mut queue = queue_arc.lock().await;
+                queue.generate_shuffle_order();
+                queue.current_index = 0;
+
+                // Get the first track according to shuffle order
+                let first_track_index = if !queue.shuffle_order.is_empty()
+                    && queue.shuffle_order[0] < tracks_with_urls.len()
+                {
+                    queue.shuffle_order[0]
+                } else {
+                    0
+                };
+                drop(queue);
+
+                playback
+                    .play_track(tracks_with_urls[first_track_index].clone())
+                    .await;
+
+                // Trigger eager loading for the next tracks
+                let first_idx = first_track_index;
+                drop(playback);
+
+                let playback_arc = state.playback.clone();
+                let providers_arc = state.providers.clone();
+                tokio::spawn(async move {
+                    enrich_queued_tracks_eager(playback_arc, providers_arc, first_idx).await;
+                });
+            } else {
+                // Play the first track normally
+                playback.play_track(tracks_with_urls[0].clone()).await;
+                drop(playback);
+
+                // Trigger eager loading for the next tracks
+                let playback_arc = state.playback.clone();
+                let providers_arc = state.providers.clone();
+                tokio::spawn(async move {
+                    enrich_queued_tracks_eager(playback_arc, providers_arc, 0).await;
+                });
+            }
 
             return Ok(());
         }
@@ -389,10 +525,243 @@ pub async fn play_playlist(
     playback.clear_queue().await;
     playback.queue_tracks(playlist.tracks.clone()).await;
 
+    // Check if shuffle is enabled and generate shuffle order if needed
+    let info = playback.get_info().await;
+    let first_track_index = if info.shuffle {
+        // Access the queue to generate shuffle order
+        let queue_arc = playback.get_queue_arc();
+        let mut queue = queue_arc.lock().await;
+        queue.generate_shuffle_order();
+        queue.current_index = 0;
+
+        // Get the first track according to shuffle order
+        if !queue.shuffle_order.is_empty() && queue.shuffle_order[0] < playlist.tracks.len() {
+            queue.shuffle_order[0]
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
     // Play the first track
-    playback.play_track(playlist.tracks[0].clone()).await;
+    playback
+        .play_track(playlist.tracks[first_track_index].clone())
+        .await;
+
+    drop(playback);
+
+    // Trigger eager loading for the next tracks in the background
+    let playback_arc = state.playback.clone();
+    let providers_arc = state.providers.clone();
+    tokio::spawn(async move {
+        enrich_queued_tracks_eager(playback_arc, providers_arc, first_track_index).await;
+    });
 
     Ok(())
+}
+
+/// Play tracks directly from a list (optimized for union playlists)
+/// This command accepts tracks from the frontend and starts playback immediately
+/// without fetching full details for all tracks upfront
+#[tauri::command]
+pub async fn play_tracks_immediate(
+    state: State<'_, AppState>,
+    tracks: Vec<TrackInfo>,
+) -> Result<(), String> {
+    if tracks.is_empty() {
+        return Err("No tracks provided".to_string());
+    }
+
+    // Convert TrackInfo to Track for internal use
+    // Get provider registry to fetch auth headers for tracks that need them
+    let providers = state.providers.lock().await;
+
+    let mut internal_tracks = Vec::new();
+    for track_info in tracks {
+        let source = match track_info.source.to_lowercase().as_str() {
+            "spotify" => crate::models::Source::Spotify,
+            "jellyfin" => crate::models::Source::Jellyfin,
+            _ => crate::models::Source::Custom,
+        };
+
+        // Get auth headers for sources that need them (e.g., Jellyfin)
+        let auth_headers = providers.get_auth_headers(source.clone()).await;
+
+        internal_tracks.push(crate::models::Track {
+            id: track_info.id,
+            title: track_info.title,
+            artist: track_info.artist,
+            album: track_info.album,
+            duration_ms: track_info.duration,
+            image_url: None,
+            source,
+            url: track_info.url,
+            auth_headers,
+        });
+    }
+
+    drop(providers);
+
+    let playback = state.playback.lock().await;
+
+    // Clear queue and add all tracks
+    playback.clear_queue().await;
+    playback.queue_tracks(internal_tracks.clone()).await;
+
+    // Check if shuffle is enabled and generate shuffle order if needed
+    let info = playback.get_info().await;
+    let first_track_index = if info.shuffle {
+        // Generate shuffle order
+        let queue_arc = playback.get_queue_arc();
+        let mut queue = queue_arc.lock().await;
+        queue.generate_shuffle_order();
+        queue.current_index = 0;
+
+        // Get the first track according to shuffle order
+        if !queue.shuffle_order.is_empty() && queue.shuffle_order[0] < internal_tracks.len() {
+            queue.shuffle_order[0]
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    drop(playback); // Release playback lock
+
+    // Enrich the first track immediately before playing (critical for Jellyfin auth)
+    let providers = state.providers.lock().await;
+    let first_track = &internal_tracks[first_track_index];
+
+    let enriched_first_track = match first_track.source {
+        crate::models::Source::Spotify => providers.get_spotify_track(&first_track.id).await.ok(),
+        crate::models::Source::Jellyfin => {
+            // Must enrich Jellyfin tracks immediately to get auth headers
+            providers.get_jellyfin_track(&first_track.id).await.ok()
+        }
+        _ => None,
+    };
+
+    drop(providers); // Release providers lock
+
+    // Update the first track in the queue if we successfully enriched it
+    if let Some(enriched) = enriched_first_track {
+        let playback = state.playback.lock().await;
+        let queue_arc = playback.get_queue_arc();
+        let mut queue = queue_arc.lock().await;
+        if first_track_index < queue.tracks.len() {
+            queue.tracks[first_track_index] = enriched.clone();
+        }
+        drop(queue);
+
+        // Play the enriched first track
+        playback.play_track(enriched).await;
+    } else {
+        // Fall back to playing the track as-is (may fail for Jellyfin without auth)
+        let playback = state.playback.lock().await;
+        playback
+            .play_track(internal_tracks[first_track_index].clone())
+            .await;
+    }
+
+    // Spawn background task to eagerly enrich the next tracks
+    // This ensures Jellyfin tracks have auth headers ready before playback reaches them
+    let playback_arc = state.playback.clone();
+    let providers_arc = state.providers.clone();
+    let first_track_index_clone = first_track_index;
+    tokio::spawn(async move {
+        enrich_queued_tracks_eager(playback_arc, providers_arc, first_track_index_clone).await;
+    });
+
+    Ok(())
+}
+
+/// Eagerly enrich queued tracks with full details (URLs, auth headers, etc.)
+/// Prioritizes tracks near the current playback position and loads them immediately
+async fn enrich_queued_tracks_eager(
+    playback: Arc<Mutex<PlaybackManager>>,
+    providers: Arc<Mutex<ProviderRegistry>>,
+    current_index: usize,
+) {
+    const LOOKAHEAD_COUNT: usize = 10; // Number of tracks to load ahead
+
+    let pb = playback.lock().await;
+    let queue_arc = pb.get_queue_arc();
+    drop(pb); // Release playback lock
+
+    let queue = queue_arc.lock().await;
+    let total_tracks = queue.tracks.len();
+    let shuffle_enabled = !queue.shuffle_order.is_empty();
+    drop(queue); // Release queue lock temporarily
+
+    // Calculate which tracks to load first (starting from index 1 since 0 is already playing)
+    let mut indices_to_load = Vec::new();
+    for i in 1..=LOOKAHEAD_COUNT.min(total_tracks.saturating_sub(1)) {
+        let actual_index = if shuffle_enabled {
+            let queue = queue_arc.lock().await;
+            let shuffle_pos = (current_index + i) % total_tracks;
+            if shuffle_pos < queue.shuffle_order.len() {
+                queue.shuffle_order[shuffle_pos]
+            } else {
+                i
+            }
+        } else {
+            (current_index + i) % total_tracks
+        };
+        indices_to_load.push(actual_index);
+    }
+
+    // Load track details for the prioritized tracks
+    let providers_lock = providers.lock().await;
+
+    for &track_idx in &indices_to_load {
+        let queue = queue_arc.lock().await;
+        if track_idx >= queue.tracks.len() {
+            continue;
+        }
+
+        let track = &queue.tracks[track_idx];
+
+        // Skip if track already has a URL (already enriched)
+        if track.url.is_some() {
+            drop(queue);
+            continue;
+        }
+
+        let track_id = track.id.clone();
+        let source = track.source;
+        drop(queue); // Release lock before async call
+
+        // Fetch full track details
+        let enriched_track_result = match source {
+            crate::models::Source::Spotify => providers_lock.get_spotify_track(&track_id).await,
+            crate::models::Source::Jellyfin => providers_lock.get_jellyfin_track(&track_id).await,
+            _ => continue, // Skip custom tracks
+        };
+
+        // Update the track in the queue with enriched data
+        if let Ok(enriched_track) = enriched_track_result {
+            let mut queue = queue_arc.lock().await;
+            if track_idx < queue.tracks.len() {
+                queue.tracks[track_idx] = enriched_track;
+                tracing::debug!("Eagerly enriched track {} at index {}", track_id, track_idx);
+            }
+        } else {
+            tracing::warn!("Failed to enrich track {} at index {}", track_id, track_idx);
+        }
+
+        // Small delay to avoid overwhelming the API
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+    }
+
+    drop(providers_lock);
+
+    tracing::info!(
+        "Completed eager loading of {} priority tracks (total queue: {})",
+        indices_to_load.len(),
+        total_tracks
+    );
 }
 
 /// Helper function to initialize Spotify session for premium users
@@ -1312,17 +1681,39 @@ pub async fn get_union_playlist_tracks(
         .get_union_playlist_sources(&union_playlist_id)
         .map_err(|e| format!("Failed to get union playlist sources: {}", e))?;
 
+    tracing::info!(
+        "Getting tracks for union playlist {} with {} sources",
+        union_playlist_id,
+        sources.len()
+    );
+
     let mut all_tracks = Vec::new();
 
     for source in sources {
+        tracing::debug!(
+            "Processing source: type={}, playlist_id={}",
+            source.source_type,
+            source.source_playlist_id
+        );
+
         match source.source_type.as_str() {
             "spotify" => {
                 match providers
                     .get_spotify_playlist(&source.source_playlist_id)
                     .await
                 {
-                    Ok(playlist) => all_tracks.extend(playlist.tracks),
-                    Err(e) => eprintln!("Failed to get Spotify playlist tracks: {}", e),
+                    Ok(playlist) => {
+                        tracing::info!(
+                            "Got {} tracks from Spotify playlist {}",
+                            playlist.tracks.len(),
+                            source.source_playlist_id
+                        );
+                        all_tracks.extend(playlist.tracks);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to get Spotify playlist tracks: {}", e);
+                        eprintln!("Failed to get Spotify playlist tracks: {}", e);
+                    }
                 }
             }
             "jellyfin" => {
@@ -1330,8 +1721,18 @@ pub async fn get_union_playlist_tracks(
                     .get_jellyfin_playlist(&source.source_playlist_id)
                     .await
                 {
-                    Ok(playlist) => all_tracks.extend(playlist.tracks),
-                    Err(e) => eprintln!("Failed to get Jellyfin playlist tracks: {}", e),
+                    Ok(playlist) => {
+                        tracing::info!(
+                            "Got {} tracks from Jellyfin playlist {}",
+                            playlist.tracks.len(),
+                            source.source_playlist_id
+                        );
+                        all_tracks.extend(playlist.tracks);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to get Jellyfin playlist tracks: {}", e);
+                        eprintln!("Failed to get Jellyfin playlist tracks: {}", e);
+                    }
                 }
             }
             "custom" => {
@@ -1339,13 +1740,25 @@ pub async fn get_union_playlist_tracks(
                 let tracks = db
                     .get_playlist_tracks(&source.source_playlist_id)
                     .map_err(|e| format!("Failed to get custom playlist tracks: {}", e))?;
+                tracing::info!(
+                    "Got {} tracks from custom playlist {}",
+                    tracks.len(),
+                    source.source_playlist_id
+                );
                 all_tracks.extend(tracks.into_iter().map(|t| t.to_track()));
             }
             _ => {
+                tracing::warn!("Unknown source type: {}", source.source_type);
                 eprintln!("Unknown source type: {}", source.source_type);
             }
         }
     }
+
+    tracing::info!(
+        "Total tracks collected for union playlist {}: {}",
+        union_playlist_id,
+        all_tracks.len()
+    );
 
     Ok(all_tracks)
 }
@@ -1394,4 +1807,56 @@ pub async fn read_custom_playlists_cache() -> Result<Option<String>, String> {
 pub async fn clear_custom_playlists_cache() -> Result<(), String> {
     crate::cache::clear_custom_playlists_cache()
         .map_err(|e| format!("Failed to clear custom playlists cache: {}", e))
+}
+
+/// Write custom playlist tracks cache to disk
+#[tauri::command]
+pub async fn write_custom_playlist_tracks_cache(
+    playlist_id: String,
+    data: String,
+) -> Result<(), String> {
+    crate::cache::write_custom_playlist_tracks_cache(&playlist_id, &data)
+        .map_err(|e| format!("Failed to write custom playlist tracks cache: {}", e))
+}
+
+/// Read custom playlist tracks cache from disk
+#[tauri::command]
+pub async fn read_custom_playlist_tracks_cache(
+    playlist_id: String,
+) -> Result<Option<String>, String> {
+    crate::cache::read_custom_playlist_tracks_cache(&playlist_id)
+        .map_err(|e| format!("Failed to read custom playlist tracks cache: {}", e))
+}
+
+/// Clear custom playlist tracks cache
+#[tauri::command]
+pub async fn clear_custom_playlist_tracks_cache(playlist_id: String) -> Result<(), String> {
+    crate::cache::clear_custom_playlist_tracks_cache(&playlist_id)
+        .map_err(|e| format!("Failed to clear custom playlist tracks cache: {}", e))
+}
+
+/// Write union playlist tracks cache to disk
+#[tauri::command]
+pub async fn write_union_playlist_tracks_cache(
+    playlist_id: String,
+    data: String,
+) -> Result<(), String> {
+    crate::cache::write_union_playlist_tracks_cache(&playlist_id, &data)
+        .map_err(|e| format!("Failed to write union playlist tracks cache: {}", e))
+}
+
+/// Read union playlist tracks cache from disk
+#[tauri::command]
+pub async fn read_union_playlist_tracks_cache(
+    playlist_id: String,
+) -> Result<Option<String>, String> {
+    crate::cache::read_union_playlist_tracks_cache(&playlist_id)
+        .map_err(|e| format!("Failed to read union playlist tracks cache: {}", e))
+}
+
+/// Clear union playlist tracks cache
+#[tauri::command]
+pub async fn clear_union_playlist_tracks_cache(playlist_id: String) -> Result<(), String> {
+    crate::cache::clear_union_playlist_tracks_cache(&playlist_id)
+        .map_err(|e| format!("Failed to clear union playlist tracks cache: {}", e))
 }

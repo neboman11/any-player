@@ -31,6 +31,7 @@ export function PlaylistViewer({
     loading: customLoading,
     removeTrack,
     reorderTrack,
+    refresh: refreshCustomTracks,
   } = useCustomPlaylistTracks(customPlaylistId);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -101,6 +102,27 @@ export function PlaylistViewer({
     } catch (err) {
       console.error("Failed to delete playlist:", err);
       alert("Failed to delete playlist");
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (isCustom && refreshCustomTracks) {
+      await refreshCustomTracks(true);
+    } else if (!isCustom) {
+      // For regular playlists, reload tracks
+      const regularPlaylist = playlist as Playlist;
+      setLoading(true);
+      try {
+        const fullPlaylist =
+          regularPlaylist.source === "spotify"
+            ? await tauriAPI.getSpotifyPlaylist(regularPlaylist.id)
+            : await tauriAPI.getJellyfinPlaylist(regularPlaylist.id);
+        setRegularTracks(fullPlaylist.tracks || []);
+      } catch (err) {
+        console.error("Failed to reload playlist tracks:", err);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -205,6 +227,13 @@ export function PlaylistViewer({
         <div className="header-actions">
           <button className="play-btn" onClick={handlePlayPlaylist}>
             ▶ Play All
+          </button>
+          <button
+            className="refresh-btn"
+            onClick={handleRefresh}
+            title="Refresh tracks"
+          >
+            ⟳ Refresh
           </button>
           {isCustom && !isEditing && (
             <>

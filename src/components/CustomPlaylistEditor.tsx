@@ -21,7 +21,7 @@ export function CustomPlaylistEditor({
   onUpdate,
   onDelete,
 }: CustomPlaylistEditorProps) {
-  const { tracks, loading, removeTrack, reorderTrack } =
+  const { tracks, loading, removeTrack, reorderTrack, refresh } =
     useCustomPlaylistTracks(playlist.id);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(playlist.name);
@@ -67,6 +67,10 @@ export function CustomPlaylistEditor({
   const handlePlayTrack = (track: PlaylistTrack | Track) => {
     // TODO: Implement track playback
     console.log("Play track:", track);
+  };
+
+  const handleRefresh = async () => {
+    await refresh(true);
   };
 
   return (
@@ -131,6 +135,13 @@ export function CustomPlaylistEditor({
                 onClick={() => setShowAddTrack(!showAddTrack)}
               >
                 + Add Track
+              </button>
+              <button
+                className="refresh-btn"
+                onClick={handleRefresh}
+                title="Refresh tracks"
+              >
+                ⟳ Refresh
               </button>
               <button className="edit-btn" onClick={() => setIsEditing(true)}>
                 Edit

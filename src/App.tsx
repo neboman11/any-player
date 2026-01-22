@@ -4,11 +4,26 @@ import { Sidebar, NowPlaying, Playlists, Search, Settings } from "./components";
 import { usePlaylists, useCustomPlaylists } from "./hooks";
 import { tauriAPI } from "./api";
 import type { Page } from "./types";
+import { listen } from "@tauri-apps/api/event";
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>("now-playing");
   const { loadPlaylists } = usePlaylists();
   const { refresh: refreshCustomPlaylists } = useCustomPlaylists();
+
+  // Listen for track completion events and auto-advance
+  useEffect(() => {
+    const unlisten = listen("track-completed", () => {
+      console.log("Track completed event received, calling next_track");
+      tauriAPI.nextTrack().catch((err) => {
+        console.error("Failed to auto-advance to next track:", err);
+      });
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // Auto-load playlists on startup after validating connections
   useEffect(() => {

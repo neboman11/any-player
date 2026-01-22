@@ -77,6 +77,18 @@ impl JellyfinProvider {
         }
     }
 
+    /// Get authentication headers for streaming requests
+    /// Returns headers as Vec<(String, String)> for use with audio playback
+    pub fn get_auth_headers(&self) -> Vec<(String, String)> {
+        vec![
+            ("X-Emby-Token".to_string(), self.api_key.clone()),
+            ("X-Emby-Authorization".to_string(), format!(
+                "MediaBrowser Token=\"{}\", Client=\"AnyPlayer\", Device=\"AnyPlayer\", DeviceId=\"AnyPlayer\", Version=\"1.0.0\"",
+                self.api_key
+            )),
+        ]
+    }
+
     /// Helper method to build API request headers
     fn build_headers(&self) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();

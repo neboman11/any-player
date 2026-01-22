@@ -61,6 +61,7 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 url = "2.4"
 http = "1.0"
+rand = "0.8"
 
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }

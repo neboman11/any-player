@@ -214,25 +214,93 @@ export function useCustomPlaylistTracks(playlistId: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadTracks = useCallback(async () => {
-    if (!playlistId) {
-      setTracks([]);
-      setLoading(false);
-      return;
-    }
+  const loadTracks = useCallback(
+    async (forceReload = false) => {
+      if (!playlistId) {
+        setTracks([]);
+        setLoading(false);
+        return;
+      }
 
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await tauriAPI.getCustomPlaylistTracks(playlistId);
-      setTracks(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load tracks");
-      console.error("Error loading playlist tracks:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [playlistId]);
+      // Try loading from cache first if not forcing reload
+      if (!forceReload) {
+        try {
+          const cached =
+            await tauriAPI.readCustomPlaylistTracksCache(playlistId);
+          if (cached) {
+            const cacheData = JSON.parse(cached);
+            if (cacheData.version === CACHE_VERSION) {
+              console.log(
+                `Loaded ${cacheData.tracks.length} tracks from disk cache for playlist ${playlistId}`,
+              );
+              setTracks(cacheData.tracks);
+              setLoading(false);
+              // Still fetch fresh data in the background and update
+              tauriAPI
+                .getCustomPlaylistTracks(playlistId)
+                .then((data) => {
+                  console.log(
+                    `Fetched ${data.length} tracks from backend for playlist ${playlistId}`,
+                  );
+                  setTracks(data);
+                  const newCacheData = {
+                    version: CACHE_VERSION,
+                    timestamp: Date.now(),
+                    tracks: data,
+                  };
+                  tauriAPI
+                    .writeCustomPlaylistTracksCache(
+                      playlistId,
+                      JSON.stringify(newCacheData),
+                    )
+                    .catch((err) => {
+                      console.error("Failed to update tracks cache:", err);
+                    });
+                })
+                .catch((err) => {
+                  console.error("Failed to refresh tracks:", err);
+                  setError(
+                    err instanceof Error
+                      ? err.message
+                      : "Failed to refresh tracks",
+                  );
+                });
+              return;
+            }
+          }
+        } catch (err) {
+          console.error("Failed to load tracks from cache:", err);
+        }
+      }
+
+      // Load fresh data if no cache or forcing reload
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await tauriAPI.getCustomPlaylistTracks(playlistId);
+        console.log(`Loaded ${data.length} tracks for playlist ${playlistId}`);
+        setTracks(data);
+
+        // Save to disk cache (async, don't await to avoid blocking)
+        const cacheData = {
+          version: CACHE_VERSION,
+          timestamp: Date.now(),
+          tracks: data,
+        };
+        tauriAPI
+          .writeCustomPlaylistTracksCache(playlistId, JSON.stringify(cacheData))
+          .catch((err) => {
+            console.error("Failed to save tracks to disk cache:", err);
+          });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load tracks");
+        console.error("Error loading playlist tracks:", err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [playlistId],
+  );
 
   useEffect(() => {
     loadTracks();
@@ -244,7 +312,7 @@ export function useCustomPlaylistTracks(playlistId: string | null) {
 
       try {
         await tauriAPI.addTrackToCustomPlaylist(playlistId, track);
-        await loadTracks();
+        await loadTracks(true);
       } catch (err) {
         console.error("Error adding track:", err);
         throw err;
@@ -257,7 +325,7 @@ export function useCustomPlaylistTracks(playlistId: string | null) {
     async (trackId: number) => {
       try {
         await tauriAPI.removeTrackFromCustomPlaylist(trackId);
-        await loadTracks();
+        await loadTracks(true);
       } catch (err) {
         console.error("Error removing track:", err);
         throw err;
@@ -276,7 +344,7 @@ export function useCustomPlaylistTracks(playlistId: string | null) {
           trackId,
           newPosition,
         );
-        await loadTracks();
+        await loadTracks(true);
       } catch (err) {
         console.error("Error reordering track:", err);
         throw err;
@@ -284,6 +352,14 @@ export function useCustomPlaylistTracks(playlistId: string | null) {
     },
     [playlistId, loadTracks],
   );
+
+  const clearCache = useCallback(() => {
+    if (playlistId) {
+      tauriAPI.clearCustomPlaylistTracksCache(playlistId).catch((err) => {
+        console.error("Failed to clear tracks cache:", err);
+      });
+    }
+  }, [playlistId]);
 
   return {
     tracks,
@@ -293,6 +369,7 @@ export function useCustomPlaylistTracks(playlistId: string | null) {
     addTrack,
     removeTrack,
     reorderTrack,
+    clearCache,
   };
 }
 
@@ -392,34 +469,119 @@ export function useUnionPlaylistTracks(unionPlaylistId: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadTracks = useCallback(async () => {
-    if (!unionPlaylistId) {
-      setTracks([]);
-      setLoading(false);
-      return;
-    }
+  const loadTracks = useCallback(
+    async (forceReload = false) => {
+      if (!unionPlaylistId) {
+        setTracks([]);
+        setLoading(false);
+        return;
+      }
 
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await tauriAPI.getUnionPlaylistTracks(unionPlaylistId);
-      setTracks(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load tracks");
-      console.error("Error loading union playlist tracks:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [unionPlaylistId]);
+      // Try loading from cache first if not forcing reload
+      if (!forceReload) {
+        try {
+          const cached =
+            await tauriAPI.readUnionPlaylistTracksCache(unionPlaylistId);
+          if (cached) {
+            const cacheData = JSON.parse(cached);
+            if (cacheData.version === CACHE_VERSION) {
+              console.log(
+                `Loaded ${cacheData.tracks.length} tracks from disk cache for union playlist ${unionPlaylistId}`,
+              );
+              setTracks(cacheData.tracks);
+              setLoading(false);
+              // Still fetch fresh data in the background and update
+              tauriAPI
+                .getUnionPlaylistTracks(unionPlaylistId)
+                .then((data) => {
+                  console.log(
+                    `Fetched ${data.length} tracks from backend for union playlist ${unionPlaylistId}`,
+                  );
+                  setTracks(data);
+                  const newCacheData = {
+                    version: CACHE_VERSION,
+                    timestamp: Date.now(),
+                    tracks: data,
+                  };
+                  tauriAPI
+                    .writeUnionPlaylistTracksCache(
+                      unionPlaylistId,
+                      JSON.stringify(newCacheData),
+                    )
+                    .catch((err) => {
+                      console.error(
+                        "Failed to update union tracks cache:",
+                        err,
+                      );
+                    });
+                })
+                .catch((err) => {
+                  console.error("Failed to refresh union tracks:", err);
+                  setError(
+                    err instanceof Error
+                      ? err.message
+                      : "Failed to refresh tracks",
+                  );
+                });
+              return;
+            }
+          }
+        } catch (err) {
+          console.error("Failed to load union tracks from cache:", err);
+        }
+      }
+
+      // Load fresh data if no cache or forcing reload
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await tauriAPI.getUnionPlaylistTracks(unionPlaylistId);
+        console.log(
+          `Loaded ${data.length} tracks for union playlist ${unionPlaylistId}`,
+        );
+        setTracks(data);
+
+        // Save to disk cache (async, don't await to avoid blocking)
+        const cacheData = {
+          version: CACHE_VERSION,
+          timestamp: Date.now(),
+          tracks: data,
+        };
+        tauriAPI
+          .writeUnionPlaylistTracksCache(
+            unionPlaylistId,
+            JSON.stringify(cacheData),
+          )
+          .catch((err) => {
+            console.error("Failed to save union tracks to disk cache:", err);
+          });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load tracks");
+        console.error("Error loading union playlist tracks:", err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [unionPlaylistId],
+  );
 
   useEffect(() => {
     loadTracks();
   }, [loadTracks]);
+
+  const clearCache = useCallback(() => {
+    if (unionPlaylistId) {
+      tauriAPI.clearUnionPlaylistTracksCache(unionPlaylistId).catch((err) => {
+        console.error("Failed to clear union tracks cache:", err);
+      });
+    }
+  }, [unionPlaylistId]);
 
   return {
     tracks,
     loading,
     error,
     refresh: loadTracks,
+    clearCache,
   };
 }
