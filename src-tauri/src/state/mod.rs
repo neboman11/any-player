@@ -1,15 +1,102 @@
 /// Persistent state management for playback session
 use crate::models::{PlaybackState, RepeatMode, Track};
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as DeError, ser::Error as SerError, Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::Value;
 use std::path::PathBuf;
 use tokio::fs;
+
+/// Serialize an Option<Track> while stripping any auth_headers field from the JSON representation.
+fn serialize_option_track_sanitized<S>(
+    track: &Option<Track>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match track {
+        None => serializer.serialize_none(),
+        Some(t) => {
+            // Convert Track to a generic JSON value so we can drop sensitive fields.
+            let mut value = serde_json::to_value(t).map_err(SerError::custom)?;
+            if let Value::Object(ref mut map) = value {
+                // Remove sensitive auth_headers from the serialized form.
+                map.remove("auth_headers");
+            }
+            serializer.serialize_some(&value)
+        }
+    }
+}
+
+/// Deserialize an Option<Track> from JSON that may or may not contain auth_headers.
+fn deserialize_option_track_sanitized<'de, D>(
+    deserializer: D,
+) -> Result<Option<Track>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt_value = Option::<Value>::deserialize(deserializer)?;
+    match opt_value {
+        None => Ok(None),
+        Some(mut value) => {
+            if let Value::Object(ref mut map) = value {
+                // Ensure any stored auth_headers are discarded on load as well.
+                map.remove("auth_headers");
+            }
+            let track = serde_json::from_value(value).map_err(DeError::custom)?;
+            Ok(Some(track))
+        }
+    }
+}
+
+/// Serialize a Vec<Track> while stripping auth_headers from each element.
+fn serialize_track_vec_sanitized<S>(
+    tracks: &Vec<Track>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut sanitized: Vec<Value> = Vec::with_capacity(tracks.len());
+    for t in tracks {
+        let mut value = serde_json::to_value(t).map_err(SerError::custom)?;
+        if let Value::Object(ref mut map) = value {
+            map.remove("auth_headers");
+        }
+        sanitized.push(value);
+    }
+    sanitized.serialize(serializer)
+}
+
+/// Deserialize a Vec<Track> from JSON, discarding any auth_headers field.
+fn deserialize_track_vec_sanitized<'de, D>(
+    deserializer: D,
+) -> Result<Vec<Track>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let mut values = Vec::<Value>::deserialize(deserializer)?;
+    for value in &mut values {
+        if let Value::Object(ref mut map) = value {
+            map.remove("auth_headers");
+        }
+    }
+    serde_json::from_value(Value::Array(values)).map_err(DeError::custom)
+}
 
 /// Persistent playback state that gets saved to disk
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistentPlaybackState {
     /// Current playing track
+    #[serde(
+        serialize_with = "serialize_option_track_sanitized",
+        deserialize_with = "deserialize_option_track_sanitized"
+    )]
     pub current_track: Option<Track>,
     /// Queue of tracks
+    #[serde(
+        serialize_with = "serialize_track_vec_sanitized",
+        deserialize_with = "deserialize_track_vec_sanitized"
+    )]
     pub queue: Vec<Track>,
     /// Current index in queue
     pub current_index: usize,
@@ -61,19 +148,18 @@ impl PersistentPlaybackState {
 
     /// Save state to disk (async, non-blocking)
     pub async fn save(&self) -> Result<(), String> {
+        let path = Self::get_state_file_path().await?;
         let state_clone = self.clone();
-        tokio::task::spawn_blocking(move || {
-            let json = serde_json::to_string_pretty(&state_clone)
-                .map_err(|e| format!("Failed to serialize state: {}", e))?;
-            Ok::<_, String>(json)
+        
+        // Serialize in blocking task since it can be CPU-intensive
+        let json = tokio::task::spawn_blocking(move || {
+            serde_json::to_string_pretty(&state_clone)
+                .map_err(|e| format!("Failed to serialize state: {}", e))
         })
         .await
         .map_err(|e| format!("Failed to spawn blocking task: {}", e))??;
 
-        let path = Self::get_state_file_path().await?;
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| format!("Failed to serialize state: {}", e))?;
-
+        // Write to disk using async I/O
         fs::write(&path, json)
             .await
             .map_err(|e| format!("Failed to write state file: {}", e))?;
