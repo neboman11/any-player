@@ -774,7 +774,10 @@ async fn enrich_queued_tracks_eager(
         }
 
         // Small delay to avoid overwhelming the API
-        tokio::time::sleep(tokio::time::Duration::from_millis(TRACK_ENRICHMENT_DELAY_MS)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(
+            TRACK_ENRICHMENT_DELAY_MS,
+        ))
+        .await;
     }
 
     drop(providers_lock);
@@ -1517,7 +1520,7 @@ pub async fn get_custom_playlists(
         let playlists = db
             .get_all_playlists()
             .map_err(|e| format!("Failed to get playlists: {}", e))?;
-        
+
         // Collect union playlist sources for all union playlists
         let mut union_sources_map = std::collections::HashMap::new();
         for playlist in &playlists {
@@ -1528,7 +1531,7 @@ pub async fn get_custom_playlists(
                 union_sources_map.insert(playlist.id.clone(), sources);
             }
         }
-        
+
         (playlists, union_sources_map)
     }; // Database lock is released here
 
