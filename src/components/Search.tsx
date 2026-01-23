@@ -166,7 +166,7 @@ export function Search() {
           <div className="search-empty">
             <p>Searching...</p>
           </div>
-        ) : error ? (
+        ) : error && !isLoading ? (
           <div className="search-empty">
             <p>Error: {error}</p>
           </div>
