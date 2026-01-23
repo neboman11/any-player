@@ -1462,11 +1462,16 @@ impl PlaybackManager {
                 let track_complete_tx = self.track_complete_tx.clone();
                 let monitoring_abort = self.monitoring_task_abort.clone();
                 let state_save_tx = self.state_save_tx.clone();
-                match self
-                    .audio_player
-                    .play_url(url, track.auth_headers.clone())
-                    .await
-                {
+
+                // Fetch auth headers dynamically from provider if needed (e.g., for Jellyfin)
+                let auth_headers = if track.source == crate::models::Source::Jellyfin {
+                    let providers = self.providers.lock().await;
+                    providers.get_auth_headers(track.source).await
+                } else {
+                    track.auth_headers.clone()
+                };
+
+                match self.audio_player.play_url(url, auth_headers).await {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
                         let info_arc = self.info.clone();
@@ -2137,7 +2142,14 @@ impl PlaybackManager {
                     // Now spawn HTTP playback - play_audio_blocking will check is_paused and get_position
                     let url_clone = url.to_string();
                     let handle_clone = handle.clone();
-                    let auth_headers = track.auth_headers.clone();
+
+                    // Fetch auth headers dynamically from provider if needed (e.g., for Jellyfin)
+                    let auth_headers = if track.source == crate::models::Source::Jellyfin {
+                        let providers = self.providers.lock().await;
+                        providers.get_auth_headers(track.source).await
+                    } else {
+                        track.auth_headers.clone()
+                    };
 
                     tokio::spawn(async move {
                         tracing::info!(
