@@ -1860,3 +1860,21 @@ pub async fn clear_union_playlist_tracks_cache(playlist_id: String) -> Result<()
     crate::cache::clear_union_playlist_tracks_cache(&playlist_id)
         .map_err(|e| format!("Failed to clear union playlist tracks cache: {}", e))
 }
+
+// ============================================================================
+// Playback State Commands
+// ============================================================================
+
+/// Save current playback state to disk
+#[tauri::command]
+pub async fn save_playback_state(state: State<'_, AppState>) -> Result<(), String> {
+    let playback = state.playback.lock().await;
+    playback.save_state().await
+}
+
+/// Restore playback state from disk
+#[tauri::command]
+pub async fn restore_playback_state(state: State<'_, AppState>) -> Result<(), String> {
+    let playback = state.playback.lock().await;
+    playback.restore_state().await
+}

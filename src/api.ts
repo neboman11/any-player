@@ -396,6 +396,15 @@ export class TauriAPI {
   async clearUnionPlaylistTracksCache(playlistId: string): Promise<void> {
     return invoke("clear_union_playlist_tracks_cache", { playlistId });
   }
+
+  // Playback state commands
+  async savePlaybackState(): Promise<void> {
+    return invoke("save_playback_state");
+  }
+
+  async restorePlaybackState(): Promise<void> {
+    return invoke("restore_playback_state");
+  }
 }
 
 // Create and export global instance
