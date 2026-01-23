@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { Toaster } from "react-hot-toast";
 import "./App.css";
 import { Sidebar, NowPlaying, Playlists, Search, Settings } from "./components";
 import { usePlaylists, useCustomPlaylists } from "./hooks";
@@ -95,6 +96,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <Toaster position="top-right" />
       <div className="container">
         <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
         <main className="main-content">{pageContent}</main>
