@@ -11,6 +11,10 @@ interface PlaylistCacheData {
 }
 
 // Singleton cache to persist playlist data across component re-renders and unmounts
+// LIMITATION: This cache is module-scoped and will be shared across all hook instances.
+// During hot module reloading in development, the cache may not be cleared as expected.
+// If multiple instances of the app were to run in the same process (unlikely in Tauri),
+// they would share this cache. For production single-instance desktop apps, this is acceptable.
 let playlistCache: Playlist[] = [];
 let cacheInitialized = false;
 
@@ -38,8 +42,12 @@ async function loadFromDiskCache(): Promise<Playlist[] | null> {
 
     // Check version compatibility
     if (cacheData.version !== CACHE_VERSION) {
-      console.log("Cache version mismatch, ignoring disk cache");
-      await tauriAPI.clearPlaylistsCache();
+      console.log("Cache version mismatch, clearing disk cache");
+      try {
+        await tauriAPI.clearPlaylistsCache();
+      } catch (clearErr) {
+        console.error("Failed to clear outdated cache - this may indicate a permissions issue or disk problem:", clearErr);
+      }
       return null;
     }
 
@@ -96,14 +104,15 @@ export function usePlaylists() {
 
   const loadPlaylists = useCallback(
     async (source: TauriSource, forceReload = false) => {
-      // Use cache if available and not forcing reload
-      if (cacheInitialized && !forceReload) {
-        setPlaylists(playlistCache);
+      // Prevent concurrent loads
+      if (isLoadingRef.current) {
         return;
       }
 
-      // Prevent concurrent loads
-      if (isLoadingRef.current) {
+      // Use cache if available and not forcing reload
+      if (cacheInitialized && !forceReload) {
+        setPlaylists(playlistCache);
+        setIsLoading(false);
         return;
       }
 

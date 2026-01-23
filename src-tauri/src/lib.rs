@@ -35,17 +35,30 @@ pub fn run() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // Initialize database
-    let db_path = dirs::data_dir()
-        .expect("Failed to get data directory")
-        .join("any-player")
-        .join("playlists.db");
+    // Initialize database with graceful error handling
+    let db_path = match dirs::data_dir() {
+        Some(dir) => dir.join("any-player").join("playlists.db"),
+        None => {
+            eprintln!("Failed to get data directory. Using current directory.");
+            std::path::PathBuf::from("playlists.db")
+        }
+    };
 
-    std::fs::create_dir_all(db_path.parent().unwrap()).expect("Failed to create data directory");
+    if let Some(parent) = db_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("Failed to create data directory: {}", e);
+            std::process::exit(1);
+        }
+    }
 
-    let database = Arc::new(Mutex::new(
-        Database::new(db_path).expect("Failed to initialize database"),
-    ));
+    let database = match Database::new(db_path.clone()) {
+        Ok(db) => Arc::new(Mutex::new(db)),
+        Err(e) => {
+            eprintln!("Failed to initialize database at {:?}: {}", db_path, e);
+            eprintln!("Please check file permissions and disk space.");
+            std::process::exit(1);
+        }
+    };
 
     // Create application state
     let providers = Arc::new(Mutex::new(ProviderRegistry::new()));
@@ -165,8 +178,18 @@ pub fn run() {
 
                     while let Some(()) = rx.recv().await {
                         tracing::info!("Track completed, emitting event to frontend");
-                        let _ = handle.emit("track-completed", ());
+                        if let Err(err) = handle.emit("track-completed", ()) {
+                            tracing::error!(
+                                ?err,
+                                "Failed to emit 'track-completed' event to frontend"
+                            );
+                        }
                     }
+                } else {
+                    tracing::error!(
+                        "PlaybackManager did not provide a completion receiver; \
+                         'track-completed' events will not be emitted to the frontend"
+                    );
                 }
             });
 

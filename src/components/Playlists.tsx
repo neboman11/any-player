@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import toast from "react-hot-toast";
 import { usePlaylists, useCustomPlaylists } from "../hooks";
 import { PlaylistViewer } from "./PlaylistViewer";
 import { UnionPlaylistEditor } from "./UnionPlaylistEditor";
@@ -73,9 +74,10 @@ export function Playlists() {
       await createPlaylist(newPlaylistName.trim());
       setNewPlaylistName("");
       setShowCreateDialog(false);
+      toast.success("Playlist created successfully!");
     } catch (err) {
       console.error("Failed to create playlist:", err);
-      alert("Failed to create playlist");
+      toast.error("Failed to create playlist");
     }
   };
 
@@ -92,9 +94,10 @@ export function Playlists() {
       setShowCreateTypeDialog(false);
       // Open the newly created union playlist for editing
       setSelectedCustomPlaylist(newPlaylist);
+      toast.success("Union playlist created successfully!");
     } catch (err) {
       console.error("Failed to create union playlist:", err);
-      alert("Failed to create union playlist");
+      toast.error("Failed to create union playlist");
     }
   };
 
