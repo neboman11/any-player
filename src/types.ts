@@ -20,7 +20,7 @@ export interface Track {
   artist: string;
   album?: string;
   duration_ms?: number;
-  source: "spotify" | "jellyfin" | "custom" | "Spotify" | "Jellyfin" | "Custom";
+  source: "spotify" | "jellyfin" | "custom";
   url?: string;
 }
 
@@ -49,7 +49,7 @@ export interface CustomPlaylist {
 export interface UnionPlaylistSource {
   id: number;
   union_playlist_id: string;
-  source_type: string;
+  source_type: string; // "spotify", "jellyfin", "custom"
   source_playlist_id: string;
   position: number;
   added_at: number;
@@ -69,15 +69,6 @@ export interface PlaylistTrack {
   image_url: string | null;
 }
 
-export interface UnionPlaylistSource {
-  id: number;
-  union_playlist_id: string;
-  source_type: string; // "spotify", "jellyfin", "custom"
-  source_playlist_id: string;
-  position: number;
-  added_at: number;
-}
-
 export interface ColumnPreferences {
   columns: string[];
   column_order: number[];
@@ -90,7 +81,7 @@ export interface SearchResult {
   artist?: string;
   owner?: string;
   type: "track" | "playlist";
-  source: "spotify" | "jellyfin" | "custom" | "Spotify" | "Jellyfin" | "Custom";
+  source: "spotify" | "jellyfin" | "custom";
 }
 
 export interface OAuthCallbackData {
