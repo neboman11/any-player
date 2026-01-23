@@ -1201,6 +1201,7 @@ pub struct PlaybackManager {
     track_complete_tx: mpsc::UnboundedSender<()>,
     track_complete_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
     monitoring_task_abort: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
+    state_save_tx: mpsc::UnboundedSender<()>,
 }
 
 impl PlaybackManager {
@@ -1208,7 +1209,10 @@ impl PlaybackManager {
         // Create a channel for track completion events
         let (track_complete_tx, track_complete_rx) = mpsc::unbounded_channel::<()>();
 
-        Self {
+        // Create a channel for state save requests
+        let (state_save_tx, state_save_rx) = mpsc::unbounded_channel::<()>();
+
+        let manager = Self {
             queue: Arc::new(Mutex::new(PlaybackQueue::new())),
             info: Arc::new(Mutex::new(PlaybackInfo::default())),
             audio_player: Arc::new(AudioPlayer::new()),
@@ -1217,7 +1221,89 @@ impl PlaybackManager {
             track_complete_tx,
             track_complete_rx: Arc::new(Mutex::new(Some(track_complete_rx))),
             monitoring_task_abort: Arc::new(Mutex::new(None)),
+            state_save_tx,
+        };
+
+        // Spawn the centralized state saver task
+        let info_clone = manager.info.clone();
+        let queue_clone = manager.queue.clone();
+        tokio::spawn(Self::state_saver_task(info_clone, queue_clone, state_save_rx));
+
+        manager
+    }
+
+    /// Centralized state saver task with debouncing
+    /// Saves state at most once every 5 seconds, even if requested more frequently
+    async fn state_saver_task(
+        info: Arc<Mutex<PlaybackInfo>>,
+        queue: Arc<Mutex<PlaybackQueue>>,
+        mut save_rx: mpsc::UnboundedReceiver<()>,
+    ) {
+        let mut last_save = Instant::now();
+        const SAVE_INTERVAL: Duration = Duration::from_secs(5);
+
+        loop {
+            // Wait for save request or timeout
+            match tokio::time::timeout(SAVE_INTERVAL, save_rx.recv()).await {
+                Ok(Some(())) => {
+                    // Request received, check if enough time has passed
+                    if last_save.elapsed() >= SAVE_INTERVAL {
+                        Self::perform_state_save(&info, &queue).await;
+                        last_save = Instant::now();
+                    }
+                    // If not enough time has passed, the request is dropped (debounced)
+                }
+                Ok(None) => {
+                    // Channel closed, exit the task
+                    tracing::info!("State saver task exiting (channel closed)");
+                    break;
+                }
+                Err(_) => {
+                    // Timeout, perform periodic save if state might have changed
+                    // This ensures we save even during continuous playback
+                    if last_save.elapsed() >= SAVE_INTERVAL {
+                        Self::perform_state_save(&info, &queue).await;
+                        last_save = Instant::now();
+                    }
+                }
+            }
         }
+    }
+
+    /// Perform the actual state save operation
+    async fn perform_state_save(
+        info: &Arc<Mutex<PlaybackInfo>>,
+        queue: &Arc<Mutex<PlaybackQueue>>,
+    ) {
+        use crate::state::PersistentPlaybackState;
+
+        let info = info.lock().await;
+        let queue = queue.lock().await;
+
+        let state = PersistentPlaybackState {
+            current_track: info.current_track.clone(),
+            queue: queue.tracks.clone(),
+            current_index: queue.current_index,
+            position_ms: info.position_ms,
+            shuffle: info.shuffle,
+            repeat_mode: info.repeat_mode,
+            volume: info.volume,
+            shuffle_order: queue.shuffle_order.clone(),
+            state: info.state,
+        };
+
+        drop(info);
+        drop(queue);
+
+        if let Err(e) = state.save().await {
+            tracing::error!("Failed to save state: {}", e);
+        }
+    }
+
+    /// Request a state save (debounced)
+    pub fn request_state_save(&self) {
+        // Ignore send errors - if the channel is closed, we're shutting down anyway
+        let _ = self.state_save_tx.send(());
     }
 
     /// Take the track completion receiver.
@@ -1292,6 +1378,7 @@ impl PlaybackManager {
                 tracing::info!("Playing Spotify track via librespot: {}", url);
                 let track_complete_tx = self.track_complete_tx.clone();
                 let monitoring_abort = self.monitoring_task_abort.clone();
+                let state_save_tx = self.state_save_tx.clone();
                 match self.play_spotify_track(url).await {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
@@ -1322,27 +1409,9 @@ impl PlaybackManager {
                                     }
                                 }
 
-                                // Periodically save state during playback (every 5 seconds)
+                                // Request state save periodically (every 5 seconds)
                                 if last_state_save.elapsed().as_secs() >= 5 {
-                                    use crate::state::PersistentPlaybackState;
-                                    let info = info_arc.lock().await;
-                                    let queue = queue_arc.lock().await;
-                                    let state = PersistentPlaybackState {
-                                        current_track: info.current_track.clone(),
-                                        queue: queue.tracks.clone(),
-                                        current_index: queue.current_index,
-                                        position_ms: info.position_ms,
-                                        shuffle: info.shuffle,
-                                        repeat_mode: info.repeat_mode,
-                                        volume: info.volume,
-                                        shuffle_order: queue.shuffle_order.clone(),
-                                        state: info.state,
-                                    };
-                                    drop(info);
-                                    drop(queue);
-                                    if let Err(e) = state.save().await {
-                                        tracing::error!("Failed to save state: {}", e);
-                                    }
+                                    let _ = state_save_tx.send(());
                                     last_state_save = std::time::Instant::now();
                                 }
 
@@ -1384,6 +1453,7 @@ impl PlaybackManager {
                 // HTTP URL - play as normal
                 let track_complete_tx = self.track_complete_tx.clone();
                 let monitoring_abort = self.monitoring_task_abort.clone();
+                let state_save_tx = self.state_save_tx.clone();
                 match self
                     .audio_player
                     .play_url(url, track.auth_headers.clone())
@@ -1428,27 +1498,9 @@ impl PlaybackManager {
                                     }
                                 }
 
-                                // Periodically save state during playback (every 5 seconds)
+                                // Request state save periodically (every 5 seconds)
                                 if last_state_save.elapsed().as_secs() >= 5 {
-                                    use crate::state::PersistentPlaybackState;
-                                    let info = info_arc.lock().await;
-                                    let queue = queue_arc.lock().await;
-                                    let state = PersistentPlaybackState {
-                                        current_track: info.current_track.clone(),
-                                        queue: queue.tracks.clone(),
-                                        current_index: queue.current_index,
-                                        position_ms: info.position_ms,
-                                        shuffle: info.shuffle,
-                                        repeat_mode: info.repeat_mode,
-                                        volume: info.volume,
-                                        shuffle_order: queue.shuffle_order.clone(),
-                                        state: info.state,
-                                    };
-                                    drop(info);
-                                    drop(queue);
-                                    if let Err(e) = state.save().await {
-                                        tracing::error!("Failed to save state: {}", e);
-                                    }
+                                    let _ = state_save_tx.send(());
                                     last_state_save = std::time::Instant::now();
                                 }
 
@@ -1908,6 +1960,7 @@ impl PlaybackManager {
                                 let queue_arc = self.queue.clone();
                                 let track_complete_tx = self.track_complete_tx.clone();
                                 let monitoring_abort = self.monitoring_task_abort.clone();
+                                let state_save_tx = self.state_save_tx.clone();
 
                                 let task = tokio::spawn(async move {
                                     tracing::debug!("Spotify monitoring task started (restore)");
@@ -1934,26 +1987,9 @@ impl PlaybackManager {
                                             }
                                         }
 
-                                        // Periodically save state
+                                        // Request state save periodically (every 5 seconds)
                                         if last_state_save.elapsed().as_secs() >= 5 {
-                                            let info = info_arc.lock().await;
-                                            let queue = queue_arc.lock().await;
-                                            let state = crate::state::PersistentPlaybackState {
-                                                current_track: info.current_track.clone(),
-                                                queue: queue.tracks.clone(),
-                                                current_index: queue.current_index,
-                                                position_ms: info.position_ms,
-                                                shuffle: info.shuffle,
-                                                repeat_mode: info.repeat_mode,
-                                                volume: info.volume,
-                                                shuffle_order: queue.shuffle_order.clone(),
-                                                state: info.state,
-                                            };
-                                            drop(info);
-                                            drop(queue);
-                                            if let Err(e) = state.save().await {
-                                                tracing::error!("Failed to save state: {}", e);
-                                            }
+                                            let _ = state_save_tx.send(());
                                             last_state_save = std::time::Instant::now();
                                         }
 
@@ -2020,6 +2056,7 @@ impl PlaybackManager {
                             let queue_arc = self.queue.clone();
                             let track_complete_tx = self.track_complete_tx.clone();
                             let monitoring_abort = self.monitoring_task_abort.clone();
+                            let state_save_tx = self.state_save_tx.clone();
 
                             let task = tokio::spawn(async move {
                                 tracing::debug!("HTTP restore monitoring task started");
@@ -2046,27 +2083,9 @@ impl PlaybackManager {
                                         }
                                     }
 
-                                    // Periodically save state during playback (every 5 seconds)
+                                    // Request state save periodically (every 5 seconds)
                                     if last_state_save.elapsed().as_secs() >= 5 {
-                                        use crate::state::PersistentPlaybackState;
-                                        let info = info_arc.lock().await;
-                                        let queue = queue_arc.lock().await;
-                                        let state = PersistentPlaybackState {
-                                            current_track: info.current_track.clone(),
-                                            queue: queue.tracks.clone(),
-                                            current_index: queue.current_index,
-                                            position_ms: info.position_ms,
-                                            shuffle: info.shuffle,
-                                            repeat_mode: info.repeat_mode,
-                                            volume: info.volume,
-                                            shuffle_order: queue.shuffle_order.clone(),
-                                            state: info.state,
-                                        };
-                                        drop(info);
-                                        drop(queue);
-                                        if let Err(e) = state.save().await {
-                                            tracing::error!("Failed to save state: {}", e);
-                                        }
+                                        let _ = state_save_tx.send(());
                                         last_state_save = std::time::Instant::now();
                                     }
 
