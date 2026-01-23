@@ -1053,7 +1053,15 @@ impl PlaybackManager {
         }
     }
 
-    /// Take the track completion receiver (call once from setup to start event emission)
+    /// Take the track completion receiver.
+    ///
+    /// This *must* be called exactly once during application setup to start
+    /// receiving track completion events. Calling it more than once will
+    /// return `None` and is considered a programming error.
+    ///
+    /// # Usage
+    /// Call this method once during application initialization to get the receiver,
+    /// then use it to listen for track completion events and trigger auto-advance.
     pub async fn take_completion_receiver(&self) -> Option<mpsc::UnboundedReceiver<()>> {
         let mut rx_opt = self.track_complete_rx.lock().await;
         rx_opt.take()
