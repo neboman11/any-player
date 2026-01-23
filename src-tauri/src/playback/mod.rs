@@ -323,14 +323,41 @@ impl PlaybackQueue {
         self.shuffle_order.clear();
     }
 
+    /// Validate that all indices in shuffle_order are within bounds
+    /// and regenerate if invalid. This ensures robustness if tracks are
+    /// modified after shuffle order is generated.
+    fn validate_shuffle_order(&mut self) {
+        if self.shuffle_order.is_empty() {
+            return;
+        }
+        
+        let track_count = self.tracks.len();
+        let has_invalid = self.shuffle_order.iter().any(|&idx| idx >= track_count);
+        
+        if has_invalid {
+            tracing::warn!(
+                "Shuffle order contains invalid indices (track count: {}), regenerating",
+                track_count
+            );
+            self.generate_shuffle_order();
+        }
+    }
+
     /// Get the current track respecting shuffle mode
     pub fn current_track_shuffled(&self, shuffle_enabled: bool) -> Option<&Track> {
         if shuffle_enabled && !self.shuffle_order.is_empty() {
             // In shuffle mode, map current_index through shuffle_order
             if self.current_index < self.shuffle_order.len() {
                 let actual_index = self.shuffle_order[self.current_index];
+                // Bounds check to handle edge cases where shuffle_order may be stale
                 if actual_index < self.tracks.len() {
                     return Some(&self.tracks[actual_index]);
+                } else {
+                    tracing::warn!(
+                        "Shuffle order index {} out of bounds (track count: {})",
+                        actual_index,
+                        self.tracks.len()
+                    );
                 }
             }
             None
@@ -343,12 +370,20 @@ impl PlaybackQueue {
     /// Move to the next track respecting shuffle mode
     pub fn next_track_shuffled(&mut self, shuffle_enabled: bool) -> Option<&Track> {
         if shuffle_enabled && !self.shuffle_order.is_empty() {
+            self.validate_shuffle_order();
             // In shuffle mode, navigate through shuffle_order
             if self.current_index < self.shuffle_order.len() - 1 {
                 self.current_index += 1;
                 let actual_index = self.shuffle_order[self.current_index];
+                // Bounds check to handle edge cases
                 if actual_index < self.tracks.len() {
                     return Some(&self.tracks[actual_index]);
+                } else {
+                    tracing::warn!(
+                        "Shuffle order index {} out of bounds (track count: {})",
+                        actual_index,
+                        self.tracks.len()
+                    );
                 }
             }
             None
@@ -361,12 +396,20 @@ impl PlaybackQueue {
     /// Move to the previous track respecting shuffle mode
     pub fn previous_shuffled(&mut self, shuffle_enabled: bool) -> Option<&Track> {
         if shuffle_enabled && !self.shuffle_order.is_empty() {
+            self.validate_shuffle_order();
             // In shuffle mode, navigate through shuffle_order
             if self.current_index > 0 {
                 self.current_index -= 1;
                 let actual_index = self.shuffle_order[self.current_index];
+                // Bounds check to handle edge cases
                 if actual_index < self.tracks.len() {
                     return Some(&self.tracks[actual_index]);
+                } else {
+                    tracing::warn!(
+                        "Shuffle order index {} out of bounds (track count: {})",
+                        actual_index,
+                        self.tracks.len()
+                    );
                 }
             }
             None
@@ -1171,7 +1214,8 @@ impl PlaybackManager {
                             }
                         });
 
-                        // Store the abort handle
+                        // Store the abort handle immediately to prevent race conditions
+                        // This ensures the task can be aborted before completion
                         {
                             let mut abort_handle = monitoring_abort.lock().await;
                             *abort_handle = Some(task.abort_handle());
@@ -1250,7 +1294,8 @@ impl PlaybackManager {
                             }
                         });
 
-                        // Store the abort handle
+                        // Store the abort handle immediately to prevent race conditions
+                        // This ensures the task can be aborted before completion
                         {
                             let mut abort_handle = monitoring_abort.lock().await;
                             *abort_handle = Some(task.abort_handle());
