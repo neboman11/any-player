@@ -212,3 +212,257 @@ impl PersistentPlaybackState {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::Source;
+
+    /// Helper to create a test track
+    fn create_test_track(id: &str, with_auth: bool) -> Track {
+        Track {
+            id: id.to_string(),
+            title: format!("Test Track {}", id),
+            artist: "Test Artist".to_string(),
+            album: "Test Album".to_string(),
+            duration_ms: 180000,
+            image_url: Some("https://example.com/image.jpg".to_string()),
+            source: Source::Jellyfin,
+            url: Some("https://example.com/track.mp3".to_string()),
+            auth_headers: if with_auth {
+                Some(vec![
+                    ("X-Auth-Token".to_string(), "secret-token-123".to_string()),
+                    ("X-API-Key".to_string(), "api-key-456".to_string()),
+                ])
+            } else {
+                None
+            },
+        }
+    }
+
+    #[test]
+    fn test_default_persistent_state() {
+        let state = PersistentPlaybackState::default();
+        assert_eq!(state.current_track, None);
+        assert_eq!(state.queue.len(), 0);
+        assert_eq!(state.current_index, 0);
+        assert_eq!(state.position_ms, 0);
+        assert_eq!(state.shuffle, false);
+        assert_eq!(state.repeat_mode, RepeatMode::Off);
+        assert_eq!(state.volume, 50);
+        assert_eq!(state.shuffle_order.len(), 0);
+        assert_eq!(state.state, PlaybackState::Stopped);
+    }
+
+    #[test]
+    fn test_serialize_sanitizes_auth_headers() {
+        let track_with_auth = create_test_track("1", true);
+        let state = PersistentPlaybackState {
+            current_track: Some(track_with_auth.clone()),
+            queue: vec![track_with_auth.clone()],
+            current_index: 0,
+            position_ms: 5000,
+            shuffle: false,
+            repeat_mode: RepeatMode::Off,
+            volume: 75,
+            shuffle_order: vec![],
+            state: PlaybackState::Playing,
+        };
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&state).expect("Failed to serialize");
+
+        // Verify auth_headers are not present in the JSON
+        assert!(
+            !json.contains("secret-token-123"),
+            "Auth token should not be in serialized JSON"
+        );
+        assert!(
+            !json.contains("api-key-456"),
+            "API key should not be in serialized JSON"
+        );
+        assert!(
+            !json.contains("X-Auth-Token"),
+            "Auth header name should not be in serialized JSON"
+        );
+        assert!(
+            !json.contains("X-API-Key"),
+            "API key header name should not be in serialized JSON"
+        );
+
+        // Verify other fields are present
+        assert!(json.contains("Test Track 1"));
+        assert!(json.contains("Test Artist"));
+    }
+
+    #[test]
+    fn test_deserialize_strips_auth_headers() {
+        // Create JSON with auth_headers manually included
+        let json = r#"{
+            "current_track": {
+                "id": "1",
+                "title": "Test Track",
+                "artist": "Test Artist",
+                "album": "Test Album",
+                "duration_ms": 180000,
+                "image_url": "https://example.com/image.jpg",
+                "source": "Jellyfin",
+                "url": "https://example.com/track.mp3",
+                "auth_headers": [
+                    ["X-Auth-Token", "secret-token-123"],
+                    ["X-API-Key", "api-key-456"]
+                ]
+            },
+            "queue": [],
+            "current_index": 0,
+            "position_ms": 0,
+            "shuffle": false,
+            "repeat_mode": "Off",
+            "volume": 50,
+            "shuffle_order": [],
+            "state": "Stopped"
+        }"#;
+
+        // Deserialize
+        let state: PersistentPlaybackState =
+            serde_json::from_str(json).expect("Failed to deserialize");
+
+        // Verify auth_headers are stripped
+        assert!(state.current_track.is_some());
+        let track = state.current_track.unwrap();
+        assert_eq!(track.auth_headers, None, "Auth headers should be stripped during deserialization");
+    }
+
+    #[test]
+    fn test_round_trip_serialization() {
+        let track1 = create_test_track("1", true);
+        let track2 = create_test_track("2", false);
+
+        let original_state = PersistentPlaybackState {
+            current_track: Some(track1.clone()),
+            queue: vec![track1.clone(), track2.clone()],
+            current_index: 1,
+            position_ms: 45000,
+            shuffle: true,
+            repeat_mode: RepeatMode::All,
+            volume: 80,
+            shuffle_order: vec![1, 0],
+            state: PlaybackState::Paused,
+        };
+
+        // Serialize
+        let json = serde_json::to_string(&original_state).expect("Failed to serialize");
+
+        // Deserialize
+        let restored_state: PersistentPlaybackState =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        // Verify all fields except auth_headers
+        assert!(restored_state.current_track.is_some());
+        let restored_track = restored_state.current_track.as_ref().unwrap();
+        assert_eq!(restored_track.id, "1");
+        assert_eq!(restored_track.title, "Test Track 1");
+        assert_eq!(
+            restored_track.auth_headers, None,
+            "Auth headers should be None after round-trip"
+        );
+
+        assert_eq!(restored_state.queue.len(), 2);
+        assert_eq!(
+            restored_state.queue[0].auth_headers, None,
+            "Queue track 0 auth headers should be None"
+        );
+        assert_eq!(
+            restored_state.queue[1].auth_headers, None,
+            "Queue track 1 auth headers should be None"
+        );
+
+        assert_eq!(restored_state.current_index, 1);
+        assert_eq!(restored_state.position_ms, 45000);
+        assert_eq!(restored_state.shuffle, true);
+        assert_eq!(restored_state.repeat_mode, RepeatMode::All);
+        assert_eq!(restored_state.volume, 80);
+        assert_eq!(restored_state.shuffle_order, vec![1, 0]);
+        assert_eq!(restored_state.state, PlaybackState::Paused);
+    }
+
+    #[tokio::test]
+    async fn test_save_and_load() {
+        // Clean up any existing state
+        let _ = PersistentPlaybackState::delete().await;
+
+        let track = create_test_track("1", true);
+        let state = PersistentPlaybackState {
+            current_track: Some(track.clone()),
+            queue: vec![track.clone()],
+            current_index: 0,
+            position_ms: 10000,
+            shuffle: false,
+            repeat_mode: RepeatMode::One,
+            volume: 60,
+            shuffle_order: vec![],
+            state: PlaybackState::Playing,
+        };
+
+        // Save
+        state.save().await.expect("Failed to save state");
+
+        // Load
+        let loaded_state = PersistentPlaybackState::load()
+            .await
+            .expect("Failed to load state")
+            .expect("State should exist");
+
+        // Verify
+        assert_eq!(loaded_state.position_ms, 10000);
+        assert_eq!(loaded_state.volume, 60);
+        assert_eq!(loaded_state.state, PlaybackState::Playing);
+        assert!(loaded_state.current_track.is_some());
+        assert_eq!(
+            loaded_state.current_track.as_ref().unwrap().auth_headers,
+            None,
+            "Loaded track should not have auth headers"
+        );
+
+        // Clean up
+        PersistentPlaybackState::delete()
+            .await
+            .expect("Failed to delete state");
+    }
+
+    #[tokio::test]
+    async fn test_load_nonexistent_returns_none() {
+        // Clean up any existing state
+        let _ = PersistentPlaybackState::delete().await;
+
+        // Try to load when no file exists
+        let result = PersistentPlaybackState::load().await.expect("Load should not error");
+        assert_eq!(result, None, "Should return None when no file exists");
+    }
+
+    #[tokio::test]
+    async fn test_delete_removes_file() {
+        // Clean up any existing state
+        let _ = PersistentPlaybackState::delete().await;
+
+        // Create and save a state
+        let state = PersistentPlaybackState::default();
+        state.save().await.expect("Failed to save state");
+
+        // Verify it exists
+        let loaded = PersistentPlaybackState::load().await.expect("Failed to load");
+        assert!(loaded.is_some(), "State should exist after save");
+
+        // Delete
+        PersistentPlaybackState::delete()
+            .await
+            .expect("Failed to delete state");
+
+        // Verify it's gone
+        let loaded_after_delete = PersistentPlaybackState::load().await.expect("Failed to load");
+        assert_eq!(
+            loaded_after_delete, None,
+            "State should not exist after delete"
+        );
+    }
+}
