@@ -5,18 +5,20 @@ pub mod database;
 pub mod models;
 pub mod playback;
 pub mod providers;
+pub mod state;
 
 pub use config::Config;
 pub use database::Database;
 pub use models::{PlaybackInfo, PlaybackState, Playlist, RepeatMode, Source, Track};
 pub use playback::PlaybackManager;
 pub use providers::{MusicProvider, ProviderError, ProviderRegistry};
+pub use state::PersistentPlaybackState;
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod commands;
 
 use std::sync::Arc;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -60,24 +62,14 @@ pub fn run() {
 
     // Create application state
     let providers = Arc::new(Mutex::new(ProviderRegistry::new()));
-    let playback = Arc::new(Mutex::new(PlaybackManager::new(providers.clone())));
     let oauth_code: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
     let providers_clone = providers.clone();
-
-    let app_state = commands::AppState {
-        playback: playback.clone(),
-        providers,
-        oauth_code: oauth_code.clone(),
-        database,
-    };
-
     let oauth_code_for_server = oauth_code.clone();
-    let playback_for_events = playback.clone();
-    let playback_for_init = playback.clone();
+    let database_clone = database.clone();
+    let providers_for_state = providers.clone();
 
     tauri::Builder::default()
-        .manage(app_state)
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             // Playback commands
@@ -160,12 +152,33 @@ pub fn run() {
             commands::write_union_playlist_tracks_cache,
             commands::read_union_playlist_tracks_cache,
             commands::clear_union_playlist_tracks_cache,
+            // Playback state commands
+            commands::save_playback_state,
+            commands::restore_playback_state,
         ])
         .setup(move |app| {
+            // Initialize PlaybackManager inside the Tauri runtime context
+            // This ensures the Tokio runtime is available for spawning tasks
+            let playback = Arc::new(Mutex::new(PlaybackManager::new(
+                providers_for_state.clone(),
+            )));
+
+            // Note: State saver will be started AFTER restoration completes
+            // to prevent overwriting the saved state during startup
+
+            // Create app state and manage it
+            let app_state = commands::AppState {
+                playback: playback.clone(),
+                providers: providers_for_state.clone(),
+                oauth_code: oauth_code_for_server.clone(),
+                database: database_clone.clone(),
+            };
+            app.manage(app_state);
+
             let handle = app.handle().clone();
 
             // Spawn a task to listen for track completion and emit events
-            let playback_for_listener = playback_for_events.clone();
+            let playback_for_listener = playback.clone();
             tauri::async_runtime::spawn(async move {
                 let playback_locked = playback_for_listener.lock().await;
                 if let Some(mut rx) = playback_locked.take_completion_receiver().await {
@@ -195,7 +208,7 @@ pub fn run() {
             // Try to restore Spotify session on startup in the background
             // This allows the UI to load immediately while authentication is being restored
             let providers_for_jellyfin = providers_clone.clone();
-            let playback_for_restore = playback_for_init.clone();
+            let playback_for_restore = playback.clone();
             tauri::async_runtime::spawn(async move {
                 // Restore session without holding the lock during the entire process
                 let restored = {
@@ -271,14 +284,46 @@ pub fn run() {
                         }
                     }
                 }
+
+                // Restore playback state from disk after providers are ready
+                {
+                    let playback = playback_for_restore.lock().await;
+                    match playback.restore_state().await {
+                        Ok(()) => {
+                            tracing::info!("✓ Playback state restored from disk");
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to restore playback state from disk: {}", e);
+                        }
+                    }
+
+                    // Start the state saver task AFTER restoration completes
+                    // This prevents overwriting the restored state during startup
+                    playback.start_state_saver().await;
+                    tracing::info!("✓ State saver task started");
+                }
             });
 
             Ok(())
         })
-        .on_window_event(|_window, event| {
+        .on_window_event(|window, event| {
             // Clean up temporary audio files when the application is closing
             if let tauri::WindowEvent::Destroyed = event {
                 commands::cleanup_all_temp_audio_files();
+
+                // Save playback state before closing - block to ensure it completes
+                if let Some(app_state) = window.try_state::<commands::AppState>() {
+                    let playback_clone = app_state.playback.clone();
+                    tauri::async_runtime::block_on(async move {
+                        let playback_locked = playback_clone.lock().await;
+                        match playback_locked.save_state().await {
+                            Ok(()) => tracing::info!("✓ Playback state saved on exit"),
+                            Err(e) => {
+                                tracing::error!("Failed to save playback state on exit: {}", e)
+                            }
+                        }
+                    });
+                }
             }
         })
         .run(tauri::generate_context!())

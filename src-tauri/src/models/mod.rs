@@ -21,7 +21,7 @@ impl fmt::Display for Source {
 }
 
 /// A music track from any source
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Track {
     /// Unique ID within the source provider
     pub id: String,
