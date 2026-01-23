@@ -284,41 +284,76 @@ impl Database {
     ) -> Result<()> {
         let now = Utc::now().timestamp();
 
-        // Build dynamic update query
-        let mut updates = Vec::new();
-        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-
-        if let Some(n) = name {
-            updates.push("name = ?");
-            params_vec.push(Box::new(n));
+        // Use explicit match pattern for all combinations to avoid dynamic query building
+        match (name, description, image_url) {
+            (None, None, None) => {
+                // Nothing to update
+                Ok(())
+            }
+            (Some(n), Some(d), Some(img)) => {
+                self.conn.execute(
+                    "UPDATE custom_playlists \
+                     SET name = ?, description = ?, image_url = ?, updated_at = ? \
+                     WHERE id = ?",
+                    params![n, d, img, now, playlist_id],
+                )?;
+                Ok(())
+            }
+            (Some(n), Some(d), None) => {
+                self.conn.execute(
+                    "UPDATE custom_playlists \
+                     SET name = ?, description = ?, updated_at = ? \
+                     WHERE id = ?",
+                    params![n, d, now, playlist_id],
+                )?;
+                Ok(())
+            }
+            (Some(n), None, Some(img)) => {
+                self.conn.execute(
+                    "UPDATE custom_playlists \
+                     SET name = ?, image_url = ?, updated_at = ? \
+                     WHERE id = ?",
+                    params![n, img, now, playlist_id],
+                )?;
+                Ok(())
+            }
+            (Some(n), None, None) => {
+                self.conn.execute(
+                    "UPDATE custom_playlists \
+                     SET name = ?, updated_at = ? \
+                     WHERE id = ?",
+                    params![n, now, playlist_id],
+                )?;
+                Ok(())
+            }
+            (None, Some(d), Some(img)) => {
+                self.conn.execute(
+                    "UPDATE custom_playlists \
+                     SET description = ?, image_url = ?, updated_at = ? \
+                     WHERE id = ?",
+                    params![d, img, now, playlist_id],
+                )?;
+                Ok(())
+            }
+            (None, Some(d), None) => {
+                self.conn.execute(
+                    "UPDATE custom_playlists \
+                     SET description = ?, updated_at = ? \
+                     WHERE id = ?",
+                    params![d, now, playlist_id],
+                )?;
+                Ok(())
+            }
+            (None, None, Some(img)) => {
+                self.conn.execute(
+                    "UPDATE custom_playlists \
+                     SET image_url = ?, updated_at = ? \
+                     WHERE id = ?",
+                    params![img, now, playlist_id],
+                )?;
+                Ok(())
+            }
         }
-        if let Some(d) = description {
-            updates.push("description = ?");
-            params_vec.push(Box::new(d));
-        }
-        if let Some(img) = image_url {
-            updates.push("image_url = ?");
-            params_vec.push(Box::new(img));
-        }
-
-        if updates.is_empty() {
-            return Ok(());
-        }
-
-        updates.push("updated_at = ?");
-        params_vec.push(Box::new(now));
-        params_vec.push(Box::new(playlist_id.to_string()));
-
-        let query = format!(
-            "UPDATE custom_playlists SET {} WHERE id = ?",
-            updates.join(", ")
-        );
-
-        let params_refs: Vec<&dyn rusqlite::ToSql> =
-            params_vec.iter().map(|p| p.as_ref()).collect();
-
-        self.conn.execute(&query, params_refs.as_slice())?;
-        Ok(())
     }
 
     pub fn delete_playlist(&self, playlist_id: &str) -> Result<()> {
