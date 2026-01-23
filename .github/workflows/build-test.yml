@@ -245,7 +245,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
-      - name: Cache Cargo build
+      - name: Cache Cargo dependencies (no target dir)
         uses: actions/cache@v4
         with:
           path: |
@@ -253,34 +253,22 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            src-tauri/target/
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-test-deps-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-test-
-            ${{ runner.os }}-cargo-build-
+            ${{ runner.os }}-cargo-test-deps-
 
       - name: Run tests
         working-directory: src-tauri
-        run: cargo test --all-features
+        run: cargo test --all-features --release
         env:
           RUST_BACKTRACE: 1
 
-      - name: Generate coverage report
+      - name: Clean build artifacts to save disk space
         if: always()
         working-directory: src-tauri
         run: |
-          cargo install cargo-tarpaulin || true
-          cargo tarpaulin --out Xml --output-dir ../coverage --skip-clean --timeout 300 || true
-        continue-on-error: true
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage/
-          retention-days: 30
-        continue-on-error: true
+          cargo clean
+          rm -rf target/
 
   tauri-build-linux:
     name: Build Tauri (Linux)
