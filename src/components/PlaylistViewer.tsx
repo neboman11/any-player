@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import toast from "react-hot-toast";
 import { TrackTable } from "./TrackTable";
 import { useCustomPlaylistTracks } from "../hooks";
 import { usePlayback } from "../hooks";
@@ -40,6 +41,7 @@ export function PlaylistViewer({
     "description" in playlist ? playlist.description || "" : "",
   );
   const [showAddTrack, setShowAddTrack] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [regularTracks, setRegularTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -80,28 +82,23 @@ export function PlaylistViewer({
         null,
       );
       setIsEditing(false);
+      toast.success("Playlist updated successfully!");
     } catch (err) {
       console.error("Failed to update playlist:", err);
-      alert("Failed to update playlist");
+      toast.error("Failed to update playlist");
     }
   };
 
   const handleDelete = async () => {
     if (!onDelete) return;
-    if (
-      !confirm(
-        `Are you sure you want to delete "${playlist.name}"? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
 
     try {
       await onDelete();
       onBack();
+      toast.success("Playlist deleted");
     } catch (err) {
       console.error("Failed to delete playlist:", err);
-      alert("Failed to delete playlist");
+      toast.error("Failed to delete playlist");
     }
   };
 
@@ -246,7 +243,7 @@ export function PlaylistViewer({
               <button className="edit-btn" onClick={() => setIsEditing(true)}>
                 Edit
               </button>
-              <button className="delete-btn" onClick={handleDelete}>
+              <button className="delete-btn" onClick={() => setShowDeleteConfirm(true)}>
                 Delete
               </button>
             </>
@@ -276,6 +273,33 @@ export function PlaylistViewer({
           />
         )}
       </div>
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && (
+        <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Delete Playlist</h3>
+            <p>Are you sure you want to delete "{playlist.name}"? This cannot be undone.</p>
+            <div className="modal-actions">
+              <button 
+                className="confirm-btn"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  handleDelete();
+                }}
+              >
+                Delete
+              </button>
+              <button 
+                className="cancel-btn"
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

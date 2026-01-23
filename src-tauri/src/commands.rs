@@ -12,6 +12,10 @@ const TEMP_FILE_MAX_AGE_SECONDS: u64 = 3600;
 /// Minimum interval between cleanup runs (5 minutes)
 const CLEANUP_INTERVAL_SECONDS: u64 = 300;
 
+/// Delay between API calls when eagerly enriching queued tracks (in milliseconds)
+/// This prevents overwhelming external APIs with rapid consecutive requests
+const TRACK_ENRICHMENT_DELAY_MS: u64 = 50;
+
 /// Last cleanup timestamp (in seconds since UNIX epoch)
 static LAST_CLEANUP: AtomicU64 = AtomicU64::new(0);
 
@@ -770,7 +774,7 @@ async fn enrich_queued_tracks_eager(
         }
 
         // Small delay to avoid overwhelming the API
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(TRACK_ENRICHMENT_DELAY_MS)).await;
     }
 
     drop(providers_lock);
@@ -1507,52 +1511,69 @@ pub async fn create_union_playlist(
 pub async fn get_custom_playlists(
     state: State<'_, AppState>,
 ) -> Result<Vec<CustomPlaylist>, String> {
-    let db = state.database.lock().await;
-    let mut playlists = db
-        .get_all_playlists()
-        .map_err(|e| format!("Failed to get playlists: {}", e))?;
+    // First, get all playlists and union sources while holding the database lock
+    let (mut playlists, union_sources_map) = {
+        let db = state.database.lock().await;
+        let playlists = db
+            .get_all_playlists()
+            .map_err(|e| format!("Failed to get playlists: {}", e))?;
+        
+        // Collect union playlist sources for all union playlists
+        let mut union_sources_map = std::collections::HashMap::new();
+        for playlist in &playlists {
+            if playlist.playlist_type == "union" {
+                let sources = db
+                    .get_union_playlist_sources(&playlist.id)
+                    .map_err(|e| format!("Failed to get union playlist sources: {}", e))?;
+                union_sources_map.insert(playlist.id.clone(), sources);
+            }
+        }
+        
+        (playlists, union_sources_map)
+    }; // Database lock is released here
 
-    // Calculate track count for union playlists
+    // Now calculate track counts without holding the database lock
     let providers = state.providers.lock().await;
     for playlist in &mut playlists {
         if playlist.playlist_type == "union" {
-            let sources = db
-                .get_union_playlist_sources(&playlist.id)
-                .map_err(|e| format!("Failed to get union playlist sources: {}", e))?;
-
-            let mut total_tracks: i64 = 0;
-            for source in sources {
-                match source.source_type.as_str() {
-                    "spotify" => {
-                        if let Ok(p) = providers
-                            .get_spotify_playlist(&source.source_playlist_id)
-                            .await
-                        {
-                            total_tracks += p.track_count as i64;
+            if let Some(sources) = union_sources_map.get(&playlist.id) {
+                let mut total_tracks: i64 = 0;
+                for source in sources {
+                    match source.source_type.as_str() {
+                        "spotify" => {
+                            if let Ok(p) = providers
+                                .get_spotify_playlist(&source.source_playlist_id)
+                                .await
+                            {
+                                total_tracks += p.track_count as i64;
+                            }
                         }
-                    }
-                    "jellyfin" => {
-                        if let Ok(p) = providers
-                            .get_jellyfin_playlist(&source.source_playlist_id)
-                            .await
-                        {
-                            total_tracks += p.track_count as i64;
+                        "jellyfin" => {
+                            if let Ok(p) = providers
+                                .get_jellyfin_playlist(&source.source_playlist_id)
+                                .await
+                            {
+                                total_tracks += p.track_count as i64;
+                            }
                         }
-                    }
-                    "custom" => {
-                        if let Ok(tracks) = db.get_playlist_tracks(&source.source_playlist_id) {
-                            total_tracks += tracks.len() as i64;
+                        "custom" => {
+                            // For custom playlists, we need to query the database again
+                            // but briefly to just get track count
+                            let db = state.database.lock().await;
+                            if let Ok(tracks) = db.get_playlist_tracks(&source.source_playlist_id) {
+                                total_tracks += tracks.len() as i64;
+                            }
+                            drop(db);
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
+                playlist.track_count = total_tracks;
             }
-            playlist.track_count = total_tracks;
         }
     }
 
     drop(providers);
-    drop(db);
     Ok(playlists)
 }
 

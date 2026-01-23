@@ -519,7 +519,6 @@ impl MusicProvider for SpotifyProvider {
         let mut tracks = Vec::new();
 
         // Use stream to get all tracks with pagination
-        use futures::stream::StreamExt;
         let mut tracks_stream = client.playlist_items(playlist_id.clone(), None, None);
         while let Some(track_result) = tracks_stream.next().await {
             let item = track_result
