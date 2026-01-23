@@ -1535,7 +1535,31 @@ pub async fn get_custom_playlists(
         (playlists, union_sources_map)
     }; // Database lock is released here
 
-    // Now calculate track counts without holding the database lock
+    // Collect all custom playlist IDs that we need track counts for
+    let mut custom_playlist_ids = Vec::new();
+    for sources in union_sources_map.values() {
+        for source in sources {
+            if source.source_type == "custom" {
+                custom_playlist_ids.push(source.source_playlist_id.clone());
+            }
+        }
+    }
+
+    // Query all custom playlist track counts at once while database lock is held
+    // This avoids acquiring the database lock while holding the providers lock
+    let custom_track_counts: std::collections::HashMap<String, usize> = {
+        let db = state.database.lock().await;
+        custom_playlist_ids
+            .into_iter()
+            .filter_map(|id| {
+                db.get_playlist_tracks(&id)
+                    .ok()
+                    .map(|tracks| (id, tracks.len()))
+            })
+            .collect()
+    }; // Database lock is released here
+
+    // Now calculate track counts with only the providers lock
     let providers = state.providers.lock().await;
     for playlist in &mut playlists {
         if playlist.playlist_type == "union" {
@@ -1560,13 +1584,10 @@ pub async fn get_custom_playlists(
                             }
                         }
                         "custom" => {
-                            // For custom playlists, we need to query the database again
-                            // but briefly to just get track count
-                            let db = state.database.lock().await;
-                            if let Ok(tracks) = db.get_playlist_tracks(&source.source_playlist_id) {
-                                total_tracks += tracks.len() as i64;
+                            // Look up track count from pre-fetched map
+                            if let Some(&count) = custom_track_counts.get(&source.source_playlist_id) {
+                                total_tracks += count as i64;
                             }
-                            drop(db);
                         }
                         _ => {}
                     }

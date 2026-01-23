@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { tauriAPI } from "../api";
+import { retryWithDelay } from "../utils/retryHelper";
 
 export function useJellyfinAuth() {
   const [isConnected, setIsConnected] = useState(false);
@@ -21,26 +22,9 @@ export function useJellyfinAuth() {
   // Retry a few times to account for backend session restoration delay
   useEffect(() => {
     const checkStatus = async () => {
-      try {
-        // Initial delay to allow backend to start session restoration
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        // Try up to 3 times
-        for (let i = 0; i < 3; i++) {
-          const authenticated = await checkAuthStatus();
-
-          if (authenticated) {
-            break; // Success, stop retrying
-          }
-
-          // Wait before next retry
-          if (i < 2) {
-            await new Promise((resolve) => setTimeout(resolve, 300));
-          }
-        }
-      } catch (err) {
-        console.error("Error checking Jellyfin status:", err);
-      }
+      await retryWithDelay(async () => {
+        return await checkAuthStatus();
+      });
     };
 
     void checkStatus();
