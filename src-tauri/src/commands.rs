@@ -601,15 +601,39 @@ pub async fn play_tracks_immediate(
         });
     }
 
-    drop(providers);
+    // Store first track for later enrichment
+    let first_track_for_enrichment = internal_tracks[0].clone();
+    let needs_enrichment = matches!(
+        first_track_for_enrichment.source,
+        crate::models::Source::Spotify | crate::models::Source::Jellyfin
+    );
 
+    // Enrich the first track before setting up the queue (if needed)
+    let enriched_first_track = if needs_enrichment {
+        match first_track_for_enrichment.source {
+            crate::models::Source::Spotify => {
+                providers.get_spotify_track(&first_track_for_enrichment.id).await.ok()
+            }
+            crate::models::Source::Jellyfin => {
+                // Must enrich Jellyfin tracks immediately to get auth headers
+                providers.get_jellyfin_track(&first_track_for_enrichment.id).await.ok()
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    drop(providers); // Release providers lock
+
+    // Now set up the queue and start playback with the enriched track
     let playback = state.playback.lock().await;
 
     // Clear queue and add all tracks
     playback.clear_queue().await;
     playback.queue_tracks(internal_tracks.clone()).await;
 
-    // Check if shuffle is enabled and generate shuffle order if needed
+    // Check if shuffle is enabled and determine first track index
     let info = playback.get_info().await;
     let first_track_index = if info.shuffle {
         // Generate shuffle order
@@ -619,51 +643,39 @@ pub async fn play_tracks_immediate(
         queue.current_index = 0;
 
         // Get the first track according to shuffle order
-        if !queue.shuffle_order.is_empty() && queue.shuffle_order[0] < internal_tracks.len() {
+        let idx = if !queue.shuffle_order.is_empty() && queue.shuffle_order[0] < internal_tracks.len() {
             queue.shuffle_order[0]
         } else {
             0
+        };
+        
+        // If we enriched the first track and it's the one we're playing, update it in the queue
+        if idx == 0 && enriched_first_track.is_some() {
+            queue.tracks[idx] = enriched_first_track.clone().unwrap();
         }
+        drop(queue);
+        idx
     } else {
+        // If we enriched the first track, update it in the queue
+        if let Some(enriched) = &enriched_first_track {
+            let queue_arc = playback.get_queue_arc();
+            let mut queue = queue_arc.lock().await;
+            if !queue.tracks.is_empty() {
+                queue.tracks[0] = enriched.clone();
+            }
+        }
         0
     };
 
-    drop(playback); // Release playback lock
-
-    // Enrich the first track immediately before playing (critical for Jellyfin auth)
-    let providers = state.providers.lock().await;
-    let first_track = &internal_tracks[first_track_index];
-
-    let enriched_first_track = match first_track.source {
-        crate::models::Source::Spotify => providers.get_spotify_track(&first_track.id).await.ok(),
-        crate::models::Source::Jellyfin => {
-            // Must enrich Jellyfin tracks immediately to get auth headers
-            providers.get_jellyfin_track(&first_track.id).await.ok()
-        }
-        _ => None,
-    };
-
-    drop(providers); // Release providers lock
-
-    // Update the first track in the queue if we successfully enriched it
-    if let Some(enriched) = enriched_first_track {
-        let playback = state.playback.lock().await;
-        let queue_arc = playback.get_queue_arc();
-        let mut queue = queue_arc.lock().await;
-        if first_track_index < queue.tracks.len() {
-            queue.tracks[first_track_index] = enriched.clone();
-        }
-        drop(queue);
-
-        // Play the enriched first track
-        playback.play_track(enriched).await;
+    // Play the track (either enriched or original)
+    let track_to_play = if first_track_index == 0 && enriched_first_track.is_some() {
+        enriched_first_track.unwrap()
     } else {
-        // Fall back to playing the track as-is (may fail for Jellyfin without auth)
-        let playback = state.playback.lock().await;
-        playback
-            .play_track(internal_tracks[first_track_index].clone())
-            .await;
-    }
+        internal_tracks[first_track_index].clone()
+    };
+    
+    playback.play_track(track_to_play).await;
+    drop(playback);
 
     // Spawn background task to eagerly enrich the next tracks
     // This ensures Jellyfin tracks have auth headers ready before playback reaches them
@@ -690,49 +702,49 @@ async fn enrich_queued_tracks_eager(
     let queue_arc = pb.get_queue_arc();
     drop(pb); // Release playback lock
 
-    let queue = queue_arc.lock().await;
-    let total_tracks = queue.tracks.len();
-    let shuffle_enabled = !queue.shuffle_order.is_empty();
-    drop(queue); // Release queue lock temporarily
-
-    // Calculate which tracks to load first (starting from index 1 since 0 is already playing)
-    let mut indices_to_load = Vec::new();
-    for i in 1..=LOOKAHEAD_COUNT.min(total_tracks.saturating_sub(1)) {
-        let actual_index = if shuffle_enabled {
-            let queue = queue_arc.lock().await;
-            let shuffle_pos = (current_index + i) % total_tracks;
-            if shuffle_pos < queue.shuffle_order.len() {
-                queue.shuffle_order[shuffle_pos]
-            } else {
-                i
-            }
-        } else {
-            (current_index + i) % total_tracks
-        };
-        indices_to_load.push(actual_index);
-    }
-
-    // Load track details for the prioritized tracks
-    let providers_lock = providers.lock().await;
-
-    for &track_idx in &indices_to_load {
+    // Gather all information we need in a single lock acquisition
+    let (total_tracks, shuffle_enabled, shuffle_order, tracks_to_enrich) = {
         let queue = queue_arc.lock().await;
-        if track_idx >= queue.tracks.len() {
-            continue;
+        let total_tracks = queue.tracks.len();
+        let shuffle_enabled = !queue.shuffle_order.is_empty();
+        let shuffle_order = queue.shuffle_order.clone();
+        
+        // Calculate which tracks to load first (starting from index 1 since 0 is already playing)
+        let mut indices_to_load = Vec::new();
+        for i in 1..=LOOKAHEAD_COUNT.min(total_tracks.saturating_sub(1)) {
+            let actual_index = if shuffle_enabled {
+                let shuffle_pos = (current_index + i) % total_tracks;
+                if shuffle_pos < shuffle_order.len() {
+                    shuffle_order[shuffle_pos]
+                } else {
+                    i
+                }
+            } else {
+                (current_index + i) % total_tracks
+            };
+            indices_to_load.push(actual_index);
         }
 
-        let track = &queue.tracks[track_idx];
-
-        // Skip if track already has a URL (already enriched)
-        if track.url.is_some() {
-            drop(queue);
-            continue;
+        // Gather track info that needs enrichment
+        let mut tracks_info = Vec::new();
+        for &track_idx in &indices_to_load {
+            if track_idx < queue.tracks.len() {
+                let track = &queue.tracks[track_idx];
+                // Skip if track already has a URL (already enriched)
+                if track.url.is_none() {
+                    tracks_info.push((track_idx, track.id.clone(), track.source));
+                }
+            }
         }
 
-        let track_id = track.id.clone();
-        let source = track.source;
-        drop(queue); // Release lock before async call
+        (total_tracks, shuffle_enabled, shuffle_order, tracks_info)
+    };
 
+    // Now fetch track details without holding any locks
+    let providers_lock = providers.lock().await;
+    let mut enriched_tracks = Vec::new();
+
+    for (track_idx, track_id, source) in tracks_to_enrich {
         // Fetch full track details
         let enriched_track_result = match source {
             crate::models::Source::Spotify => providers_lock.get_spotify_track(&track_id).await,
@@ -740,13 +752,9 @@ async fn enrich_queued_tracks_eager(
             _ => continue, // Skip custom tracks
         };
 
-        // Update the track in the queue with enriched data
         if let Ok(enriched_track) = enriched_track_result {
-            let mut queue = queue_arc.lock().await;
-            if track_idx < queue.tracks.len() {
-                queue.tracks[track_idx] = enriched_track;
-                tracing::debug!("Eagerly enriched track {} at index {}", track_id, track_idx);
-            }
+            enriched_tracks.push((track_idx, enriched_track));
+            tracing::debug!("Eagerly enriched track {} at index {}", track_id, track_idx);
         } else {
             tracing::warn!("Failed to enrich track {} at index {}", track_id, track_idx);
         }
@@ -757,9 +765,18 @@ async fn enrich_queued_tracks_eager(
 
     drop(providers_lock);
 
+    // Update all enriched tracks in a single lock acquisition
+    if !enriched_tracks.is_empty() {
+        let mut queue = queue_arc.lock().await;
+        for (track_idx, enriched_track) in enriched_tracks {
+            if track_idx < queue.tracks.len() {
+                queue.tracks[track_idx] = enriched_track;
+            }
+        }
+    }
+
     tracing::info!(
-        "Completed eager loading of {} priority tracks (total queue: {})",
-        indices_to_load.len(),
+        "Completed eager loading for queue (total tracks: {})",
         total_tracks
     );
 }
