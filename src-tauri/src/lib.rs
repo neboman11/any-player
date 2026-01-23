@@ -298,9 +298,9 @@ pub fn run() {
             if let tauri::WindowEvent::Destroyed = event {
                 commands::cleanup_all_temp_audio_files();
 
-                // Save playback state before closing
+                // Save playback state before closing - block to ensure it completes
                 let playback_for_save = playback.clone();
-                tauri::async_runtime::spawn(async move {
+                tauri::async_runtime::block_on(async move {
                     let playback_locked = playback_for_save.lock().await;
                     match playback_locked.save_state().await {
                         Ok(()) => tracing::info!("✓ Playback state saved on exit"),

@@ -591,6 +591,12 @@ impl AudioPlayer {
         let sink =
             Sink::try_new(&stream_handle).map_err(|e| format!("Failed to create sink: {}", e))?;
 
+        // Check if we should start paused (for restore scenarios)
+        let should_start_paused = handle.is_paused();
+        if should_start_paused {
+            sink.pause();
+        }
+
         // Convert to f32 samples
         let source = source.convert_samples::<f32>();
 
@@ -1016,12 +1022,15 @@ impl AudioPlayer {
 
                 // Calculate current position accounting for pauses and initial offset
                 let elapsed = if let Some(st) = start_time {
+                    let base_elapsed = st.elapsed();
                     if let Some(paused_at) = pause_time {
                         // Currently paused: use time up to pause
-                        st.elapsed() - accumulated_pause_duration - paused_at.elapsed()
+                        base_elapsed
+                            .saturating_sub(accumulated_pause_duration)
+                            .saturating_sub(paused_at.elapsed())
                     } else {
                         // Not paused: use full elapsed time minus accumulated pause duration
-                        st.elapsed() - accumulated_pause_duration
+                        base_elapsed.saturating_sub(accumulated_pause_duration)
                     }
                 } else {
                     // start_time not yet set (waiting for first resume)
@@ -1331,7 +1340,9 @@ impl PlaybackManager {
                                     };
                                     drop(info);
                                     drop(queue);
-                                    let _ = state.save();
+                                    if let Err(e) = state.save().await {
+                                        tracing::error!("Failed to save state: {}", e);
+                                    }
                                     last_state_save = std::time::Instant::now();
                                 }
 
@@ -1435,7 +1446,9 @@ impl PlaybackManager {
                                     };
                                     drop(info);
                                     drop(queue);
-                                    let _ = state.save();
+                                    if let Err(e) = state.save().await {
+                                        tracing::error!("Failed to save state: {}", e);
+                                    }
                                     last_state_save = std::time::Instant::now();
                                 }
 
@@ -1797,14 +1810,26 @@ impl PlaybackManager {
         drop(info);
         drop(queue);
 
-        state.save()
+        state.save().await
     }
 
     /// Restore playback state from disk
     pub async fn restore_state(&self) -> Result<(), String> {
         use crate::state::PersistentPlaybackState;
 
-        let saved_state = PersistentPlaybackState::load()?;
+        let saved_state = match PersistentPlaybackState::load().await? {
+            Some(state) => state,
+            None => {
+                tracing::info!("No saved state to restore");
+                return Ok(());
+            }
+        };
+
+        // Only restore if there's actually a current track to restore
+        if saved_state.current_track.is_none() {
+            tracing::info!("No current track in saved state, skipping restore");
+            return Ok(());
+        }
 
         let queue_len = saved_state.queue.len();
         let current_idx = saved_state.current_index;
@@ -1926,7 +1951,9 @@ impl PlaybackManager {
                                             };
                                             drop(info);
                                             drop(queue);
-                                            let _ = state.save();
+                                            if let Err(e) = state.save().await {
+                                                tracing::error!("Failed to save state: {}", e);
+                                            }
                                             last_state_save = std::time::Instant::now();
                                         }
 
@@ -1975,20 +2002,102 @@ impl PlaybackManager {
                         .await
                     {
                         Ok(handle) => {
-                            // Wait a moment for the track to start loading
-                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                            // Immediately pause it
-                            handle.pause();
                             // Seek to saved position
                             if position > 0 {
                                 handle.set_position(position);
                             }
+                            // Ensure it starts paused
+                            handle.pause();
                             // Update the info position
                             {
                                 let mut info = self.info.lock().await;
                                 info.position_ms = position;
                                 info.state = PlaybackState::Paused;
                             }
+
+                            // Spawn monitoring task for HTTP restore path
+                            let info_arc = self.info.clone();
+                            let queue_arc = self.queue.clone();
+                            let track_complete_tx = self.track_complete_tx.clone();
+                            let monitoring_abort = self.monitoring_task_abort.clone();
+
+                            let task = tokio::spawn(async move {
+                                tracing::debug!("HTTP restore monitoring task started");
+                                let mut last_state_save = std::time::Instant::now();
+                                loop {
+                                    let position = handle.get_position();
+                                    let duration = handle.get_duration();
+                                    let should_stop = handle.should_stop();
+                                    let is_paused = handle.is_paused();
+
+                                    {
+                                        let mut info = info_arc.lock().await;
+                                        info.position_ms = position;
+                                        if duration > 0 && info.current_track.is_some() {
+                                            info.current_track.as_mut().unwrap().duration_ms =
+                                                duration;
+                                        }
+
+                                        // Update playback state based on pause status
+                                        if is_paused {
+                                            info.state = PlaybackState::Paused;
+                                        } else if !should_stop {
+                                            info.state = PlaybackState::Playing;
+                                        }
+                                    }
+
+                                    // Periodically save state during playback (every 5 seconds)
+                                    if last_state_save.elapsed().as_secs() >= 5 {
+                                        use crate::state::PersistentPlaybackState;
+                                        let info = info_arc.lock().await;
+                                        let queue = queue_arc.lock().await;
+                                        let state = PersistentPlaybackState {
+                                            current_track: info.current_track.clone(),
+                                            queue: queue.tracks.clone(),
+                                            current_index: queue.current_index,
+                                            position_ms: info.position_ms,
+                                            shuffle: info.shuffle,
+                                            repeat_mode: info.repeat_mode,
+                                            volume: info.volume,
+                                            shuffle_order: queue.shuffle_order.clone(),
+                                            state: info.state,
+                                        };
+                                        drop(info);
+                                        drop(queue);
+                                        if let Err(e) = state.save().await {
+                                            tracing::error!("Failed to save state: {}", e);
+                                        }
+                                        last_state_save = std::time::Instant::now();
+                                    }
+
+                                    // When track completes, send event to advance to next track
+                                    if should_stop {
+                                        tracing::debug!(
+                                            "HTTP restore monitoring task detected should_stop=true"
+                                        );
+                                        {
+                                            let mut info = info_arc.lock().await;
+                                            info.state = PlaybackState::Stopped;
+                                        }
+
+                                        tracing::info!(
+                                            "HTTP track completed, sending auto-advance event"
+                                        );
+                                        let _ = track_complete_tx.send(());
+                                        break;
+                                    }
+
+                                    tokio::time::sleep(std::time::Duration::from_millis(100))
+                                        .await;
+                                }
+                            });
+
+                            // Store the abort handle
+                            {
+                                let mut abort_handle = monitoring_abort.lock().await;
+                                *abort_handle = Some(task.abort_handle());
+                            }
+
                             tracing::info!(
                                 "HTTP track pre-loaded and ready at position {}ms",
                                 position
