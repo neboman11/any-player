@@ -7,6 +7,11 @@ use serde_json::Value;
 use std::path::PathBuf;
 use tokio::fs;
 
+#[cfg(test)]
+use std::sync::OnceLock;
+#[cfg(test)]
+static TEST_UUID: OnceLock<String> = OnceLock::new();
+
 /// Serialize an Option<Track> while stripping any auth_headers field from the JSON representation.
 fn serialize_option_track_sanitized<S>(
     track: &Option<Track>,
@@ -127,11 +132,31 @@ impl Default for PersistentPlaybackState {
 
 impl PersistentPlaybackState {
     /// Get the path to the state file
+    #[cfg(not(test))]
     async fn get_state_file_path() -> Result<PathBuf, String> {
         let data_dir =
             dirs::data_dir().ok_or_else(|| "Failed to get data directory".to_string())?;
 
         let state_dir = data_dir.join("any-player");
+
+        // Ensure directory exists
+        fs::create_dir_all(&state_dir)
+            .await
+            .map_err(|e| format!("Failed to create state directory: {}", e))?;
+
+        Ok(state_dir.join("playback_state.json"))
+    }
+
+    /// Get the path to the state file (test version with unique paths per thread)
+    #[cfg(test)]
+    async fn get_state_file_path() -> Result<PathBuf, String> {
+        let temp_dir = std::env::temp_dir();
+        let thread_id = std::thread::current().id();
+
+        // Use a combination of process ID, test run UUID, and thread ID for uniqueness
+        let test_id =
+            TEST_UUID.get_or_init(|| format!("{}-{}", std::process::id(), uuid::Uuid::new_v4()));
+        let state_dir = temp_dir.join(format!("any-player-test-{}-{:?}", test_id, thread_id));
 
         // Ensure directory exists
         fs::create_dir_all(&state_dir)
