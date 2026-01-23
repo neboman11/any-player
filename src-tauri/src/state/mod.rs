@@ -100,8 +100,7 @@ impl PersistentPlaybackState {
             .map_err(|e| format!("Failed to read state file: {}", e))?;
 
         let state = tokio::task::spawn_blocking(move || {
-            serde_json::from_str(&json)
-                .map_err(|e| format!("Failed to deserialize state: {}", e))
+            serde_json::from_str(&json).map_err(|e| format!("Failed to deserialize state: {}", e))
         })
         .await
         .map_err(|e| format!("Failed to spawn blocking task: {}", e))??;

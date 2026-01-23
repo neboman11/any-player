@@ -1227,7 +1227,11 @@ impl PlaybackManager {
         // Spawn the centralized state saver task
         let info_clone = manager.info.clone();
         let queue_clone = manager.queue.clone();
-        tokio::spawn(Self::state_saver_task(info_clone, queue_clone, state_save_rx));
+        tokio::spawn(Self::state_saver_task(
+            info_clone,
+            queue_clone,
+            state_save_rx,
+        ));
 
         manager
     }
@@ -2106,8 +2110,7 @@ impl PlaybackManager {
                                         break;
                                     }
 
-                                    tokio::time::sleep(std::time::Duration::from_millis(100))
-                                        .await;
+                                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                                 }
                             });
 
