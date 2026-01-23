@@ -81,10 +81,6 @@ pub struct ProviderRegistry {
     jellyfin_provider: Option<Arc<tokio::sync::Mutex<jellyfin::JellyfinProvider>>>,
 }
 
-// Explicitly mark as Send + Sync since all fields use Arc which is thread-safe
-unsafe impl Send for ProviderRegistry {}
-unsafe impl Sync for ProviderRegistry {}
-
 impl ProviderRegistry {
     pub fn new() -> Self {
         Self {
