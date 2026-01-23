@@ -109,6 +109,12 @@ impl Database {
         Ok(db)
     }
 
+    /// Initialize the database schema.
+    ///
+    /// NOTE: This uses string concatenation for SQL, which is generally safe here
+    /// since there is no user input involved. For production applications with
+    /// complex schema evolution, consider using a migration tool like `refinery`
+    /// or `sqlx-migrate` to track and apply schema changes in a versioned manner.
     fn initialize_schema(&self) -> Result<()> {
         self.conn.execute_batch(
             r#"
@@ -282,42 +288,45 @@ impl Database {
         description: Option<String>,
         image_url: Option<String>,
     ) -> Result<()> {
-        let now = Utc::now().timestamp();
-
-        // Build dynamic update query
-        let mut updates = Vec::new();
-        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-
-        if let Some(n) = name {
-            updates.push("name = ?");
-            params_vec.push(Box::new(n));
-        }
-        if let Some(d) = description {
-            updates.push("description = ?");
-            params_vec.push(Box::new(d));
-        }
-        if let Some(img) = image_url {
-            updates.push("image_url = ?");
-            params_vec.push(Box::new(img));
-        }
-
-        if updates.is_empty() {
+        // Return early if nothing to update
+        if name.is_none() && description.is_none() && image_url.is_none() {
             return Ok(());
         }
 
-        updates.push("updated_at = ?");
-        params_vec.push(Box::new(now));
-        params_vec.push(Box::new(playlist_id.to_string()));
+        let now = Utc::now().timestamp();
 
+        // Build the SET clause dynamically with only the fields that are provided
+        let mut set_clauses = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(n) = name {
+            set_clauses.push("name = ?");
+            params.push(Box::new(n));
+        }
+        if let Some(d) = description {
+            set_clauses.push("description = ?");
+            params.push(Box::new(d));
+        }
+        if let Some(img) = image_url {
+            set_clauses.push("image_url = ?");
+            params.push(Box::new(img));
+        }
+
+        // Always update the updated_at timestamp
+        set_clauses.push("updated_at = ?");
+        params.push(Box::new(now));
+
+        // Build the complete query
         let query = format!(
             "UPDATE custom_playlists SET {} WHERE id = ?",
-            updates.join(", ")
+            set_clauses.join(", ")
         );
+        params.push(Box::new(playlist_id));
 
-        let params_refs: Vec<&dyn rusqlite::ToSql> =
-            params_vec.iter().map(|p| p.as_ref()).collect();
-
+        // Execute the query with the dynamically built parameters
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
         self.conn.execute(&query, params_refs.as_slice())?;
+
         Ok(())
     }
 

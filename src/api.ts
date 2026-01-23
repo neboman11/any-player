@@ -98,7 +98,7 @@ export class TauriAPI {
       artist: track.artist,
       album: track.album || "",
       duration: track.duration_ms || 0,
-      source: typeof track.source === "string" ? track.source : track.source,
+      source: track.source,
       url: track.url || null,
     }));
     return invoke<void>("play_tracks_immediate", { tracks: trackInfos });

@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import toast from "react-hot-toast";
 import {
   useSearch,
   usePlayback,
@@ -57,14 +58,21 @@ export function Search() {
     [playback, audio],
   );
 
-  // Helper to capitalize source for Rust enum serialization
-  const capitalizeSource = (
+  // Helper to normalize source to lowercase format
+  const normalizeSource = (
     source: string,
-  ): "Spotify" | "Jellyfin" | "Custom" => {
-    return (source.charAt(0).toUpperCase() + source.slice(1)) as
-      | "Spotify"
-      | "Jellyfin"
-      | "Custom";
+  ): "spotify" | "jellyfin" | "custom" => {
+    switch (source.toLowerCase()) {
+      case "spotify":
+        return "spotify";
+      case "jellyfin":
+        return "jellyfin";
+      case "custom":
+        return "custom";
+      default:
+        // Fallback to a safe default to satisfy the return type
+        return "custom";
+    }
   };
 
   const handleAddToPlaylist = useCallback(
@@ -77,7 +85,7 @@ export function Search() {
           artist: result.artist || "Unknown Artist",
           album: "",
           duration_ms: 0,
-          source: capitalizeSource(result.source),
+          source: normalizeSource(result.source),
         };
         setSelectedTrack(track);
         setShowPlaylistSelector(true);
@@ -94,10 +102,10 @@ export function Search() {
         await tauriAPI.addTrackToCustomPlaylist(playlistId, selectedTrack);
         setShowPlaylistSelector(false);
         setSelectedTrack(null);
-        alert("Track added to playlist!");
+        toast.success("Track added to playlist!");
       } catch (err) {
         console.error("Failed to add track:", err);
-        alert("Failed to add track to playlist");
+        toast.error("Failed to add track to playlist");
       }
     },
     [selectedTrack],
@@ -158,7 +166,7 @@ export function Search() {
           <div className="search-empty">
             <p>Searching...</p>
           </div>
-        ) : error && !isLoading ? (
+        ) : error ? (
           <div className="search-empty">
             <p>Error: {error}</p>
           </div>

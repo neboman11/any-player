@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import toast from "react-hot-toast";
 import { TrackTable } from "./TrackTable";
 import {
   useUnionPlaylistSources,
@@ -54,6 +55,8 @@ export function UnionPlaylistEditor({
   const [showAddSource, setShowAddSource] = useState(false);
   const [selectedSourceType, setSelectedSourceType] = useState<string>("all");
   const [availablePlaylists, setAvailablePlaylists] = useState<Playlist[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showRemoveSourceConfirm, setShowRemoveSourceConfirm] = useState<number | null>(null);
 
   // Load playlists when needed
   useEffect(() => {
@@ -120,25 +123,18 @@ export function UnionPlaylistEditor({
       setIsEditing(false);
     } catch (err) {
       console.error("Failed to update playlist:", err);
-      alert("Failed to update playlist");
+      toast.error("Failed to update playlist");
     }
   };
 
   const handleDelete = async () => {
-    if (
-      !confirm(
-        `Are you sure you want to delete "${playlist.name}"? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
-
     try {
       await onDelete();
       onBack();
+      toast.success("Playlist deleted");
     } catch (err) {
       console.error("Failed to delete playlist:", err);
-      alert("Failed to delete playlist");
+      toast.error("Failed to delete playlist");
     }
   };
 
@@ -146,9 +142,10 @@ export function UnionPlaylistEditor({
     try {
       await addSource(sourceType, playlistId);
       setShowAddSource(false);
+      toast.success("Playlist added to union");
     } catch (err) {
       console.error("Failed to add source:", err);
-      alert("Failed to add source playlist");
+      toast.error("Failed to add source playlist");
     }
   };
 
@@ -157,15 +154,13 @@ export function UnionPlaylistEditor({
   };
 
   const handleRemoveSource = async (sourceId: number) => {
-    if (!confirm("Remove this playlist from the union?")) {
-      return;
-    }
-
     try {
       await removeSource(sourceId);
+      setShowRemoveSourceConfirm(null);
+      toast.success("Playlist removed from union");
     } catch (err) {
       console.error("Failed to remove source:", err);
-      alert("Failed to remove source playlist");
+      toast.error("Failed to remove source playlist");
     }
   };
 
@@ -174,7 +169,7 @@ export function UnionPlaylistEditor({
       // For union playlists, send the cached tracks directly to start playback immediately
       // The backend will start playing right away and enrich track details in the background
       if (tracks.length === 0) {
-        alert("No tracks in this union playlist");
+        toast.error("No tracks in this union playlist");
         return;
       }
 
@@ -183,7 +178,7 @@ export function UnionPlaylistEditor({
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play union playlist:", err);
-      alert("Failed to play playlist");
+      toast.error("Failed to play playlist");
     }
   };
 
@@ -299,7 +294,7 @@ export function UnionPlaylistEditor({
               <button className="edit-btn" onClick={() => setIsEditing(true)}>
                 Edit
               </button>
-              <button className="delete-btn" onClick={handleDelete}>
+              <button className="delete-btn" onClick={() => setShowDeleteConfirm(true)}>
                 Delete
               </button>
             </>
@@ -371,7 +366,7 @@ export function UnionPlaylistEditor({
                 </div>
                 <button
                   className="remove-btn"
-                  onClick={() => handleRemoveSource(source.id)}
+                  onClick={() => setShowRemoveSourceConfirm(source.id)}
                 >
                   Remove
                 </button>
@@ -394,6 +389,57 @@ export function UnionPlaylistEditor({
           <TrackTable tracks={tracks} onPlayTrack={handlePlayTrack} />
         )}
       </div>
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && (
+        <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Delete Playlist</h3>
+            <p>Are you sure you want to delete "{playlist.name}"? This cannot be undone.</p>
+            <div className="modal-actions">
+              <button 
+                className="confirm-btn"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  handleDelete();
+                }}
+              >
+                Delete
+              </button>
+              <button 
+                className="cancel-btn"
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove source confirmation modal */}
+      {showRemoveSourceConfirm !== null && (
+        <div className="modal-overlay" onClick={() => setShowRemoveSourceConfirm(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Remove Playlist</h3>
+            <p>Remove this playlist from the union?</p>
+            <div className="modal-actions">
+              <button 
+                className="confirm-btn"
+                onClick={() => handleRemoveSource(showRemoveSourceConfirm)}
+              >
+                Remove
+              </button>
+              <button 
+                className="cancel-btn"
+                onClick={() => setShowRemoveSourceConfirm(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
