@@ -601,6 +601,11 @@ pub async fn play_tracks_immediate(
         });
     }
 
+    // Ensure we have at least one track after conversion
+    if internal_tracks.is_empty() {
+        return Err("No valid tracks to play".to_string());
+    }
+
     // Store first track for later enrichment
     let first_track_for_enrichment = internal_tracks[0].clone();
     let needs_enrichment = matches!(
