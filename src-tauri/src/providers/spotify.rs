@@ -537,6 +537,7 @@ impl MusicProvider for SpotifyProvider {
                     image_url: t.album.images.first().map(|img| img.url.clone()),
                     source: Source::Spotify,
                     url,
+                    auth_headers: None,
                 });
             }
         }
@@ -647,6 +648,7 @@ impl MusicProvider for SpotifyProvider {
             image_url: track.album.images.first().map(|img| img.url.clone()),
             source: Source::Spotify,
             url,
+            auth_headers: None,
         })
     }
 

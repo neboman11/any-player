@@ -78,6 +78,10 @@ export class TauriAPI {
     return invoke<void>("clear_queue");
   }
 
+  async playPlaylist(playlistId: string, source: string): Promise<void> {
+    return invoke<void>("play_playlist", { playlistId, source });
+  }
+
   // Spotify commands
   async getSpotifyAuthUrl(): Promise<string> {
     return invoke<string>("get_spotify_auth_url");
@@ -169,6 +173,14 @@ export class TauriAPI {
 
   async disconnectJellyfin(): Promise<void> {
     return invoke<void>("disconnect_jellyfin");
+  }
+
+  async getJellyfinCredentials(): Promise<[string, string] | null> {
+    return invoke<[string, string] | null>("get_jellyfin_credentials");
+  }
+
+  async restoreJellyfinSession(): Promise<boolean> {
+    return invoke<boolean>("restore_jellyfin_session");
   }
 
   async getAudioFile(url: string): Promise<string> {

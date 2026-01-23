@@ -37,6 +37,9 @@ pub struct Track {
     pub source: Source,
     /// External URL or stream URL
     pub url: Option<String>,
+    /// HTTP headers for authentication (e.g., API keys)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_headers: Option<Vec<(String, String)>>,
 }
 
 impl fmt::Display for Track {

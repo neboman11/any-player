@@ -65,8 +65,10 @@ pub struct JellyfinConfig {
 pub struct TokenStorage {
     /// Spotify token
     pub spotify_token: Option<Token>,
-    /// Jellyfin API key (redundant with JellyfinConfig but kept for consistency)
+    /// Jellyfin API key
     pub jellyfin_api_key: Option<String>,
+    /// Jellyfin server URL
+    pub jellyfin_url: Option<String>,
 }
 
 impl Default for Config {
@@ -165,6 +167,7 @@ impl Config {
     fn load_tokens_from_keyring() -> Result<TokenStorage, Box<dyn std::error::Error>> {
         let spotify_entry = Entry::new("any-player", "spotify-token")?;
         let jellyfin_entry = Entry::new("any-player", "jellyfin-api-key")?;
+        let jellyfin_url_entry = Entry::new("any-player", "jellyfin-url")?;
 
         let spotify_token = match spotify_entry.get_password() {
             Ok(json) => {
@@ -197,10 +200,22 @@ impl Config {
             }
         };
 
-        // Return tokens (even if both are None)
+        let jellyfin_url = match jellyfin_url_entry.get_password() {
+            Ok(url) => {
+                tracing::debug!("Found jellyfin URL in keyring");
+                Some(url)
+            }
+            Err(e) => {
+                tracing::debug!("No jellyfin URL in keyring: {}", e);
+                None
+            }
+        };
+
+        // Return tokens (even if all are None)
         Ok(TokenStorage {
             spotify_token,
             jellyfin_api_key,
+            jellyfin_url,
         })
     }
 
@@ -225,6 +240,7 @@ impl Config {
 
         let spotify_entry = Entry::new("any-player", "spotify-token")?;
         let jellyfin_entry = Entry::new("any-player", "jellyfin-api-key")?;
+        let jellyfin_url_entry = Entry::new("any-player", "jellyfin-url")?;
 
         // Save Spotify token if present
         if let Some(ref token) = tokens.spotify_token {
@@ -247,6 +263,16 @@ impl Config {
             tracing::debug!("Deleted jellyfin API key from keyring");
         }
 
+        // Save Jellyfin URL if present
+        if let Some(ref url) = tokens.jellyfin_url {
+            jellyfin_url_entry.set_password(url)?;
+            tracing::debug!("Successfully saved jellyfin URL to keyring");
+        } else {
+            // Delete the entry if url is None
+            let _ = jellyfin_url_entry.delete_credential();
+            tracing::debug!("Deleted jellyfin URL from keyring");
+        }
+
         Ok(())
     }
 
@@ -256,10 +282,12 @@ impl Config {
 
         let spotify_entry = Entry::new("any-player", "spotify-token")?;
         let jellyfin_entry = Entry::new("any-player", "jellyfin-api-key")?;
+        let jellyfin_url_entry = Entry::new("any-player", "jellyfin-url")?;
 
-        // Attempt to delete both entries (ignore errors if they don't exist)
+        // Attempt to delete all entries (ignore errors if they don't exist)
         let _ = spotify_entry.delete_credential();
         let _ = jellyfin_entry.delete_credential();
+        let _ = jellyfin_url_entry.delete_credential();
 
         Ok(())
     }
@@ -281,6 +309,7 @@ mod tests {
         let storage = TokenStorage::default();
         assert!(storage.spotify_token.is_none());
         assert!(storage.jellyfin_api_key.is_none());
+        assert!(storage.jellyfin_url.is_none());
     }
 
     #[test]
@@ -288,6 +317,7 @@ mod tests {
         let storage = TokenStorage {
             spotify_token: None,
             jellyfin_api_key: Some("test_key".to_string()),
+            jellyfin_url: Some("http://localhost:8096".to_string()),
         };
 
         // Test that we can serialize to JSON
@@ -313,6 +343,7 @@ mod tests {
         let tokens = TokenStorage {
             spotify_token: None,
             jellyfin_api_key: Some("test_api_key".to_string()),
+            jellyfin_url: Some("http://localhost:8096".to_string()),
         };
 
         // Save tokens using keyring
@@ -346,6 +377,7 @@ mod tests {
         let tokens = TokenStorage {
             spotify_token: None,
             jellyfin_api_key: Some("secure_test_key_123".to_string()),
+            jellyfin_url: Some("http://localhost:8096".to_string()),
         };
 
         // Save to keyring
