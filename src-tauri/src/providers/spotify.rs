@@ -11,6 +11,10 @@ pub const SPOTIFY_CLIENT_ID: &str = "243bb6667db04143b6586d8598aed48b";
 /// Default OAuth redirect URI - must be localhost with specific port for Spotify
 const DEFAULT_REDIRECT_URI: &str = "http://127.0.0.1:8989/callback";
 
+/// Maximum consecutive errors allowed when streaming playlist items
+/// before giving up. Allows for transient network issues.
+const MAX_CONSECUTIVE_ERRORS: u32 = 3;
+
 /// Spotify provider state
 pub struct SpotifyProvider {
     client: Option<AuthCodePkceSpotify>,
@@ -519,31 +523,57 @@ impl MusicProvider for SpotifyProvider {
         let mut tracks = Vec::new();
 
         // Use stream to get all tracks with pagination
+        // Retry transient network errors to handle large playlists more robustly
         let mut tracks_stream = client.playlist_items(playlist_id.clone(), None, None);
+        let mut consecutive_errors = 0;
+        
         while let Some(track_result) = tracks_stream.next().await {
-            let item = track_result
-                .map_err(|e| ProviderError(format!("Failed to fetch playlist track: {}", e)))?;
-
-            if let Some(rspotify::model::PlayableItem::Track(t)) = item.track {
-                let duration_ms = t.duration.num_milliseconds() as u64;
-                // Premium playback only - return spotify:track: URI for librespot
-                let url = t.id.as_ref().map(|id| format!("spotify:track:{}", id));
-                tracks.push(Track {
-                    id: t.id.map(|id| id.to_string()).unwrap_or_default(),
-                    title: t.name,
-                    artist: t
-                        .artists
-                        .iter()
-                        .map(|a| a.name.clone())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    album: t.album.name,
-                    duration_ms,
-                    image_url: t.album.images.first().map(|img| img.url.clone()),
-                    source: Source::Spotify,
-                    url,
-                    auth_headers: None,
-                });
+            match track_result {
+                Ok(item) => {
+                    consecutive_errors = 0; // Reset error counter on success
+                    
+                    if let Some(rspotify::model::PlayableItem::Track(t)) = item.track {
+                        let duration_ms = t.duration.num_milliseconds() as u64;
+                        // Premium playback only - return spotify:track: URI for librespot
+                        let url = t.id.as_ref().map(|id| format!("spotify:track:{}", id));
+                        tracks.push(Track {
+                            id: t.id.map(|id| id.to_string()).unwrap_or_default(),
+                            title: t.name,
+                            artist: t
+                                .artists
+                                .iter()
+                                .map(|a| a.name.clone())
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            album: t.album.name,
+                            duration_ms,
+                            image_url: t.album.images.first().map(|img| img.url.clone()),
+                            source: Source::Spotify,
+                            url,
+                            auth_headers: None,
+                        });
+                    }
+                }
+                Err(e) => {
+                    consecutive_errors += 1;
+                    tracing::warn!(
+                        "Error fetching Spotify playlist track (attempt {}/{}): {}",
+                        consecutive_errors,
+                        MAX_CONSECUTIVE_ERRORS,
+                        e
+                    );
+                    
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                        return Err(ProviderError(format!(
+                            "Failed to fetch playlist tracks after {} consecutive errors: {}",
+                            MAX_CONSECUTIVE_ERRORS,
+                            e
+                        )));
+                    }
+                    
+                    // Brief delay before continuing to next item to avoid overwhelming API
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                }
             }
         }
 
