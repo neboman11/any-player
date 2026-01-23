@@ -1036,9 +1036,6 @@ pub struct PlaybackManager {
     monitoring_task_abort: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
 }
 
-// Manually implement Send since all fields are Send-safe with Arc<Mutex<>>
-unsafe impl Send for PlaybackManager {}
-
 impl PlaybackManager {
     pub fn new(providers: Arc<Mutex<ProviderRegistry>>) -> Self {
         // Create a channel for track completion events
