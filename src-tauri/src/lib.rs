@@ -5,12 +5,14 @@ pub mod database;
 pub mod models;
 pub mod playback;
 pub mod providers;
+pub mod state;
 
 pub use config::Config;
 pub use database::Database;
 pub use models::{PlaybackInfo, PlaybackState, Playlist, RepeatMode, Source, Track};
 pub use playback::PlaybackManager;
 pub use providers::{MusicProvider, ProviderError, ProviderRegistry};
+pub use state::PersistentPlaybackState;
 use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod commands;
@@ -147,6 +149,9 @@ pub fn run() {
             commands::write_union_playlist_tracks_cache,
             commands::read_union_playlist_tracks_cache,
             commands::clear_union_playlist_tracks_cache,
+            // Playback state commands
+            commands::save_playback_state,
+            commands::restore_playback_state,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -248,14 +253,37 @@ pub fn run() {
                         }
                     }
                 }
+
+                // Restore playback state from disk after providers are ready
+                {
+                    let playback = playback_for_restore.lock().await;
+                    match playback.restore_state().await {
+                        Ok(()) => {
+                            tracing::info!("✓ Playback state restored from disk");
+                        }
+                        Err(e) => {
+                            tracing::info!("No playback state to restore: {}", e);
+                        }
+                    }
+                }
             });
 
             Ok(())
         })
-        .on_window_event(|_window, event| {
+        .on_window_event(move |_window, event| {
             // Clean up temporary audio files when the application is closing
             if let tauri::WindowEvent::Destroyed = event {
                 commands::cleanup_all_temp_audio_files();
+
+                // Save playback state before closing
+                let playback_for_save = playback.clone();
+                tauri::async_runtime::spawn(async move {
+                    let playback_locked = playback_for_save.lock().await;
+                    match playback_locked.save_state().await {
+                        Ok(()) => tracing::info!("✓ Playback state saved on exit"),
+                        Err(e) => tracing::error!("Failed to save playback state on exit: {}", e),
+                    }
+                });
             }
         })
         .run(tauri::generate_context!())
