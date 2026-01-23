@@ -79,7 +79,7 @@ where
 }
 
 /// Persistent playback state that gets saved to disk
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PersistentPlaybackState {
     /// Current playing track
     #[serde(
@@ -242,7 +242,7 @@ mod tests {
         assert_eq!(state.queue.len(), 0);
         assert_eq!(state.current_index, 0);
         assert_eq!(state.position_ms, 0);
-        assert_eq!(state.shuffle, false);
+        assert!(!state.shuffle);
         assert_eq!(state.repeat_mode, RepeatMode::Off);
         assert_eq!(state.volume, 50);
         assert_eq!(state.shuffle_order.len(), 0);
@@ -377,7 +377,7 @@ mod tests {
 
         assert_eq!(restored_state.current_index, 1);
         assert_eq!(restored_state.position_ms, 45000);
-        assert_eq!(restored_state.shuffle, true);
+        assert!(restored_state.shuffle);
         assert_eq!(restored_state.repeat_mode, RepeatMode::All);
         assert_eq!(restored_state.volume, 80);
         assert_eq!(restored_state.shuffle_order, vec![1, 0]);
