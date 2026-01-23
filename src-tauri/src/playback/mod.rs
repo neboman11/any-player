@@ -326,12 +326,26 @@ impl PlaybackQueue {
     /// Validate that all indices in shuffle_order are within bounds
     /// and regenerate if invalid. This ensures robustness if tracks are
     /// modified after shuffle order is generated.
+    /// Only validates if there's a potential issue (mismatched lengths).
     fn validate_shuffle_order(&mut self) {
         if self.shuffle_order.is_empty() {
             return;
         }
         
         let track_count = self.tracks.len();
+        
+        // Quick check: if shuffle_order length matches track count and all tracks exist,
+        // we can skip the expensive iteration through all indices
+        if self.shuffle_order.len() == track_count {
+            // Likely valid, but still check if any index is out of bounds
+            // This is a trade-off: we still iterate, but only when lengths match
+            let max_idx = self.shuffle_order.iter().max().copied().unwrap_or(0);
+            if max_idx < track_count {
+                return; // All indices must be valid
+            }
+        }
+        
+        // Either length mismatch or found an out-of-bounds index - need full validation
         let has_invalid = self.shuffle_order.iter().any(|&idx| idx >= track_count);
         
         if has_invalid {

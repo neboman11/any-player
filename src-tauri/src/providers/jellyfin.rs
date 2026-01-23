@@ -338,7 +338,10 @@ impl MusicProvider for JellyfinProvider {
         let mut all_tracks = Vec::new();
         let limit = 300; // Jellyfin default limit
         let mut start_index = 0;
-        const MAX_ITERATIONS: usize = 1000; // Safety limit to prevent infinite loops
+        // Safety limit to prevent infinite loops. With limit=300, this allows for
+        // playlists with up to 300,000 items (1000 * 300), which should be sufficient
+        // for any realistic use case while protecting against API issues.
+        const MAX_ITERATIONS: usize = 1000;
         let mut iteration_count = 0;
 
         loop {

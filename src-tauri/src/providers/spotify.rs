@@ -11,6 +11,10 @@ pub const SPOTIFY_CLIENT_ID: &str = "243bb6667db04143b6586d8598aed48b";
 /// Default OAuth redirect URI - must be localhost with specific port for Spotify
 const DEFAULT_REDIRECT_URI: &str = "http://127.0.0.1:8989/callback";
 
+/// Maximum consecutive errors allowed when streaming playlist items
+/// before giving up. Allows for transient network issues.
+const MAX_CONSECUTIVE_ERRORS: u32 = 3;
+
 /// Spotify provider state
 pub struct SpotifyProvider {
     client: Option<AuthCodePkceSpotify>,
@@ -522,7 +526,6 @@ impl MusicProvider for SpotifyProvider {
         // Retry transient network errors to handle large playlists more robustly
         let mut tracks_stream = client.playlist_items(playlist_id.clone(), None, None);
         let mut consecutive_errors = 0;
-        const MAX_CONSECUTIVE_ERRORS: u32 = 3;
         
         while let Some(track_result) = tracks_stream.next().await {
             match track_result {
