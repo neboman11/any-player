@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useSpotifyAuth, useJellyfinAuth } from "../hooks";
+import { useSpotifyAuth, useJellyfinAuth, usePlaylists } from "../hooks";
 import { ProviderStatus } from "./ProviderStatus";
 import { tauriAPI } from "../api";
 
@@ -143,6 +143,25 @@ export function Settings() {
 
   const spotify = useSpotifyAuth();
   const jellyfin = useJellyfinAuth();
+  const { clearCache, loadPlaylists } = usePlaylists();
+
+  // Refresh authentication status when Settings page is mounted/visible
+  useEffect(() => {
+    const refreshAuthStatus = async () => {
+      // Refresh Spotify auth status
+      if (spotify.checkAuthStatus) {
+        await spotify.checkAuthStatus();
+      }
+
+      // Refresh Jellyfin auth status
+      if (jellyfin.checkAuthStatus) {
+        await jellyfin.checkAuthStatus();
+      }
+    };
+
+    void refreshAuthStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount - we want to refresh status when Settings page loads
 
   // Load stored Jellyfin credentials when component mounts or connection state changes
   useEffect(() => {
@@ -167,26 +186,53 @@ export function Settings() {
   const handleSpotifyConnect = useCallback(async () => {
     if (spotify.isConnected) {
       await spotify.disconnect();
+      // Clear playlist cache when disconnecting
+      clearCache();
     } else {
       try {
         await spotify.connect();
+        // Reload playlists after successfully connecting
+        // Wait a bit for the connection to be fully established
+        setTimeout(async () => {
+          try {
+            const isAuth = await tauriAPI.isSpotifyAuthenticated();
+            if (isAuth) {
+              await loadPlaylists("all", true);
+            }
+          } catch (err) {
+            console.error("Failed to reload playlists:", err);
+          }
+        }, 1000);
       } catch (err) {
         console.error("Spotify connection error:", err);
       }
     }
-  }, [spotify]);
+  }, [spotify, clearCache, loadPlaylists]);
 
   const handleJellyfinConnect = useCallback(async () => {
     if (jellyfin.isConnected) {
       await jellyfin.disconnect();
+      // Clear playlist cache when disconnecting
+      clearCache();
       // Clear fields after disconnecting
       setJellyfinUrl("");
       setJellyfinApiKey("");
       setShowApiKey(false);
     } else {
       await jellyfin.connect(jellyfinUrl, jellyfinApiKey);
+      // Reload playlists after successfully connecting
+      setTimeout(async () => {
+        try {
+          const isAuth = await tauriAPI.isJellyfinAuthenticated();
+          if (isAuth) {
+            await loadPlaylists("all", true);
+          }
+        } catch (err) {
+          console.error("Failed to reload playlists:", err);
+        }
+      }, 1000);
     }
-  }, [jellyfin, jellyfinUrl, jellyfinApiKey]);
+  }, [jellyfin, jellyfinUrl, jellyfinApiKey, clearCache, loadPlaylists]);
 
   return (
     <section id="settings" className="page">
@@ -307,10 +353,93 @@ export function Settings() {
             </label>
           </div>
         </div>
+
+        <ColumnPreferencesSection />
       </div>
       {spotify.authUrl && (
         <AuthModal authUrl={spotify.authUrl} onClose={spotify.clearAuthUrl} />
       )}
     </section>
+  );
+}
+
+function ColumnPreferencesSection() {
+  const [columns, setColumns] = useState<string[]>([
+    "title",
+    "artist",
+    "album",
+    "duration",
+    "source",
+  ]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadPreferences = async () => {
+      try {
+        const prefs = await tauriAPI.getColumnPreferences();
+        setColumns(prefs.columns);
+      } catch (err) {
+        console.error("Failed to load column preferences:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadPreferences();
+  }, []);
+
+  const toggleColumn = async (column: string) => {
+    const newColumns = columns.includes(column)
+      ? columns.filter((c) => c !== column)
+      : [...columns, column];
+
+    setColumns(newColumns);
+
+    try {
+      // Get current preferences
+      const currentPrefs = await tauriAPI.getColumnPreferences();
+
+      // Update with new columns
+      await tauriAPI.saveColumnPreferences({
+        ...currentPrefs,
+        columns: newColumns,
+        column_order: newColumns.map((_, i) => i),
+      });
+    } catch (err) {
+      console.error("Failed to save column preferences:", err);
+    }
+  };
+
+  const allColumns = ["title", "artist", "album", "duration", "source"];
+
+  if (loading) {
+    return (
+      <div className="settings-section">
+        <h3>Track Table Columns</h3>
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-section">
+      <h3>Track Table Columns</h3>
+      <p className="section-description">
+        Choose which columns to display in custom playlist track tables
+      </p>
+      <div className="column-preferences">
+        {allColumns.map((column) => (
+          <div key={column} className="setting-item">
+            <label>
+              <input
+                type="checkbox"
+                checked={columns.includes(column)}
+                onChange={() => toggleColumn(column)}
+              />
+              {column.charAt(0).toUpperCase() + column.slice(1)}
+            </label>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

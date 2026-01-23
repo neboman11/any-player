@@ -19,8 +19,8 @@ export interface Track {
   title: string;
   artist: string;
   album?: string;
-  duration?: number;
-  source: "spotify" | "jellyfin";
+  duration_ms?: number;
+  source: "spotify" | "jellyfin" | "custom";
   url?: string;
 }
 
@@ -29,10 +29,50 @@ export interface Playlist {
   name: string;
   owner: string;
   track_count: number;
-  source: "spotify" | "jellyfin";
+  source: "spotify" | "jellyfin" | "custom";
   image_url?: string;
   tracks?: Track[];
   description?: string;
+}
+
+export interface CustomPlaylist {
+  id: string;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  created_at: number;
+  updated_at: number;
+  track_count: number;
+  playlist_type: "standard" | "union";
+}
+
+export interface UnionPlaylistSource {
+  id: number;
+  union_playlist_id: string;
+  source_type: string; // "spotify", "jellyfin", "custom"
+  source_playlist_id: string;
+  position: number;
+  added_at: number;
+}
+
+export interface PlaylistTrack {
+  id: number;
+  playlist_id: string;
+  track_source: string;
+  track_id: string;
+  position: number;
+  added_at: number;
+  title: string;
+  artist: string;
+  album: string | null;
+  duration_ms: number | null;
+  image_url: string | null;
+}
+
+export interface ColumnPreferences {
+  columns: string[];
+  column_order: number[];
+  column_widths: Record<string, number>;
 }
 
 export interface SearchResult {
@@ -41,7 +81,7 @@ export interface SearchResult {
   artist?: string;
   owner?: string;
   type: "track" | "playlist";
-  source: "spotify" | "jellyfin";
+  source: "spotify" | "jellyfin" | "custom";
 }
 
 export interface OAuthCallbackData {
@@ -50,6 +90,6 @@ export interface OAuthCallbackData {
   error?: string;
 }
 
-export type TauriSource = "spotify" | "jellyfin" | "all";
+export type TauriSource = "spotify" | "jellyfin" | "custom" | "all";
 export type SearchType = "tracks" | "playlists";
 export type RepeatMode = "off" | "one" | "all";

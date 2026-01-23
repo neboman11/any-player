@@ -286,6 +286,18 @@ impl ProviderRegistry {
         }
     }
 
+    /// Search tracks on Spotify
+    pub async fn search_spotify_tracks(&self, query: &str) -> Result<Vec<Track>, ProviderError> {
+        if let Some(provider) = &self.spotify_provider {
+            let spotify = provider.lock().await;
+            spotify.search_tracks(query).await
+        } else {
+            Err(ProviderError(
+                "Spotify provider not authenticated".to_string(),
+            ))
+        }
+    }
+
     /// Search playlists on Jellyfin
     pub async fn search_jellyfin_playlists(
         &self,
@@ -432,6 +444,21 @@ impl ProviderRegistry {
             tokens.spotify_token.is_some()
         } else {
             false
+        }
+    }
+
+    /// Get authentication headers for a specific source
+    /// Returns None for sources that don't require authentication headers
+    pub async fn get_auth_headers(&self, source: Source) -> Option<Vec<(String, String)>> {
+        match source {
+            Source::Jellyfin => {
+                if let Some(provider_mutex) = &self.jellyfin_provider {
+                    let provider = provider_mutex.lock().await;
+                    return Some(provider.get_auth_headers());
+                }
+                None
+            }
+            _ => None,
         }
     }
 
