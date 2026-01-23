@@ -293,7 +293,7 @@ pub fn run() {
                             tracing::info!("✓ Playback state restored from disk");
                         }
                         Err(e) => {
-                            tracing::info!("No playback state to restore: {}", e);
+                            tracing::warn!("Failed to restore playback state from disk: {}", e);
                         }
                     }
 
