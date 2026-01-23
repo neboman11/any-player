@@ -591,6 +591,12 @@ impl AudioPlayer {
         let sink =
             Sink::try_new(&stream_handle).map_err(|e| format!("Failed to create sink: {}", e))?;
 
+        // Check if we should start paused (for restore scenarios)
+        let should_start_paused = handle.is_paused();
+        if should_start_paused {
+            sink.pause();
+        }
+
         // Convert to f32 samples
         let source = source.convert_samples::<f32>();
 
@@ -1016,12 +1022,15 @@ impl AudioPlayer {
 
                 // Calculate current position accounting for pauses and initial offset
                 let elapsed = if let Some(st) = start_time {
+                    let base_elapsed = st.elapsed();
                     if let Some(paused_at) = pause_time {
                         // Currently paused: use time up to pause
-                        st.elapsed() - accumulated_pause_duration - paused_at.elapsed()
+                        base_elapsed
+                            .saturating_sub(accumulated_pause_duration)
+                            .saturating_sub(paused_at.elapsed())
                     } else {
                         // Not paused: use full elapsed time minus accumulated pause duration
-                        st.elapsed() - accumulated_pause_duration
+                        base_elapsed.saturating_sub(accumulated_pause_duration)
                     }
                 } else {
                     // start_time not yet set (waiting for first resume)
@@ -1192,6 +1201,7 @@ pub struct PlaybackManager {
     track_complete_tx: mpsc::UnboundedSender<()>,
     track_complete_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
     monitoring_task_abort: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
+    state_save_tx: mpsc::UnboundedSender<()>,
 }
 
 impl PlaybackManager {
@@ -1199,7 +1209,10 @@ impl PlaybackManager {
         // Create a channel for track completion events
         let (track_complete_tx, track_complete_rx) = mpsc::unbounded_channel::<()>();
 
-        Self {
+        // Create a channel for state save requests
+        let (state_save_tx, state_save_rx) = mpsc::unbounded_channel::<()>();
+
+        let manager = Self {
             queue: Arc::new(Mutex::new(PlaybackQueue::new())),
             info: Arc::new(Mutex::new(PlaybackInfo::default())),
             audio_player: Arc::new(AudioPlayer::new()),
@@ -1208,7 +1221,89 @@ impl PlaybackManager {
             track_complete_tx,
             track_complete_rx: Arc::new(Mutex::new(Some(track_complete_rx))),
             monitoring_task_abort: Arc::new(Mutex::new(None)),
+            state_save_tx,
+        };
+
+        // Spawn the centralized state saver task
+        let info_clone = manager.info.clone();
+        let queue_clone = manager.queue.clone();
+        tokio::spawn(Self::state_saver_task(info_clone, queue_clone, state_save_rx));
+
+        manager
+    }
+
+    /// Centralized state saver task with debouncing
+    /// Saves state at most once every 5 seconds, even if requested more frequently
+    async fn state_saver_task(
+        info: Arc<Mutex<PlaybackInfo>>,
+        queue: Arc<Mutex<PlaybackQueue>>,
+        mut save_rx: mpsc::UnboundedReceiver<()>,
+    ) {
+        let mut last_save = Instant::now();
+        const SAVE_INTERVAL: Duration = Duration::from_secs(5);
+
+        loop {
+            // Wait for save request or timeout
+            match tokio::time::timeout(SAVE_INTERVAL, save_rx.recv()).await {
+                Ok(Some(())) => {
+                    // Request received, check if enough time has passed
+                    if last_save.elapsed() >= SAVE_INTERVAL {
+                        Self::perform_state_save(&info, &queue).await;
+                        last_save = Instant::now();
+                    }
+                    // If not enough time has passed, the request is dropped (debounced)
+                }
+                Ok(None) => {
+                    // Channel closed, exit the task
+                    tracing::info!("State saver task exiting (channel closed)");
+                    break;
+                }
+                Err(_) => {
+                    // Timeout, perform periodic save if state might have changed
+                    // This ensures we save even during continuous playback
+                    if last_save.elapsed() >= SAVE_INTERVAL {
+                        Self::perform_state_save(&info, &queue).await;
+                        last_save = Instant::now();
+                    }
+                }
+            }
         }
+    }
+
+    /// Perform the actual state save operation
+    async fn perform_state_save(
+        info: &Arc<Mutex<PlaybackInfo>>,
+        queue: &Arc<Mutex<PlaybackQueue>>,
+    ) {
+        use crate::state::PersistentPlaybackState;
+
+        let info = info.lock().await;
+        let queue = queue.lock().await;
+
+        let state = PersistentPlaybackState {
+            current_track: info.current_track.clone(),
+            queue: queue.tracks.clone(),
+            current_index: queue.current_index,
+            position_ms: info.position_ms,
+            shuffle: info.shuffle,
+            repeat_mode: info.repeat_mode,
+            volume: info.volume,
+            shuffle_order: queue.shuffle_order.clone(),
+            state: info.state,
+        };
+
+        drop(info);
+        drop(queue);
+
+        if let Err(e) = state.save().await {
+            tracing::error!("Failed to save state: {}", e);
+        }
+    }
+
+    /// Request a state save (debounced)
+    pub fn request_state_save(&self) {
+        // Ignore send errors - if the channel is closed, we're shutting down anyway
+        let _ = self.state_save_tx.send(());
     }
 
     /// Take the track completion receiver.
@@ -1283,6 +1378,7 @@ impl PlaybackManager {
                 tracing::info!("Playing Spotify track via librespot: {}", url);
                 let track_complete_tx = self.track_complete_tx.clone();
                 let monitoring_abort = self.monitoring_task_abort.clone();
+                let state_save_tx = self.state_save_tx.clone();
                 match self.play_spotify_track(url).await {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
@@ -1313,25 +1409,9 @@ impl PlaybackManager {
                                     }
                                 }
 
-                                // Periodically save state during playback (every 5 seconds)
+                                // Request state save periodically (every 5 seconds)
                                 if last_state_save.elapsed().as_secs() >= 5 {
-                                    use crate::state::PersistentPlaybackState;
-                                    let info = info_arc.lock().await;
-                                    let queue = queue_arc.lock().await;
-                                    let state = PersistentPlaybackState {
-                                        current_track: info.current_track.clone(),
-                                        queue: queue.tracks.clone(),
-                                        current_index: queue.current_index,
-                                        position_ms: info.position_ms,
-                                        shuffle: info.shuffle,
-                                        repeat_mode: info.repeat_mode,
-                                        volume: info.volume,
-                                        shuffle_order: queue.shuffle_order.clone(),
-                                        state: info.state,
-                                    };
-                                    drop(info);
-                                    drop(queue);
-                                    let _ = state.save();
+                                    let _ = state_save_tx.send(());
                                     last_state_save = std::time::Instant::now();
                                 }
 
@@ -1373,6 +1453,7 @@ impl PlaybackManager {
                 // HTTP URL - play as normal
                 let track_complete_tx = self.track_complete_tx.clone();
                 let monitoring_abort = self.monitoring_task_abort.clone();
+                let state_save_tx = self.state_save_tx.clone();
                 match self
                     .audio_player
                     .play_url(url, track.auth_headers.clone())
@@ -1417,25 +1498,9 @@ impl PlaybackManager {
                                     }
                                 }
 
-                                // Periodically save state during playback (every 5 seconds)
+                                // Request state save periodically (every 5 seconds)
                                 if last_state_save.elapsed().as_secs() >= 5 {
-                                    use crate::state::PersistentPlaybackState;
-                                    let info = info_arc.lock().await;
-                                    let queue = queue_arc.lock().await;
-                                    let state = PersistentPlaybackState {
-                                        current_track: info.current_track.clone(),
-                                        queue: queue.tracks.clone(),
-                                        current_index: queue.current_index,
-                                        position_ms: info.position_ms,
-                                        shuffle: info.shuffle,
-                                        repeat_mode: info.repeat_mode,
-                                        volume: info.volume,
-                                        shuffle_order: queue.shuffle_order.clone(),
-                                        state: info.state,
-                                    };
-                                    drop(info);
-                                    drop(queue);
-                                    let _ = state.save();
+                                    let _ = state_save_tx.send(());
                                     last_state_save = std::time::Instant::now();
                                 }
 
@@ -1797,14 +1862,26 @@ impl PlaybackManager {
         drop(info);
         drop(queue);
 
-        state.save()
+        state.save().await
     }
 
     /// Restore playback state from disk
     pub async fn restore_state(&self) -> Result<(), String> {
         use crate::state::PersistentPlaybackState;
 
-        let saved_state = PersistentPlaybackState::load()?;
+        let saved_state = match PersistentPlaybackState::load().await? {
+            Some(state) => state,
+            None => {
+                tracing::info!("No saved state to restore");
+                return Ok(());
+            }
+        };
+
+        // Only restore if there's actually a current track to restore
+        if saved_state.current_track.is_none() {
+            tracing::info!("No current track in saved state, skipping restore");
+            return Ok(());
+        }
 
         let queue_len = saved_state.queue.len();
         let current_idx = saved_state.current_index;
@@ -1883,6 +1960,7 @@ impl PlaybackManager {
                                 let queue_arc = self.queue.clone();
                                 let track_complete_tx = self.track_complete_tx.clone();
                                 let monitoring_abort = self.monitoring_task_abort.clone();
+                                let state_save_tx = self.state_save_tx.clone();
 
                                 let task = tokio::spawn(async move {
                                     tracing::debug!("Spotify monitoring task started (restore)");
@@ -1909,24 +1987,9 @@ impl PlaybackManager {
                                             }
                                         }
 
-                                        // Periodically save state
+                                        // Request state save periodically (every 5 seconds)
                                         if last_state_save.elapsed().as_secs() >= 5 {
-                                            let info = info_arc.lock().await;
-                                            let queue = queue_arc.lock().await;
-                                            let state = crate::state::PersistentPlaybackState {
-                                                current_track: info.current_track.clone(),
-                                                queue: queue.tracks.clone(),
-                                                current_index: queue.current_index,
-                                                position_ms: info.position_ms,
-                                                shuffle: info.shuffle,
-                                                repeat_mode: info.repeat_mode,
-                                                volume: info.volume,
-                                                shuffle_order: queue.shuffle_order.clone(),
-                                                state: info.state,
-                                            };
-                                            drop(info);
-                                            drop(queue);
-                                            let _ = state.save();
+                                            let _ = state_save_tx.send(());
                                             last_state_save = std::time::Instant::now();
                                         }
 
@@ -1975,20 +2038,85 @@ impl PlaybackManager {
                         .await
                     {
                         Ok(handle) => {
-                            // Wait a moment for the track to start loading
-                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                            // Immediately pause it
-                            handle.pause();
                             // Seek to saved position
                             if position > 0 {
                                 handle.set_position(position);
                             }
+                            // Ensure it starts paused
+                            handle.pause();
                             // Update the info position
                             {
                                 let mut info = self.info.lock().await;
                                 info.position_ms = position;
                                 info.state = PlaybackState::Paused;
                             }
+
+                            // Spawn monitoring task for HTTP restore path
+                            let info_arc = self.info.clone();
+                            let queue_arc = self.queue.clone();
+                            let track_complete_tx = self.track_complete_tx.clone();
+                            let monitoring_abort = self.monitoring_task_abort.clone();
+                            let state_save_tx = self.state_save_tx.clone();
+
+                            let task = tokio::spawn(async move {
+                                tracing::debug!("HTTP restore monitoring task started");
+                                let mut last_state_save = std::time::Instant::now();
+                                loop {
+                                    let position = handle.get_position();
+                                    let duration = handle.get_duration();
+                                    let should_stop = handle.should_stop();
+                                    let is_paused = handle.is_paused();
+
+                                    {
+                                        let mut info = info_arc.lock().await;
+                                        info.position_ms = position;
+                                        if duration > 0 && info.current_track.is_some() {
+                                            info.current_track.as_mut().unwrap().duration_ms =
+                                                duration;
+                                        }
+
+                                        // Update playback state based on pause status
+                                        if is_paused {
+                                            info.state = PlaybackState::Paused;
+                                        } else if !should_stop {
+                                            info.state = PlaybackState::Playing;
+                                        }
+                                    }
+
+                                    // Request state save periodically (every 5 seconds)
+                                    if last_state_save.elapsed().as_secs() >= 5 {
+                                        let _ = state_save_tx.send(());
+                                        last_state_save = std::time::Instant::now();
+                                    }
+
+                                    // When track completes, send event to advance to next track
+                                    if should_stop {
+                                        tracing::debug!(
+                                            "HTTP restore monitoring task detected should_stop=true"
+                                        );
+                                        {
+                                            let mut info = info_arc.lock().await;
+                                            info.state = PlaybackState::Stopped;
+                                        }
+
+                                        tracing::info!(
+                                            "HTTP track completed, sending auto-advance event"
+                                        );
+                                        let _ = track_complete_tx.send(());
+                                        break;
+                                    }
+
+                                    tokio::time::sleep(std::time::Duration::from_millis(100))
+                                        .await;
+                                }
+                            });
+
+                            // Store the abort handle
+                            {
+                                let mut abort_handle = monitoring_abort.lock().await;
+                                *abort_handle = Some(task.abort_handle());
+                            }
+
                             tracing::info!(
                                 "HTTP track pre-loaded and ready at position {}ms",
                                 position
