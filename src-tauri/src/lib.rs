@@ -65,6 +65,7 @@ pub fn run() {
             commands::play_track,
             commands::queue_track,
             commands::clear_queue,
+            commands::play_playlist,
             // Spotify commands
             commands::get_spotify_auth_url,
             commands::authenticate_spotify,
@@ -89,6 +90,8 @@ pub fn run() {
             commands::search_jellyfin_playlists,
             commands::get_jellyfin_recently_played,
             commands::disconnect_jellyfin,
+            commands::get_jellyfin_credentials,
+            commands::restore_jellyfin_session,
             // Audio commands
             commands::get_audio_file,
         ])
@@ -100,6 +103,7 @@ pub fn run() {
             // Try to restore Spotify session on startup in the background
             // This allows the UI to load immediately while authentication is being restored
             let playback_for_init = playback_clone.clone();
+            let providers_for_jellyfin = providers_clone.clone();
             tauri::async_runtime::spawn(async move {
                 // Restore session without holding the lock during the entire process
                 let restored = {
@@ -153,6 +157,25 @@ pub fn run() {
                                     tracing::warn!("Failed to auto-initialize session: {}", e);
                                 }
                             }
+                        }
+                    }
+                }
+
+                // Also try to restore Jellyfin session
+                {
+                    let mut providers = providers_for_jellyfin.lock().await;
+                    match providers.restore_jellyfin_session().await {
+                        Ok(restored) => {
+                            if restored {
+                                tracing::info!(
+                                    "✓ Jellyfin session restored from keyring on startup"
+                                );
+                            } else {
+                                tracing::info!("No cached Jellyfin credentials found on startup");
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to restore Jellyfin session: {}", e);
                         }
                     }
                 }

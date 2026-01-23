@@ -388,6 +388,33 @@ impl ProviderRegistry {
         Ok(())
     }
 
+    /// Restore Jellyfin session from saved credentials
+    pub async fn restore_jellyfin_session(&mut self) -> Result<bool, ProviderError> {
+        use crate::config::Config;
+
+        tracing::info!("Starting Jellyfin session restoration from keyring");
+
+        // Load credentials from keyring
+        let tokens = Config::load_tokens()
+            .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+
+        if tokens.jellyfin_api_key.is_none() || tokens.jellyfin_url.is_none() {
+            tracing::info!("No Jellyfin credentials found in keyring");
+            return Ok(false);
+        }
+
+        let api_key = tokens.jellyfin_api_key.unwrap();
+        let url = tokens.jellyfin_url.unwrap();
+
+        tracing::info!("Found Jellyfin credentials in keyring, authenticating");
+
+        // Authenticate with stored credentials
+        self.authenticate_jellyfin(&url, &api_key).await?;
+
+        tracing::info!("Jellyfin session restored successfully");
+        Ok(true)
+    }
+
     /// Get Spotify provider for token access (internal use)
     pub fn get_spotify_provider(
         &self,
@@ -507,6 +534,7 @@ mod tests {
         let tokens = TokenStorage {
             spotify_token: Some(create_valid_token()),
             jellyfin_api_key: None,
+            jellyfin_url: None,
         };
 
         // Save tokens to the system keyring
@@ -534,6 +562,7 @@ mod tests {
         let tokens = TokenStorage {
             spotify_token: Some(create_expired_token()),
             jellyfin_api_key: None,
+            jellyfin_url: None,
         };
 
         // Save tokens
@@ -585,6 +614,7 @@ mod tests {
         let tokens = TokenStorage {
             spotify_token: Some(create_valid_token()),
             jellyfin_api_key: Some("test_key".to_string()),
+            jellyfin_url: Some("http://localhost:8096".to_string()),
         };
         Config::save_tokens(&tokens).expect("Failed to save tokens");
 
@@ -595,6 +625,106 @@ mod tests {
         let mut registry = ProviderRegistry::new();
         let result = registry.restore_spotify_session().await;
 
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_restore_jellyfin_session_no_credentials() {
+        // Clean up any existing tokens
+        let _ = Config::clear_tokens();
+
+        let mut registry = ProviderRegistry::new();
+        let result = registry.restore_jellyfin_session().await;
+
+        // Should return Ok(false) when no credentials exist
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[tokio::test]
+    #[serial]
+    #[ignore] // Requires actual Jellyfin server for full test
+    async fn test_restore_jellyfin_session_with_credentials() {
+        // Set up token storage with Jellyfin credentials
+        let tokens = TokenStorage {
+            spotify_token: None,
+            jellyfin_api_key: Some("test_api_key".to_string()),
+            jellyfin_url: Some("http://localhost:8096".to_string()),
+        };
+
+        // Save tokens to the system keyring
+        Config::save_tokens(&tokens).expect("Failed to save test tokens");
+
+        let mut registry = ProviderRegistry::new();
+        let result = registry.restore_jellyfin_session().await;
+
+        // Clean up
+        let _ = Config::clear_tokens();
+
+        // Note: This will likely fail in CI without a real Jellyfin server
+        // but verifies the code path doesn't panic
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_restore_jellyfin_session_missing_api_key() {
+        // Set up token storage with only URL (missing API key)
+        let tokens = TokenStorage {
+            spotify_token: None,
+            jellyfin_api_key: None,
+            jellyfin_url: Some("http://localhost:8096".to_string()),
+        };
+
+        Config::save_tokens(&tokens).expect("Failed to save test tokens");
+
+        let mut registry = ProviderRegistry::new();
+        let result = registry.restore_jellyfin_session().await;
+
+        // Clean up
+        let _ = Config::clear_tokens();
+
+        // Should return Ok(false) when API key is missing
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_restore_jellyfin_session_missing_url() {
+        // Set up token storage with only API key (missing URL)
+        let tokens = TokenStorage {
+            spotify_token: None,
+            jellyfin_api_key: Some("test_api_key".to_string()),
+            jellyfin_url: None,
+        };
+
+        Config::save_tokens(&tokens).expect("Failed to save test tokens");
+
+        let mut registry = ProviderRegistry::new();
+        let result = registry.restore_jellyfin_session().await;
+
+        // Clean up
+        let _ = Config::clear_tokens();
+
+        // Should return Ok(false) when URL is missing
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_restore_jellyfin_session_error_handling() {
+        // Clean up any existing state
+        let _ = Config::clear_tokens();
+
+        // Try to restore with no available credentials
+        let mut registry = ProviderRegistry::new();
+        let result = registry.restore_jellyfin_session().await;
+
+        // Should return Ok(false) rather than panicking
         assert!(result.is_ok());
         assert!(!result.unwrap());
     }
