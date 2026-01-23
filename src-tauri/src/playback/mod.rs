@@ -1873,7 +1873,7 @@ impl PlaybackManager {
     /// Build persistent state from current playback info and queue
     async fn build_persistent_state(&self) -> crate::state::PersistentPlaybackState {
         use crate::state::PersistentPlaybackState;
-        
+
         let info = self.info.lock().await;
         let queue = self.queue.lock().await;
 
@@ -1985,15 +1985,18 @@ impl PlaybackManager {
                 // For Spotify tracks, we need an active session
                 if url.starts_with("spotify:track:") {
                     if self.spotify_session.is_initialized().await {
-                        tracing::info!("Pre-loading Spotify track for restored session at position {}ms", position);
-                        
+                        tracing::info!(
+                            "Pre-loading Spotify track for restored session at position {}ms",
+                            position
+                        );
+
                         // Create a new PlaybackHandle and pre-configure it with the restored position/pause state
                         let handle = PlaybackHandle::new();
                         if position > 0 {
                             handle.set_position(position);
                         }
                         handle.pause(); // Start paused for restore
-                        
+
                         // Store the handle before spawning playback
                         {
                             let mut current = self.audio_player.current_handle.lock().await;
@@ -2002,7 +2005,7 @@ impl PlaybackManager {
                             }
                             *current = Some(handle.clone());
                         }
-                        
+
                         // Now start Spotify playback with the pre-configured handle
                         // The play_spotify_with_librespot method will read the initial position and is_paused state
                         let track_id = url.to_string();
@@ -2010,11 +2013,16 @@ impl PlaybackManager {
                         let audio_player = self.audio_player.clone();
                         let providers = self.providers.clone();
                         let spotify_session_clone = self.spotify_session.clone();
-                        
+
                         tokio::spawn(async move {
                             let session = spotify_session_clone.get_session().await;
                             let result = audio_player
-                                .play_spotify_track(&track_id, &handle_for_spawn, providers, session)
+                                .play_spotify_track(
+                                    &track_id,
+                                    &handle_for_spawn,
+                                    providers,
+                                    session,
+                                )
                                 .await;
 
                             match result {
@@ -2026,7 +2034,7 @@ impl PlaybackManager {
                                 }
                             }
                         });
-                        
+
                         // Update the info position
                         {
                             let mut info = self.info.lock().await;
@@ -2054,8 +2062,7 @@ impl PlaybackManager {
                                     let mut info = info_arc.lock().await;
                                     info.position_ms = position;
                                     if duration > 0 && info.current_track.is_some() {
-                                        info.current_track.as_mut().unwrap().duration_ms =
-                                            duration;
+                                        info.current_track.as_mut().unwrap().duration_ms = duration;
                                     }
 
                                     // Update playback state based on pause status
@@ -2080,13 +2087,14 @@ impl PlaybackManager {
                                         let mut info = info_arc.lock().await;
                                         info.state = PlaybackState::Stopped;
                                     }
-                                    tracing::info!("Spotify track completed, sending auto-advance event");
+                                    tracing::info!(
+                                        "Spotify track completed, sending auto-advance event"
+                                    );
                                     let _ = track_complete_tx.send(());
                                     break;
                                 }
 
-                                tokio::time::sleep(std::time::Duration::from_millis(100))
-                                    .await;
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                             }
                         });
 
@@ -2105,15 +2113,18 @@ impl PlaybackManager {
                     }
                 } else {
                     // HTTP URL - pre-load it with pre-configured handle
-                    tracing::info!("Pre-loading HTTP track for restored session at position {}ms", position);
-                    
+                    tracing::info!(
+                        "Pre-loading HTTP track for restored session at position {}ms",
+                        position
+                    );
+
                     // Create a new PlaybackHandle and pre-configure it with the restored position/pause state
                     let handle = PlaybackHandle::new();
                     if position > 0 {
                         handle.set_position(position);
                     }
                     handle.pause(); // Start paused for restore
-                    
+
                     // Store the handle before spawning playback
                     {
                         let mut current = self.audio_player.current_handle.lock().await;
@@ -2122,14 +2133,17 @@ impl PlaybackManager {
                         }
                         *current = Some(handle.clone());
                     }
-                    
+
                     // Now spawn HTTP playback - play_audio_blocking will check is_paused and get_position
                     let url_clone = url.to_string();
                     let handle_clone = handle.clone();
                     let auth_headers = track.auth_headers.clone();
-                    
+
                     tokio::spawn(async move {
-                        tracing::info!("Starting HTTP audio playback from URL (restore): {}", url_clone);
+                        tracing::info!(
+                            "Starting HTTP audio playback from URL (restore): {}",
+                            url_clone
+                        );
 
                         let result = tokio::task::spawn_blocking({
                             let url = url_clone.clone();
@@ -2140,7 +2154,9 @@ impl PlaybackManager {
 
                         match result {
                             Ok(Ok(())) => {
-                                tracing::info!("HTTP audio playback (restore) completed successfully");
+                                tracing::info!(
+                                    "HTTP audio playback (restore) completed successfully"
+                                );
                             }
                             Ok(Err(e)) => {
                                 tracing::error!("HTTP audio playback (restore) error: {}", e);
@@ -2150,7 +2166,7 @@ impl PlaybackManager {
                             }
                         }
                     });
-                    
+
                     // Update the info position
                     {
                         let mut info = self.info.lock().await;
@@ -2178,8 +2194,7 @@ impl PlaybackManager {
                                 let mut info = info_arc.lock().await;
                                 info.position_ms = position;
                                 if duration > 0 && info.current_track.is_some() {
-                                    info.current_track.as_mut().unwrap().duration_ms =
-                                        duration;
+                                    info.current_track.as_mut().unwrap().duration_ms = duration;
                                 }
 
                                 // Update playback state based on pause status
@@ -2220,10 +2235,7 @@ impl PlaybackManager {
                         *abort_handle = Some(task.abort_handle());
                     }
 
-                    tracing::info!(
-                        "HTTP track pre-loaded and ready at position {}ms",
-                        position
-                    );
+                    tracing::info!("HTTP track pre-loaded and ready at position {}ms", position);
                 }
             }
 
