@@ -1578,8 +1578,8 @@ impl PlaybackManager {
         drop(info);
         drop(queue);
 
-        // Save state when queue is cleared
-        let _ = self.save_state().await;
+        // Don't save state immediately - let the caller decide when to save
+        // This prevents saving an empty state when clearing before loading a new track
     }
 
     /// Play a track (start playback)
@@ -1599,6 +1599,28 @@ impl PlaybackManager {
                 };
 
                 if let Some(track) = current_track {
+                    // Check if this is a Spotify track that might need re-initialization
+                    // (e.g., after authentication was restored)
+                    if let Some(url) = &track.url {
+                        if url.starts_with("spotify:track:") {
+                            // Check if session is now initialized (might have been restored after startup)
+                            if self.spotify_session.is_initialized().await {
+                                tracing::info!(
+                                    "Spotify session is now available, reloading track: {} - {}",
+                                    track.artist,
+                                    track.title
+                                );
+                                self.play_track(track).await;
+                                return;
+                            } else {
+                                tracing::warn!(
+                                    "Cannot play Spotify track: session not initialized"
+                                );
+                                return;
+                            }
+                        }
+                    }
+
                     tracing::info!(
                         "No active playback, loading track: {} - {}",
                         track.artist,

@@ -163,12 +163,8 @@ pub fn run() {
                 providers_for_state.clone(),
             )));
 
-            // Start the state saver task in the async runtime
-            let playback_clone = playback.clone();
-            tauri::async_runtime::spawn(async move {
-                let manager = playback_clone.lock().await;
-                manager.start_state_saver().await;
-            });
+            // Note: State saver will be started AFTER restoration completes
+            // to prevent overwriting the saved state during startup
 
             // Create app state and manage it
             let app_state = commands::AppState {
@@ -300,6 +296,11 @@ pub fn run() {
                             tracing::info!("No playback state to restore: {}", e);
                         }
                     }
+
+                    // Start the state saver task AFTER restoration completes
+                    // This prevents overwriting the restored state during startup
+                    playback.start_state_saver().await;
+                    tracing::info!("✓ State saver task started");
                 }
             });
 
