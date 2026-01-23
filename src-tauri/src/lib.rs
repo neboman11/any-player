@@ -52,10 +52,7 @@ pub fn run() {
     let database = match Database::new(db_path.clone()) {
         Ok(db) => Arc::new(Mutex::new(db)),
         Err(e) => {
-            eprintln!(
-                "Failed to initialize database at {:?}: {}",
-                db_path, e
-            );
+            eprintln!("Failed to initialize database at {:?}: {}", db_path, e);
             eprintln!("Please check file permissions and disk space.");
             std::process::exit(1);
         }
