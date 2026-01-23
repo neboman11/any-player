@@ -66,7 +66,7 @@ export function PlaylistViewer({
       };
       void loadTracks();
     }
-  }, [isCustom, playlist.id]);
+  }, [isCustom, playlist.id, playlist]);
 
   const handleSaveEdit = async () => {
     if (!onUpdate) return;
