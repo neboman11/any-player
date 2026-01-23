@@ -1,13 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { tauriAPI } from "../api";
-
-// Retry configuration for authentication checks
-// Initial delay allows backend time to start session restoration
-const AUTH_CHECK_INITIAL_DELAY_MS = 500;
-// Delay between retry attempts
-const AUTH_CHECK_RETRY_DELAY_MS = 300;
-// Maximum number of retry attempts
-const AUTH_CHECK_MAX_RETRIES = 3;
+import { retryWithDelay } from "../utils/retryHelper";
 
 // Time to wait for backend to finish processing OAuth authentication (in milliseconds).
 // NOTE: 2000ms was chosen based on observed worst-case latency for the backend to
@@ -66,26 +59,10 @@ export function useSpotifyAuth() {
   // Retry a few times to account for backend session restoration delay
   useEffect(() => {
     const checkWithRetry = async () => {
-      // Initial delay to allow backend to start session restoration
-      await new Promise((resolve) => setTimeout(resolve, AUTH_CHECK_INITIAL_DELAY_MS));
-
-      // Try up to AUTH_CHECK_MAX_RETRIES times
-      for (let i = 0; i < AUTH_CHECK_MAX_RETRIES; i++) {
+      await retryWithDelay(async () => {
         await checkAuthStatus();
-
-        // Check if we're now connected
-        const authenticated = await tauriAPI
-          .isSpotifyAuthenticated()
-          .catch(() => false);
-        if (authenticated) {
-          break; // Success, stop retrying
-        }
-
-        // Wait before next retry
-        if (i < AUTH_CHECK_MAX_RETRIES - 1) {
-          await new Promise((resolve) => setTimeout(resolve, AUTH_CHECK_RETRY_DELAY_MS));
-        }
-      }
+        return await tauriAPI.isSpotifyAuthenticated().catch(() => false);
+      });
     };
 
     void checkWithRetry();

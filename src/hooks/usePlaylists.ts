@@ -46,7 +46,7 @@ async function loadFromDiskCache(): Promise<Playlist[] | null> {
       try {
         await tauriAPI.clearPlaylistsCache();
       } catch (clearErr) {
-        console.error("Failed to clear outdated cache:", clearErr);
+        console.error("Failed to clear outdated cache - this may indicate a permissions issue or disk problem:", clearErr);
       }
       return null;
     }
