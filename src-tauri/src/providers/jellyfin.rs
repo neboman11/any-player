@@ -390,7 +390,10 @@ impl MusicProvider for JellyfinProvider {
 
             // Check if we've fetched all items
             // Break if: no items returned, fewer items than requested, or we've reached the total
-            if fetched_count == 0 || fetched_count < limit || all_tracks.len() >= items_data.total_record_count as usize {
+            if fetched_count == 0
+                || fetched_count < limit
+                || all_tracks.len() >= items_data.total_record_count as usize
+            {
                 break;
             }
 

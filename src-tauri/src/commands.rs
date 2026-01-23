@@ -1585,7 +1585,9 @@ pub async fn get_custom_playlists(
                         }
                         "custom" => {
                             // Look up track count from pre-fetched map
-                            if let Some(&count) = custom_track_counts.get(&source.source_playlist_id) {
+                            if let Some(&count) =
+                                custom_track_counts.get(&source.source_playlist_id)
+                            {
                                 total_tracks += count as i64;
                             }
                         }

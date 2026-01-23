@@ -331,9 +331,9 @@ impl PlaybackQueue {
         if self.shuffle_order.is_empty() {
             return;
         }
-        
+
         let track_count = self.tracks.len();
-        
+
         // Quick check: if shuffle_order length matches track count and all tracks exist,
         // we can skip the expensive iteration through all indices
         if self.shuffle_order.len() == track_count {
@@ -344,10 +344,10 @@ impl PlaybackQueue {
                 return; // All indices must be valid
             }
         }
-        
+
         // Either length mismatch or found an out-of-bounds index - need full validation
         let has_invalid = self.shuffle_order.iter().any(|&idx| idx >= track_count);
-        
+
         if has_invalid {
             tracing::warn!(
                 "Shuffle order contains invalid indices (track count: {}), regenerating",

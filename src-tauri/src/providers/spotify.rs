@@ -526,12 +526,12 @@ impl MusicProvider for SpotifyProvider {
         // Retry transient network errors to handle large playlists more robustly
         let mut tracks_stream = client.playlist_items(playlist_id.clone(), None, None);
         let mut consecutive_errors = 0;
-        
+
         while let Some(track_result) = tracks_stream.next().await {
             match track_result {
                 Ok(item) => {
                     consecutive_errors = 0; // Reset error counter on success
-                    
+
                     if let Some(rspotify::model::PlayableItem::Track(t)) = item.track {
                         let duration_ms = t.duration.num_milliseconds() as u64;
                         // Premium playback only - return spotify:track: URI for librespot
@@ -562,15 +562,14 @@ impl MusicProvider for SpotifyProvider {
                         MAX_CONSECUTIVE_ERRORS,
                         e
                     );
-                    
+
                     if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
                         return Err(ProviderError(format!(
                             "Failed to fetch playlist tracks after {} consecutive errors: {}",
-                            MAX_CONSECUTIVE_ERRORS,
-                            e
+                            MAX_CONSECUTIVE_ERRORS, e
                         )));
                     }
-                    
+
                     // Brief delay before continuing to next item to avoid overwhelming API
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                 }
