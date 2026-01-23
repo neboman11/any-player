@@ -321,7 +321,7 @@ impl Database {
             "UPDATE custom_playlists SET {} WHERE id = ?",
             set_clauses.join(", ")
         );
-        params.push(Box::new(playlist_id.to_string()));
+        params.push(Box::new(playlist_id));
 
         // Execute the query with the dynamically built parameters
         let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
