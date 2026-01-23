@@ -43,7 +43,7 @@ export interface CustomPlaylist {
   created_at: number;
   updated_at: number;
   track_count: number;
-  playlist_type: string; // "standard" or "union"
+  playlist_type: "standard" | "union";
 }
 
 export interface UnionPlaylistSource {
