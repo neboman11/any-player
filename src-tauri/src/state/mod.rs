@@ -1,6 +1,8 @@
 /// Persistent state management for playback session
 use crate::models::{PlaybackState, RepeatMode, Track};
-use serde::{de::Error as DeError, ser::Error as SerError, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    de::Error as DeError, ser::Error as SerError, Deserialize, Deserializer, Serialize, Serializer,
+};
 use serde_json::Value;
 use std::path::PathBuf;
 use tokio::fs;
@@ -28,9 +30,7 @@ where
 }
 
 /// Deserialize an Option<Track> from JSON that may or may not contain auth_headers.
-fn deserialize_option_track_sanitized<'de, D>(
-    deserializer: D,
-) -> Result<Option<Track>, D::Error>
+fn deserialize_option_track_sanitized<'de, D>(deserializer: D) -> Result<Option<Track>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -49,10 +49,7 @@ where
 }
 
 /// Serialize a Vec<Track> while stripping auth_headers from each element.
-fn serialize_track_vec_sanitized<S>(
-    tracks: &Vec<Track>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
+fn serialize_track_vec_sanitized<S>(tracks: &Vec<Track>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -68,9 +65,7 @@ where
 }
 
 /// Deserialize a Vec<Track> from JSON, discarding any auth_headers field.
-fn deserialize_track_vec_sanitized<'de, D>(
-    deserializer: D,
-) -> Result<Vec<Track>, D::Error>
+fn deserialize_track_vec_sanitized<'de, D>(deserializer: D) -> Result<Vec<Track>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -150,7 +145,7 @@ impl PersistentPlaybackState {
     pub async fn save(&self) -> Result<(), String> {
         let path = Self::get_state_file_path().await?;
         let state_clone = self.clone();
-        
+
         // Serialize in blocking task since it can be CPU-intensive
         let json = tokio::task::spawn_blocking(move || {
             serde_json::to_string_pretty(&state_clone)
@@ -330,7 +325,10 @@ mod tests {
         // Verify auth_headers are stripped
         assert!(state.current_track.is_some());
         let track = state.current_track.unwrap();
-        assert_eq!(track.auth_headers, None, "Auth headers should be stripped during deserialization");
+        assert_eq!(
+            track.auth_headers, None,
+            "Auth headers should be stripped during deserialization"
+        );
     }
 
     #[test]
@@ -436,7 +434,9 @@ mod tests {
         let _ = PersistentPlaybackState::delete().await;
 
         // Try to load when no file exists
-        let result = PersistentPlaybackState::load().await.expect("Load should not error");
+        let result = PersistentPlaybackState::load()
+            .await
+            .expect("Load should not error");
         assert_eq!(result, None, "Should return None when no file exists");
     }
 
@@ -450,7 +450,9 @@ mod tests {
         state.save().await.expect("Failed to save state");
 
         // Verify it exists
-        let loaded = PersistentPlaybackState::load().await.expect("Failed to load");
+        let loaded = PersistentPlaybackState::load()
+            .await
+            .expect("Failed to load");
         assert!(loaded.is_some(), "State should exist after save");
 
         // Delete
@@ -459,7 +461,9 @@ mod tests {
             .expect("Failed to delete state");
 
         // Verify it's gone
-        let loaded_after_delete = PersistentPlaybackState::load().await.expect("Failed to load");
+        let loaded_after_delete = PersistentPlaybackState::load()
+            .await
+            .expect("Failed to load");
         assert_eq!(
             loaded_after_delete, None,
             "State should not exist after delete"
