@@ -1202,6 +1202,7 @@ pub struct PlaybackManager {
     track_complete_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
     monitoring_task_abort: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
     state_save_tx: mpsc::UnboundedSender<()>,
+    state_save_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
 }
 
 impl PlaybackManager {
@@ -1212,7 +1213,7 @@ impl PlaybackManager {
         // Create a channel for state save requests
         let (state_save_tx, state_save_rx) = mpsc::unbounded_channel::<()>();
 
-        let manager = Self {
+        Self {
             queue: Arc::new(Mutex::new(PlaybackQueue::new())),
             info: Arc::new(Mutex::new(PlaybackInfo::default())),
             audio_player: Arc::new(AudioPlayer::new()),
@@ -1222,18 +1223,21 @@ impl PlaybackManager {
             track_complete_rx: Arc::new(Mutex::new(Some(track_complete_rx))),
             monitoring_task_abort: Arc::new(Mutex::new(None)),
             state_save_tx,
-        };
+            state_save_rx: Arc::new(Mutex::new(Some(state_save_rx))),
+        }
+    }
 
-        // Spawn the centralized state saver task
-        let info_clone = manager.info.clone();
-        let queue_clone = manager.queue.clone();
-        tokio::spawn(Self::state_saver_task(
-            info_clone,
-            queue_clone,
-            state_save_rx,
-        ));
-
-        manager
+    /// Start the state saver task - must be called from a Tokio runtime context
+    pub async fn start_state_saver(&self) {
+        if let Some(state_save_rx) = self.state_save_rx.lock().await.take() {
+            let info_clone = self.info.clone();
+            let queue_clone = self.queue.clone();
+            tokio::spawn(Self::state_saver_task(
+                info_clone,
+                queue_clone,
+                state_save_rx,
+            ));
+        }
     }
 
     /// Centralized state saver task with debouncing
@@ -1387,7 +1391,7 @@ impl PlaybackManager {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
                         let info_arc = self.info.clone();
-                        let queue_arc = self.queue.clone();
+                        let _queue_arc = self.queue.clone();
 
                         let task = tokio::spawn(async move {
                             tracing::debug!("Spotify monitoring task started");
@@ -1466,7 +1470,7 @@ impl PlaybackManager {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
                         let info_arc = self.info.clone();
-                        let queue_arc = self.queue.clone();
+                        let _queue_arc = self.queue.clone();
 
                         let task = tokio::spawn(async move {
                             tracing::debug!("HTTP monitoring task started");
@@ -1961,7 +1965,7 @@ impl PlaybackManager {
 
                                 // Spawn monitoring task to sync position to info
                                 let info_arc = self.info.clone();
-                                let queue_arc = self.queue.clone();
+                                let _queue_arc = self.queue.clone();
                                 let track_complete_tx = self.track_complete_tx.clone();
                                 let monitoring_abort = self.monitoring_task_abort.clone();
                                 let state_save_tx = self.state_save_tx.clone();
@@ -2057,7 +2061,7 @@ impl PlaybackManager {
 
                             // Spawn monitoring task for HTTP restore path
                             let info_arc = self.info.clone();
-                            let queue_arc = self.queue.clone();
+                            let _queue_arc = self.queue.clone();
                             let track_complete_tx = self.track_complete_tx.clone();
                             let monitoring_abort = self.monitoring_task_abort.clone();
                             let state_save_tx = self.state_save_tx.clone();
