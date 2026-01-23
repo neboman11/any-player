@@ -6,7 +6,7 @@ use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 
 // Librespot imports for premium Spotify streaming via session-based OAuth
 use librespot_core::authentication::Credentials;
@@ -233,6 +233,9 @@ pub struct PlaybackQueue {
     pub tracks: Vec<Track>,
     /// Current position in queue
     pub current_index: usize,
+    /// Shuffle order: maps shuffle position to original queue index
+    /// When shuffle is enabled, this array defines the play order
+    pub shuffle_order: Vec<usize>,
 }
 
 impl PlaybackQueue {
@@ -240,6 +243,7 @@ impl PlaybackQueue {
         Self {
             tracks: Vec::new(),
             current_index: 0,
+            shuffle_order: Vec::new(),
         }
     }
 
@@ -254,6 +258,7 @@ impl PlaybackQueue {
     pub fn clear(&mut self) {
         self.tracks.clear();
         self.current_index = 0;
+        self.shuffle_order.clear();
     }
 
     pub fn current_track(&self) -> Option<&Track> {
@@ -265,7 +270,7 @@ impl PlaybackQueue {
     }
 
     pub fn next_track(&mut self) -> Option<&Track> {
-        if self.current_index < self.tracks.len() - 1 {
+        if !self.tracks.is_empty() && self.current_index < self.tracks.len() - 1 {
             self.current_index += 1;
             self.current_track()
         } else {
@@ -288,6 +293,144 @@ impl PlaybackQueue {
 
     pub fn is_empty(&self) -> bool {
         self.tracks.is_empty()
+    }
+
+    /// Generate a new shuffle order for the current tracks
+    /// This creates a randomized order of indices from 0..tracks.len()
+    pub fn generate_shuffle_order(&mut self) {
+        use rand::seq::SliceRandom;
+        use rand::thread_rng;
+
+        let track_count = self.tracks.len();
+        if track_count == 0 {
+            self.shuffle_order.clear();
+            return;
+        }
+
+        // Create a vector of indices
+        let mut indices: Vec<usize> = (0..track_count).collect();
+
+        // Shuffle the indices
+        let mut rng = thread_rng();
+        indices.shuffle(&mut rng);
+
+        self.shuffle_order = indices;
+        tracing::info!("Generated shuffle order: {:?}", self.shuffle_order);
+    }
+
+    /// Clear the shuffle order (used when shuffle is disabled)
+    pub fn clear_shuffle_order(&mut self) {
+        self.shuffle_order.clear();
+    }
+
+    /// Validate that all indices in shuffle_order are within bounds
+    /// and regenerate if invalid. This ensures robustness if tracks are
+    /// modified after shuffle order is generated.
+    /// Only validates if there's a potential issue (mismatched lengths).
+    fn validate_shuffle_order(&mut self) {
+        if self.shuffle_order.is_empty() {
+            return;
+        }
+
+        let track_count = self.tracks.len();
+
+        // Quick check: if shuffle_order length matches track count and all tracks exist,
+        // we can skip the expensive iteration through all indices
+        if self.shuffle_order.len() == track_count {
+            // Likely valid, but still check if any index is out of bounds
+            // This is a trade-off: we still iterate, but only when lengths match
+            let max_idx = self.shuffle_order.iter().max().copied().unwrap_or(0);
+            if max_idx < track_count {
+                return; // All indices must be valid
+            }
+        }
+
+        // Either length mismatch or found an out-of-bounds index - need full validation
+        let has_invalid = self.shuffle_order.iter().any(|&idx| idx >= track_count);
+
+        if has_invalid {
+            tracing::warn!(
+                "Shuffle order contains invalid indices (track count: {}), regenerating",
+                track_count
+            );
+            self.generate_shuffle_order();
+        }
+    }
+
+    /// Get the current track respecting shuffle mode
+    pub fn current_track_shuffled(&self, shuffle_enabled: bool) -> Option<&Track> {
+        if shuffle_enabled && !self.shuffle_order.is_empty() {
+            // In shuffle mode, map current_index through shuffle_order
+            if self.current_index < self.shuffle_order.len() {
+                let actual_index = self.shuffle_order[self.current_index];
+                // Bounds check to handle edge cases where shuffle_order may be stale
+                if actual_index < self.tracks.len() {
+                    return Some(&self.tracks[actual_index]);
+                } else {
+                    tracing::warn!(
+                        "Shuffle order index {} out of bounds (track count: {})",
+                        actual_index,
+                        self.tracks.len()
+                    );
+                }
+            }
+            None
+        } else {
+            // Normal mode
+            self.current_track()
+        }
+    }
+
+    /// Move to the next track respecting shuffle mode
+    pub fn next_track_shuffled(&mut self, shuffle_enabled: bool) -> Option<&Track> {
+        if shuffle_enabled && !self.shuffle_order.is_empty() {
+            self.validate_shuffle_order();
+            // In shuffle mode, navigate through shuffle_order
+            if self.current_index < self.shuffle_order.len() - 1 {
+                self.current_index += 1;
+                let actual_index = self.shuffle_order[self.current_index];
+                // Bounds check to handle edge cases
+                if actual_index < self.tracks.len() {
+                    return Some(&self.tracks[actual_index]);
+                } else {
+                    tracing::warn!(
+                        "Shuffle order index {} out of bounds (track count: {})",
+                        actual_index,
+                        self.tracks.len()
+                    );
+                }
+            }
+            None
+        } else {
+            // Normal mode
+            self.next_track()
+        }
+    }
+
+    /// Move to the previous track respecting shuffle mode
+    pub fn previous_shuffled(&mut self, shuffle_enabled: bool) -> Option<&Track> {
+        if shuffle_enabled && !self.shuffle_order.is_empty() {
+            self.validate_shuffle_order();
+            // In shuffle mode, navigate through shuffle_order
+            if self.current_index > 0 {
+                self.current_index -= 1;
+                let actual_index = self.shuffle_order[self.current_index];
+                // Bounds check to handle edge cases
+                if actual_index < self.tracks.len() {
+                    return Some(&self.tracks[actual_index]);
+                } else {
+                    tracing::warn!(
+                        "Shuffle order index {} out of bounds (track count: {})",
+                        actual_index,
+                        self.tracks.len()
+                    );
+                }
+            }
+            None
+        } else {
+            // Normal mode
+            self.previous()
+        }
     }
 }
 
@@ -492,6 +635,8 @@ impl AudioPlayer {
 
             // Stop if we've reached the end or duration is exceeded
             if elapsed >= duration_secs && duration_secs > 0 {
+                tracing::info!("Track playback completed based on duration");
+                handle.stop();
                 break;
             }
         }
@@ -803,6 +948,7 @@ impl AudioPlayer {
                 let duration_ms = handle_clone.get_duration();
                 if duration_ms > 0 && position_ms >= duration_ms {
                     tracing::info!("Track playback completed based on duration");
+                    handle_clone.stop();
                     break;
                 }
 
@@ -810,7 +956,9 @@ impl AudioPlayer {
                 {
                     let active_lock = active_player.lock().await;
                     if active_lock.is_none() {
-                        tracing::info!("Player no longer active");
+                        tracing::warn!("Player no longer active (error or stopped externally)");
+                        // Set stop flag so monitoring task can detect completion
+                        handle_clone.stop();
                         break;
                     }
                 }
@@ -940,21 +1088,72 @@ pub struct PlaybackManager {
     audio_player: Arc<AudioPlayer>,
     spotify_session: Arc<SpotifySessionManager>,
     providers: Arc<Mutex<ProviderRegistry>>,
+    track_complete_tx: mpsc::UnboundedSender<()>,
+    track_complete_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
+    monitoring_task_abort: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
 }
 
 impl PlaybackManager {
     pub fn new(providers: Arc<Mutex<ProviderRegistry>>) -> Self {
+        // Create a channel for track completion events
+        let (track_complete_tx, track_complete_rx) = mpsc::unbounded_channel::<()>();
+
         Self {
             queue: Arc::new(Mutex::new(PlaybackQueue::new())),
             info: Arc::new(Mutex::new(PlaybackInfo::default())),
             audio_player: Arc::new(AudioPlayer::new()),
             spotify_session: Arc::new(SpotifySessionManager::new(SPOTIFY_CLIENT_ID.to_string())),
             providers,
+            track_complete_tx,
+            track_complete_rx: Arc::new(Mutex::new(Some(track_complete_rx))),
+            monitoring_task_abort: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Take the track completion receiver.
+    ///
+    /// This *must* be called exactly once during application setup to start
+    /// receiving track completion events. Calling it more than once will
+    /// return `None` and is considered a programming error.
+    ///
+    /// # Usage
+    /// Call this method once during application initialization to get the receiver,
+    /// then use it to listen for track completion events and trigger auto-advance.
+    pub async fn take_completion_receiver(&self) -> Option<mpsc::UnboundedReceiver<()>> {
+        let mut rx_opt = self.track_complete_rx.lock().await;
+        rx_opt.take()
     }
 
     /// Set current track and start playing
     pub async fn play_track(&self, track: Track) {
+        tracing::info!("play_track called for: {} ({})", track.title, track.id);
+
+        // Abort any existing monitoring task before starting a new one
+        {
+            let mut abort_handle = self.monitoring_task_abort.lock().await;
+            if let Some(handle) = abort_handle.take() {
+                handle.abort();
+                tracing::debug!(
+                    "Aborted previous monitoring task for new track: {}",
+                    track.title
+                );
+            }
+        }
+
+        // Update queue's current_index if this track is in the queue
+        {
+            let mut queue = self.queue.lock().await;
+            // Find the track in the queue and set current_index
+            if let Some(index) = queue.tracks.iter().position(|t| t.id == track.id) {
+                queue.current_index = index;
+                tracing::debug!(
+                    "Set queue current_index to {} for track: {}",
+                    index,
+                    track.title
+                );
+            }
+        }
+
         let mut info = self.info.lock().await;
         info.current_track = Some(track.clone());
         info.state = PlaybackState::Playing;
@@ -978,39 +1177,63 @@ impl PlaybackManager {
 
                 // Premium user with session initialized - use librespot
                 tracing::info!("Playing Spotify track via librespot: {}", url);
+                let track_complete_tx = self.track_complete_tx.clone();
+                let monitoring_abort = self.monitoring_task_abort.clone();
                 match self.play_spotify_track(url).await {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
-                        let info_clone = self.info.clone();
-                        tokio::spawn(async move {
+                        let info_arc = self.info.clone();
+
+                        let task = tokio::spawn(async move {
+                            tracing::debug!("Spotify monitoring task started");
                             loop {
                                 let position = handle.get_position();
                                 let duration = handle.get_duration();
                                 let should_stop = handle.should_stop();
                                 let is_paused = handle.is_paused();
 
-                                let mut info = info_clone.lock().await;
-                                info.position_ms = position;
-                                if duration > 0 && info.current_track.is_some() {
-                                    info.current_track.as_mut().unwrap().duration_ms = duration;
+                                {
+                                    let mut info = info_arc.lock().await;
+                                    info.position_ms = position;
+                                    if duration > 0 && info.current_track.is_some() {
+                                        info.current_track.as_mut().unwrap().duration_ms = duration;
+                                    }
+
+                                    // Update playback state based on pause status
+                                    if is_paused {
+                                        info.state = PlaybackState::Paused;
+                                    } else if !should_stop {
+                                        info.state = PlaybackState::Playing;
+                                    }
                                 }
 
-                                // Update playback state based on pause status
-                                if is_paused {
-                                    info.state = PlaybackState::Paused;
-                                } else if !should_stop {
-                                    info.state = PlaybackState::Playing;
-                                }
-
-                                // Only stop if explicitly stopped, not if duration is 0
+                                // When track completes, send event to advance to next track
                                 if should_stop {
-                                    info.state = PlaybackState::Stopped;
+                                    tracing::debug!(
+                                        "Spotify monitoring task detected should_stop=true"
+                                    );
+                                    {
+                                        let mut info = info_arc.lock().await;
+                                        info.state = PlaybackState::Stopped;
+                                    }
+
+                                    tracing::info!(
+                                        "Spotify track completed, sending auto-advance event"
+                                    );
+                                    let _ = track_complete_tx.send(());
                                     break;
                                 }
 
                                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                             }
                         });
+
+                        // Store the abort handle immediately to prevent race conditions
+                        // This ensures the task can be aborted before completion
+                        {
+                            let mut abort_handle = monitoring_abort.lock().await;
+                            *abort_handle = Some(task.abort_handle());
+                        }
                     }
                     Err(e) => {
                         tracing::error!("Failed to play Spotify track: {}", e);
@@ -1020,6 +1243,8 @@ impl PlaybackManager {
                 }
             } else {
                 // HTTP URL - play as normal
+                let track_complete_tx = self.track_complete_tx.clone();
+                let monitoring_abort = self.monitoring_task_abort.clone();
                 match self
                     .audio_player
                     .play_url(url, track.auth_headers.clone())
@@ -1027,36 +1252,68 @@ impl PlaybackManager {
                 {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
-                        let info_clone = self.info.clone();
-                        tokio::spawn(async move {
+                        let info_arc = self.info.clone();
+
+                        let task = tokio::spawn(async move {
+                            tracing::debug!("HTTP monitoring task started");
                             loop {
                                 let position = handle.get_position();
                                 let duration = handle.get_duration();
                                 let should_stop = handle.should_stop();
                                 let is_paused = handle.is_paused();
 
-                                let mut info = info_clone.lock().await;
-                                info.position_ms = position;
-                                if duration > 0 && info.current_track.is_some() {
-                                    info.current_track.as_mut().unwrap().duration_ms = duration;
+                                // Debug: Log every 10 seconds to confirm task is running
+                                if position % 10000 < 100 {
+                                    tracing::debug!(
+                                        "HTTP monitor check: pos={}, dur={}, should_stop={}",
+                                        position,
+                                        duration,
+                                        should_stop
+                                    );
                                 }
 
-                                // Update playback state based on pause status
-                                if is_paused {
-                                    info.state = PlaybackState::Paused;
-                                } else if !should_stop {
-                                    info.state = PlaybackState::Playing;
+                                {
+                                    let mut info = info_arc.lock().await;
+                                    info.position_ms = position;
+                                    if duration > 0 && info.current_track.is_some() {
+                                        info.current_track.as_mut().unwrap().duration_ms = duration;
+                                    }
+
+                                    // Update playback state based on pause status
+                                    if is_paused {
+                                        info.state = PlaybackState::Paused;
+                                    } else if !should_stop {
+                                        info.state = PlaybackState::Playing;
+                                    }
                                 }
 
-                                // Only stop if explicitly stopped, not if duration is 0
+                                // When track completes, send event to advance to next track
                                 if should_stop {
-                                    info.state = PlaybackState::Stopped;
+                                    tracing::debug!(
+                                        "HTTP monitoring task detected should_stop=true"
+                                    );
+                                    {
+                                        let mut info = info_arc.lock().await;
+                                        info.state = PlaybackState::Stopped;
+                                    }
+
+                                    tracing::info!(
+                                        "HTTP track completed, sending auto-advance event"
+                                    );
+                                    let _ = track_complete_tx.send(());
                                     break;
                                 }
 
                                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                             }
                         });
+
+                        // Store the abort handle immediately to prevent race conditions
+                        // This ensures the task can be aborted before completion
+                        {
+                            let mut abort_handle = monitoring_abort.lock().await;
+                            *abort_handle = Some(task.abort_handle());
+                        }
                     }
                     Err(e) => {
                         tracing::error!("Failed to play audio: {}", e);
@@ -1151,12 +1408,20 @@ impl PlaybackManager {
 
     /// Play next track
     pub async fn next_track(&self) -> Option<Track> {
+        // Get shuffle state from info
+        let shuffle_enabled = {
+            let info = self.info.lock().await;
+            info.shuffle
+        };
+
         let mut queue = self.queue.lock().await;
-        if let Some(track) = queue.next_track() {
-            let mut info = self.info.lock().await;
-            info.current_track = Some(track.clone());
-            info.position_ms = 0;
-            Some(track.clone())
+        let track_opt = queue.next_track_shuffled(shuffle_enabled);
+
+        if let Some(track) = track_opt {
+            let track_clone = track.clone();
+            drop(queue); // Release the queue lock before calling play_track
+            self.play_track(track_clone.clone()).await;
+            Some(track_clone)
         } else {
             None
         }
@@ -1164,12 +1429,20 @@ impl PlaybackManager {
 
     /// Play previous track
     pub async fn previous_track(&self) -> Option<Track> {
+        // Get shuffle state from info
+        let shuffle_enabled = {
+            let info = self.info.lock().await;
+            info.shuffle
+        };
+
         let mut queue = self.queue.lock().await;
-        if let Some(track) = queue.previous() {
-            let mut info = self.info.lock().await;
-            info.current_track = Some(track.clone());
-            info.position_ms = 0;
-            Some(track.clone())
+        let track_opt = queue.previous_shuffled(shuffle_enabled);
+
+        if let Some(track) = track_opt {
+            let track_clone = track.clone();
+            drop(queue); // Release the queue lock before calling play_track
+            self.play_track(track_clone.clone()).await;
+            Some(track_clone)
         } else {
             None
         }
@@ -1191,6 +1464,25 @@ impl PlaybackManager {
     pub async fn toggle_shuffle(&self) {
         let mut info = self.info.lock().await;
         info.shuffle = !info.shuffle;
+        let shuffle_enabled = info.shuffle;
+        drop(info);
+
+        // Generate or clear shuffle order based on new state
+        let mut queue = self.queue.lock().await;
+        if shuffle_enabled {
+            // When enabling shuffle, generate a new shuffle order
+            queue.generate_shuffle_order();
+            // Reset to beginning of shuffled playlist
+            queue.current_index = 0;
+            tracing::info!("Shuffle enabled - generated new shuffle order");
+        } else {
+            // When disabling shuffle, clear the shuffle order
+            queue.clear_shuffle_order();
+            // Try to maintain the same track by finding it in the original order
+            // This is best-effort - if we can't find it, just reset to 0
+            queue.current_index = 0;
+            tracing::info!("Shuffle disabled - cleared shuffle order");
+        }
     }
 
     /// Set repeat mode
@@ -1201,12 +1493,23 @@ impl PlaybackManager {
 
     /// Get current playback info
     pub async fn get_info(&self) -> PlaybackInfo {
-        self.info.lock().await.clone()
+        let mut info = self.info.lock().await.clone();
+        let queue = self.queue.lock().await;
+        info.queue = queue.tracks.clone();
+        info.current_index = queue.current_index;
+        info.shuffle_order = queue.shuffle_order.clone();
+        drop(queue);
+        info
     }
 
     /// Get current queue length
     pub async fn queue_length(&self) -> usize {
         self.queue.lock().await.len()
+    }
+
+    /// Get the queue Arc for direct access (used internally)
+    pub fn get_queue_arc(&self) -> Arc<Mutex<PlaybackQueue>> {
+        Arc::clone(&self.queue)
     }
 
     /// Get current track

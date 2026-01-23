@@ -1,10 +1,13 @@
-pub mod config;
 /// Any Player - Multi-Source Music Client
+pub mod cache;
+pub mod config;
+pub mod database;
 pub mod models;
 pub mod playback;
 pub mod providers;
 
 pub use config::Config;
+pub use database::Database;
 pub use models::{PlaybackInfo, PlaybackState, Playlist, RepeatMode, Source, Track};
 pub use playback::PlaybackManager;
 pub use providers::{MusicProvider, ProviderError, ProviderRegistry};
@@ -13,6 +16,7 @@ use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 mod commands;
 
 use std::sync::Arc;
+use tauri::Emitter;
 use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,21 +33,48 @@ pub fn run() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Initialize database with graceful error handling
+    let db_path = match dirs::data_dir() {
+        Some(dir) => dir.join("any-player").join("playlists.db"),
+        None => {
+            eprintln!("Failed to get data directory. Using current directory.");
+            std::path::PathBuf::from("playlists.db")
+        }
+    };
+
+    if let Some(parent) = db_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("Failed to create data directory: {}", e);
+            std::process::exit(1);
+        }
+    }
+
+    let database = match Database::new(db_path.clone()) {
+        Ok(db) => Arc::new(Mutex::new(db)),
+        Err(e) => {
+            eprintln!("Failed to initialize database at {:?}: {}", db_path, e);
+            eprintln!("Please check file permissions and disk space.");
+            std::process::exit(1);
+        }
+    };
+
     // Create application state
     let providers = Arc::new(Mutex::new(ProviderRegistry::new()));
     let playback = Arc::new(Mutex::new(PlaybackManager::new(providers.clone())));
     let oauth_code: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
     let providers_clone = providers.clone();
-    let playback_clone = playback.clone();
 
     let app_state = commands::AppState {
-        playback,
+        playback: playback.clone(),
         providers,
         oauth_code: oauth_code.clone(),
+        database,
     };
 
     let oauth_code_for_server = oauth_code.clone();
+    let playback_for_events = playback.clone();
+    let playback_for_init = playback.clone();
 
     tauri::Builder::default()
         .manage(app_state)
@@ -66,6 +97,7 @@ pub fn run() {
             commands::queue_track,
             commands::clear_queue,
             commands::play_playlist,
+            commands::play_tracks_immediate,
             // Spotify commands
             commands::get_spotify_auth_url,
             commands::authenticate_spotify,
@@ -92,18 +124,78 @@ pub fn run() {
             commands::disconnect_jellyfin,
             commands::get_jellyfin_credentials,
             commands::restore_jellyfin_session,
+            // Search commands
+            commands::search_spotify_tracks,
             // Audio commands
             commands::get_audio_file,
+            // Custom playlist commands
+            commands::create_custom_playlist,
+            commands::get_custom_playlists,
+            commands::get_custom_playlist,
+            commands::update_custom_playlist,
+            commands::delete_custom_playlist,
+            commands::add_track_to_custom_playlist,
+            commands::get_custom_playlist_tracks,
+            commands::remove_track_from_custom_playlist,
+            commands::reorder_custom_playlist_tracks,
+            commands::get_column_preferences,
+            commands::save_column_preferences,
+            // Union playlist commands
+            commands::create_union_playlist,
+            commands::add_source_to_union_playlist,
+            commands::get_union_playlist_sources,
+            commands::remove_source_from_union_playlist,
+            commands::reorder_union_playlist_sources,
+            commands::get_union_playlist_tracks,
+            // Cache commands
+            commands::write_playlists_cache,
+            commands::read_playlists_cache,
+            commands::clear_playlists_cache,
+            commands::write_custom_playlists_cache,
+            commands::read_custom_playlists_cache,
+            commands::clear_custom_playlists_cache,
+            commands::write_custom_playlist_tracks_cache,
+            commands::read_custom_playlist_tracks_cache,
+            commands::clear_custom_playlist_tracks_cache,
+            commands::write_union_playlist_tracks_cache,
+            commands::read_union_playlist_tracks_cache,
+            commands::clear_union_playlist_tracks_cache,
         ])
-        .setup(move |_app| {
+        .setup(move |app| {
+            let handle = app.handle().clone();
+
+            // Spawn a task to listen for track completion and emit events
+            let playback_for_listener = playback_for_events.clone();
+            tauri::async_runtime::spawn(async move {
+                let playback_locked = playback_for_listener.lock().await;
+                if let Some(mut rx) = playback_locked.take_completion_receiver().await {
+                    drop(playback_locked); // Release lock
+
+                    while let Some(()) = rx.recv().await {
+                        tracing::info!("Track completed, emitting event to frontend");
+                        if let Err(err) = handle.emit("track-completed", ()) {
+                            tracing::error!(
+                                ?err,
+                                "Failed to emit 'track-completed' event to frontend"
+                            );
+                        }
+                    }
+                } else {
+                    tracing::error!(
+                        "PlaybackManager did not provide a completion receiver; \
+                         'track-completed' events will not be emitted to the frontend"
+                    );
+                }
+            });
+
             // Start OAuth callback server in the Tauri runtime
             let oauth_code_clone = oauth_code_for_server.clone();
             tauri::async_runtime::spawn(start_oauth_server(oauth_code_clone));
 
             // Try to restore Spotify session on startup in the background
             // This allows the UI to load immediately while authentication is being restored
-            let playback_for_init = playback_clone.clone();
             let providers_for_jellyfin = providers_clone.clone();
+            let playback_for_restore = playback_for_init.clone();
             tauri::async_runtime::spawn(async move {
                 // Restore session without holding the lock during the entire process
                 let restored = {
@@ -140,7 +232,7 @@ pub fn run() {
                         if let Some(access_token) = access_token {
                             tracing::info!("Auto-initializing Spotify session for premium user");
 
-                            let playback = playback_for_init.lock().await;
+                            let playback = playback_for_restore.lock().await;
                             match playback.initialize_spotify_session(&access_token).await {
                                 Ok(()) => {
                                     if playback.is_spotify_session_ready().await {

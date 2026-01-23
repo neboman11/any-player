@@ -7,6 +7,7 @@ use std::fmt;
 pub enum Source {
     Spotify,
     Jellyfin,
+    Custom,
 }
 
 impl fmt::Display for Source {
@@ -14,6 +15,7 @@ impl fmt::Display for Source {
         match self {
             Source::Spotify => write!(f, "spotify"),
             Source::Jellyfin => write!(f, "jellyfin"),
+            Source::Custom => write!(f, "custom"),
         }
     }
 }
@@ -61,6 +63,8 @@ pub struct Playlist {
     pub owner: String,
     /// Cover art URL (if available)
     pub image_url: Option<String>,
+    /// Number of tracks in the playlist
+    pub track_count: usize,
     /// Tracks in this playlist
     pub tracks: Vec<Track>,
     /// Source provider
@@ -114,6 +118,13 @@ pub struct PlaybackInfo {
     pub repeat_mode: RepeatMode,
     /// Volume (0-100)
     pub volume: u32,
+    /// Queue of tracks
+    pub queue: Vec<Track>,
+    /// Current index in queue
+    pub current_index: usize,
+    /// Shuffle order: maps shuffle position to original queue index
+    /// When shuffle is enabled, this array defines the play order
+    pub shuffle_order: Vec<usize>,
 }
 
 impl Default for PlaybackInfo {
@@ -125,6 +136,9 @@ impl Default for PlaybackInfo {
             shuffle: false,
             repeat_mode: RepeatMode::Off,
             volume: 50,
+            queue: Vec::new(),
+            current_index: 0,
+            shuffle_order: Vec::new(),
         }
     }
 }

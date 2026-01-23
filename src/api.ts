@@ -3,7 +3,15 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { PlaybackStatus, Playlist, Track } from "./types";
+import type {
+  PlaybackStatus,
+  Playlist,
+  Track,
+  CustomPlaylist,
+  PlaylistTrack,
+  ColumnPreferences,
+  UnionPlaylistSource,
+} from "./types";
 
 declare global {
   interface Window {
@@ -80,6 +88,20 @@ export class TauriAPI {
 
   async playPlaylist(playlistId: string, source: string): Promise<void> {
     return invoke<void>("play_playlist", { playlistId, source });
+  }
+
+  async playTracksImmediate(tracks: Track[]): Promise<void> {
+    // Convert Track objects to the format expected by the backend
+    const trackInfos = tracks.map((track) => ({
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      album: track.album || "",
+      duration: track.duration_ms || 0,
+      source: track.source,
+      url: track.url || null,
+    }));
+    return invoke<void>("play_tracks_immediate", { tracks: trackInfos });
   }
 
   // Spotify commands
@@ -163,6 +185,10 @@ export class TauriAPI {
     return invoke<Track[]>("search_jellyfin_tracks", { query });
   }
 
+  async searchSpotifyTracks(query: string): Promise<Track[]> {
+    return invoke<Track[]>("search_spotify_tracks", { query });
+  }
+
   async searchJellyfinPlaylists(query: string): Promise<Playlist[]> {
     return invoke<Playlist[]>("search_jellyfin_playlists", { query });
   }
@@ -185,6 +211,190 @@ export class TauriAPI {
 
   async getAudioFile(url: string): Promise<string> {
     return invoke<string>("get_audio_file", { url });
+  }
+
+  // Custom playlist commands
+  async createCustomPlaylist(
+    name: string,
+    description: string | null,
+    imageUrl: string | null,
+  ): Promise<CustomPlaylist> {
+    return invoke("create_custom_playlist", {
+      name,
+      description,
+      imageUrl,
+    });
+  }
+
+  async getCustomPlaylists(): Promise<CustomPlaylist[]> {
+    return invoke("get_custom_playlists");
+  }
+
+  async getCustomPlaylist(playlistId: string): Promise<CustomPlaylist | null> {
+    return invoke("get_custom_playlist", { playlistId });
+  }
+
+  async updateCustomPlaylist(
+    playlistId: string,
+    name: string | null,
+    description: string | null,
+    imageUrl: string | null,
+  ): Promise<void> {
+    return invoke("update_custom_playlist", {
+      playlistId,
+      name,
+      description,
+      imageUrl,
+    });
+  }
+
+  async deleteCustomPlaylist(playlistId: string): Promise<void> {
+    return invoke("delete_custom_playlist", { playlistId });
+  }
+
+  async addTrackToCustomPlaylist(
+    playlistId: string,
+    track: Track,
+  ): Promise<PlaylistTrack> {
+    return invoke("add_track_to_custom_playlist", { playlistId, track });
+  }
+
+  async getCustomPlaylistTracks(playlistId: string): Promise<PlaylistTrack[]> {
+    return invoke("get_custom_playlist_tracks", { playlistId });
+  }
+
+  async removeTrackFromCustomPlaylist(trackId: number): Promise<void> {
+    return invoke("remove_track_from_custom_playlist", { trackId });
+  }
+
+  async reorderCustomPlaylistTracks(
+    playlistId: string,
+    trackId: number,
+    newPosition: number,
+  ): Promise<void> {
+    return invoke("reorder_custom_playlist_tracks", {
+      playlistId,
+      trackId,
+      newPosition,
+    });
+  }
+
+  async getColumnPreferences(): Promise<ColumnPreferences> {
+    return invoke("get_column_preferences");
+  }
+
+  async saveColumnPreferences(preferences: ColumnPreferences): Promise<void> {
+    return invoke("save_column_preferences", { preferences });
+  }
+
+  // Union playlist commands
+  async createUnionPlaylist(
+    name: string,
+    description: string | null,
+    imageUrl: string | null,
+  ): Promise<CustomPlaylist> {
+    return invoke("create_union_playlist", {
+      name,
+      description,
+      imageUrl,
+    });
+  }
+
+  async addSourceToUnionPlaylist(
+    unionPlaylistId: string,
+    sourceType: string,
+    sourcePlaylistId: string,
+  ): Promise<UnionPlaylistSource> {
+    return invoke("add_source_to_union_playlist", {
+      unionPlaylistId,
+      sourceType,
+      sourcePlaylistId,
+    });
+  }
+
+  async getUnionPlaylistSources(
+    unionPlaylistId: string,
+  ): Promise<UnionPlaylistSource[]> {
+    return invoke("get_union_playlist_sources", { unionPlaylistId });
+  }
+
+  async removeSourceFromUnionPlaylist(sourceId: number): Promise<void> {
+    return invoke("remove_source_from_union_playlist", { sourceId });
+  }
+
+  async reorderUnionPlaylistSources(
+    unionPlaylistId: string,
+    sourceId: number,
+    newPosition: number,
+  ): Promise<void> {
+    return invoke("reorder_union_playlist_sources", {
+      unionPlaylistId,
+      sourceId,
+      newPosition,
+    });
+  }
+
+  async getUnionPlaylistTracks(unionPlaylistId: string): Promise<Track[]> {
+    return invoke("get_union_playlist_tracks", { unionPlaylistId });
+  }
+
+  // Cache commands
+  async writePlaylistsCache(data: string): Promise<void> {
+    return invoke("write_playlists_cache", { data });
+  }
+
+  async readPlaylistsCache(): Promise<string | null> {
+    return invoke("read_playlists_cache");
+  }
+
+  async clearPlaylistsCache(): Promise<void> {
+    return invoke("clear_playlists_cache");
+  }
+
+  async writeCustomPlaylistsCache(data: string): Promise<void> {
+    return invoke("write_custom_playlists_cache", { data });
+  }
+
+  async readCustomPlaylistsCache(): Promise<string | null> {
+    return invoke("read_custom_playlists_cache");
+  }
+
+  async clearCustomPlaylistsCache(): Promise<void> {
+    return invoke("clear_custom_playlists_cache");
+  }
+
+  async writeCustomPlaylistTracksCache(
+    playlistId: string,
+    data: string,
+  ): Promise<void> {
+    return invoke("write_custom_playlist_tracks_cache", { playlistId, data });
+  }
+
+  async readCustomPlaylistTracksCache(
+    playlistId: string,
+  ): Promise<string | null> {
+    return invoke("read_custom_playlist_tracks_cache", { playlistId });
+  }
+
+  async clearCustomPlaylistTracksCache(playlistId: string): Promise<void> {
+    return invoke("clear_custom_playlist_tracks_cache", { playlistId });
+  }
+
+  async writeUnionPlaylistTracksCache(
+    playlistId: string,
+    data: string,
+  ): Promise<void> {
+    return invoke("write_union_playlist_tracks_cache", { playlistId, data });
+  }
+
+  async readUnionPlaylistTracksCache(
+    playlistId: string,
+  ): Promise<string | null> {
+    return invoke("read_union_playlist_tracks_cache", { playlistId });
+  }
+
+  async clearUnionPlaylistTracksCache(playlistId: string): Promise<void> {
+    return invoke("clear_union_playlist_tracks_cache", { playlistId });
   }
 }
 
