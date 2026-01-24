@@ -23,6 +23,7 @@ export interface Track {
   duration_ms?: number;
   source: "spotify" | "jellyfin" | "custom";
   url?: string;
+  image_url?: string;
 }
 
 export interface Playlist {

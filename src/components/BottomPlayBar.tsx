@@ -49,7 +49,24 @@ export function BottomPlayBar() {
 
       <div className="bottom-bar-content">
         <div className="bottom-bar-track-info">
-          <div className="bottom-bar-album-art">🎵</div>
+          <div className="bottom-bar-album-art">
+            {currentTrack.image_url ? (
+              <img
+                src={currentTrack.image_url}
+                alt={`${currentTrack.album || currentTrack.title} cover`}
+                className="bottom-bar-album-art-image"
+                onError={(e) => {
+                  console.error(
+                    "Failed to load bottom bar album art:",
+                    currentTrack.image_url,
+                  );
+                  e.currentTarget.style.display = "none";
+                }}
+              />
+            ) : (
+              "🎵"
+            )}
+          </div>
           <div className="bottom-bar-text">
             <div className="bottom-bar-title">{currentTrack.title}</div>
             <div className="bottom-bar-artist">{currentTrack.artist}</div>

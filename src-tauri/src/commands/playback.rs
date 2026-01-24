@@ -36,6 +36,7 @@ pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackS
         duration: t.duration_ms,
         source: t.source.to_string(),
         url: t.url,
+        image_url: t.image_url,
     });
 
     // Get queue tracks
@@ -50,6 +51,7 @@ pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackS
             duration: t.duration_ms,
             source: t.source.to_string(),
             url: t.url,
+            image_url: t.image_url,
         })
         .collect();
 
