@@ -10,6 +10,7 @@ pub struct PlaybackStatus {
     pub shuffle: bool,
     pub repeat_mode: String,
     pub duration: u64,
+    pub queue: Vec<TrackInfo>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

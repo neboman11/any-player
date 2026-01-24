@@ -38,6 +38,21 @@ pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackS
         url: t.url,
     });
 
+    // Get queue tracks
+    let queue_tracks = info
+        .queue
+        .into_iter()
+        .map(|t| TrackInfo {
+            id: t.id,
+            title: t.title,
+            artist: t.artist,
+            album: t.album,
+            duration: t.duration_ms,
+            source: t.source.to_string(),
+            url: t.url,
+        })
+        .collect();
+
     Ok(PlaybackStatus {
         state: state_str,
         current_track,
@@ -46,6 +61,7 @@ pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackS
         shuffle: info.shuffle,
         repeat_mode: repeat_str,
         duration,
+        queue: queue_tracks,
     })
 }
 
