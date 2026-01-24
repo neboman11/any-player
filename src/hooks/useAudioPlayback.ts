@@ -1,13 +1,21 @@
-import { useRef, useCallback } from "react";
+import { useCallback } from "react";
 import { tauriAPI } from "../api";
+
+// Create a singleton audio element that's shared across all hook instances
+let globalAudioElement: HTMLAudioElement | null = null;
+
+function getAudioElement(): HTMLAudioElement {
+  if (!globalAudioElement) {
+    globalAudioElement = new Audio();
+  }
+  return globalAudioElement;
+}
 
 /**
  * Hook for managing HTML5 audio playback
  * Handles actual audio playing via the Web Audio API
  */
 export function useAudioPlayback() {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
   const playAudio = useCallback(async (url: string) => {
     try {
       // Spotify premium tracks (spotify:track: URIs) are handled by the backend's
@@ -15,15 +23,12 @@ export function useAudioPlayback() {
       if (url.startsWith("spotify:track:")) {
         console.log(
           "Skipping frontend playback for Spotify URI - handled by backend librespot:",
-          url
+          url,
         );
         return;
       }
 
-      // Create or reuse audio element
-      if (!audioRef.current) {
-        audioRef.current = new Audio();
-      }
+      const audio = getAudioElement();
 
       console.log("Getting audio file for URL:", url);
 
@@ -31,71 +36,64 @@ export function useAudioPlayback() {
       const fileUrl = await tauriAPI.getAudioFile(url);
       console.log("Audio file URL:", fileUrl);
 
-      if (audioRef.current) {
-        audioRef.current.src = fileUrl;
-        audioRef.current
-          .play()
-          .then(() => {
-            console.log("Audio playback started for:", url);
-          })
-          .catch((error) => {
-            console.error("Failed to play audio:", error);
-          });
-      }
+      audio.src = fileUrl;
+      audio
+        .play()
+        .then(() => {
+          console.log("Audio playback started for:", url);
+        })
+        .catch((error) => {
+          console.error("Failed to play audio:", error);
+        });
     } catch (error) {
       console.error("Error playing audio:", error);
     }
   }, []);
 
   const pauseAudio = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      console.log("Audio paused");
-    }
+    const audio = getAudioElement();
+    audio.pause();
+    console.log("Audio paused");
   }, []);
 
   const resumeAudio = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current
-        .play()
-        .catch((error) => console.error("Failed to resume audio:", error));
-      console.log("Audio resumed");
-    }
+    const audio = getAudioElement();
+    audio
+      .play()
+      .catch((error) => console.error("Failed to resume audio:", error));
+    console.log("Audio resumed");
   }, []);
 
   const seekAudio = useCallback((positionMs: number) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = positionMs / 1000;
-      console.log("Seek to:", positionMs, "ms");
-    }
+    const audio = getAudioElement();
+    audio.currentTime = positionMs / 1000;
+    console.log("Seek to:", positionMs, "ms");
   }, []);
 
   const setVolume = useCallback((volume: number) => {
-    if (audioRef.current) {
-      // Volume is 0-100, convert to 0-1
-      audioRef.current.volume = volume / 100;
-    }
+    const audio = getAudioElement();
+    // Volume is 0-100, convert to 0-1
+    const normalizedVolume = volume / 100;
+    audio.volume = normalizedVolume;
+    console.log(
+      `Volume set to ${volume}% (normalized: ${normalizedVolume}, actual: ${audio.volume})`,
+    );
   }, []);
 
   const getCurrentPosition = useCallback(() => {
-    if (audioRef.current) {
-      return Math.floor(audioRef.current.currentTime * 1000);
-    }
-    return 0;
+    const audio = getAudioElement();
+    return Math.floor(audio.currentTime * 1000);
   }, []);
 
   const getDuration = useCallback(() => {
-    if (audioRef.current) {
-      return Math.floor(audioRef.current.duration * 1000);
-    }
-    return 0;
+    const audio = getAudioElement();
+    return Math.floor(audio.duration * 1000);
   }, []);
 
   const cleanup = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-    }
+    const audio = getAudioElement();
+    audio.pause();
+    audio.src = "";
   }, []);
 
   return {

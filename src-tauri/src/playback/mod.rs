@@ -209,6 +209,24 @@ impl PlaybackHandle {
         });
     }
 
+    pub fn set_volume(&self, volume: u32) {
+        // Set volume on the rodio sink (0-100 scale converted to 0.0-1.0)
+        let volume_f32 = (volume.min(100) as f32) / 100.0;
+        let sink_arc = self.sink.clone();
+        tokio::spawn(async move {
+            let sink_opt = sink_arc.lock().await;
+            if let Some(sink_handle) = sink_opt.as_ref() {
+                if let Ok(s) = sink_handle.try_lock() {
+                    tracing::info!(
+                        "PlaybackHandle::set_volume() - setting volume to {}",
+                        volume_f32
+                    );
+                    s.set_volume(volume_f32);
+                }
+            }
+        });
+    }
+
     pub fn get_position(&self) -> u64 {
         self.position_ms.load(Ordering::SeqCst)
     }
@@ -474,6 +492,7 @@ impl AudioPlayer {
         &self,
         url: &str,
         auth_headers: Option<Vec<(String, String)>>,
+        volume: u32,
     ) -> Result<PlaybackHandle, String> {
         let url = url.to_string();
         let handle = PlaybackHandle::new();
@@ -496,7 +515,7 @@ impl AudioPlayer {
             let result = tokio::task::spawn_blocking({
                 let url = url.clone();
                 let handle = handle_clone.clone();
-                move || Self::play_audio_blocking(&url, &handle, auth_headers)
+                move || Self::play_audio_blocking(&url, &handle, auth_headers, volume)
             })
             .await;
 
@@ -520,6 +539,7 @@ impl AudioPlayer {
         url: &str,
         handle: &PlaybackHandle,
         auth_headers: Option<Vec<(String, String)>>,
+        volume: u32,
     ) -> Result<(), String> {
         // Check if URL is a spotify: URI - would require session for full playback
         if url.starts_with("spotify:track:") {
@@ -537,13 +557,14 @@ impl AudioPlayer {
             ));
         }
 
-        Self::play_http_audio(url, handle, auth_headers)
+        Self::play_http_audio(url, handle, auth_headers, volume)
     }
 
     fn play_http_audio(
         url: &str,
         handle: &PlaybackHandle,
         auth_headers: Option<Vec<(String, String)>>,
+        volume: u32,
     ) -> Result<(), String> {
         // Get audio output stream
         let (_stream, stream_handle) = OutputStream::try_default()
@@ -591,10 +612,28 @@ impl AudioPlayer {
         let sink =
             Sink::try_new(&stream_handle).map_err(|e| format!("Failed to create sink: {}", e))?;
 
+        // Wrap sink in Arc<Mutex<>> and store in handle for volume control
+        let sink_handle = Arc::new(Mutex::new(sink));
+
+        // Store the sink in the PlaybackHandle for direct control (pause/play/volume)
+        tokio::task::block_in_place(|| {
+            let runtime = tokio::runtime::Handle::current();
+            runtime.block_on(handle.set_sink(sink_handle.clone()));
+        });
+
+        // Apply initial volume (0-100 scale converted to 0.0-1.0)
+        let volume_f32 = (volume.min(100) as f32) / 100.0;
+        if let Ok(s) = sink_handle.try_lock() {
+            s.set_volume(volume_f32);
+            tracing::info!("Set initial volume to {} ({}%)", volume_f32, volume);
+        }
+
         // Check if we should start paused (for restore scenarios)
         let should_start_paused = handle.is_paused();
         if should_start_paused {
-            sink.pause();
+            if let Ok(s) = sink_handle.try_lock() {
+                s.pause();
+            }
         }
 
         // Convert to f32 samples
@@ -606,9 +645,13 @@ impl AudioPlayer {
             tracing::info!("Seeking to restored position: {}ms", initial_position);
             // Use skip_duration to skip ahead
             let source = source.skip_duration(Duration::from_millis(initial_position));
-            sink.append(source);
+            if let Ok(s) = sink_handle.try_lock() {
+                s.append(source);
+            }
         } else {
-            sink.append(source);
+            if let Ok(s) = sink_handle.try_lock() {
+                s.append(source);
+            }
         }
 
         // Track playback progress - initialize from handle position for restore support
@@ -626,12 +669,16 @@ impl AudioPlayer {
             // Handle pause/resume and track pause duration
             let is_paused = handle.is_paused();
             if is_paused {
-                sink.pause();
+                if let Ok(s) = sink_handle.try_lock() {
+                    s.pause();
+                }
                 if pause_time.is_none() {
                     pause_time = Some(Instant::now());
                 }
             } else {
-                sink.play();
+                if let Ok(s) = sink_handle.try_lock() {
+                    s.play();
+                }
                 if let Some(paused_at) = pause_time {
                     accumulated_pause_duration += paused_at.elapsed();
                     pause_time = None;
@@ -677,7 +724,9 @@ impl AudioPlayer {
             }
         }
 
-        sink.stop();
+        if let Ok(s) = sink_handle.try_lock() {
+            s.stop();
+        }
         Ok(())
     }
 
@@ -798,6 +847,7 @@ impl AudioPlayer {
                                 &format!("spotify:track:{}", track_id_for_fetch),
                                 &handle_clone,
                                 None,
+                                100, // Default volume for simulation
                             )
                             .await?;
                         }
@@ -1092,6 +1142,7 @@ impl AudioPlayer {
         url: &str,
         handle: &PlaybackHandle,
         auth_headers: Option<Vec<(String, String)>>,
+        volume: u32,
     ) -> Result<(), String> {
         // For Spotify URIs, we provide full-track duration simulation
         // In a full implementation with real librespot, this would stream actual audio
@@ -1103,7 +1154,7 @@ impl AudioPlayer {
             let handle_clone = handle.clone();
 
             tokio::task::spawn_blocking(move || {
-                Self::play_http_audio(&url_copy, &handle_clone, auth_headers)
+                Self::play_http_audio(&url_copy, &handle_clone, auth_headers, volume)
             })
             .await
             .map_err(|e| format!("Playback task failed: {}", e))?
@@ -1471,7 +1522,13 @@ impl PlaybackManager {
                     track.auth_headers.clone()
                 };
 
-                match self.audio_player.play_url(url, auth_headers).await {
+                // Get current volume
+                let volume = {
+                    let info = self.info.lock().await;
+                    info.volume
+                };
+
+                match self.audio_player.play_url(url, auth_headers, volume).await {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
                         let info_arc = self.info.clone();
@@ -1737,6 +1794,13 @@ impl PlaybackManager {
     pub async fn set_volume(&self, volume: u32) {
         let mut info = self.info.lock().await;
         info.volume = volume.min(100);
+        drop(info);
+
+        // Apply volume to the active playback handle
+        let player = self.audio_player.current_handle.lock().await;
+        if let Some(handle) = player.as_ref() {
+            handle.set_volume(volume);
+        }
     }
 
     /// Toggle shuffle mode
@@ -2151,6 +2215,9 @@ impl PlaybackManager {
                         track.auth_headers.clone()
                     };
 
+                    // Get current volume for restore
+                    let volume = saved_state.volume;
+
                     tokio::spawn(async move {
                         tracing::info!(
                             "Starting HTTP audio playback from URL (restore): {}",
@@ -2160,7 +2227,14 @@ impl PlaybackManager {
                         let result = tokio::task::spawn_blocking({
                             let url = url_clone.clone();
                             let handle = handle_clone.clone();
-                            move || AudioPlayer::play_audio_blocking(&url, &handle, auth_headers)
+                            move || {
+                                AudioPlayer::play_audio_blocking(
+                                    &url,
+                                    &handle,
+                                    auth_headers,
+                                    volume,
+                                )
+                            }
                         })
                         .await;
 

@@ -1,10 +1,8 @@
 import { useCallback, useMemo } from "react";
 import { usePlayback } from "../hooks";
-import { useAudioPlayback } from "../hooks";
 
 export function BottomPlayBar() {
   const playback = usePlayback();
-  const audio = useAudioPlayback();
 
   const progressPercentage = useMemo(() => {
     if (!playback.duration || playback.duration === 0) return 0;
@@ -23,10 +21,9 @@ export function BottomPlayBar() {
   const handleVolumeChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = Number(e.target.value);
-      audio.setVolume(value);
       void playback.setVolumeValue(value);
     },
-    [playback.setVolumeValue, audio],
+    [playback.setVolumeValue],
   );
 
   // Don't show the bar if there's no current track

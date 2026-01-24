@@ -1,5 +1,4 @@
 import { useCallback } from "react";
-import { useAudioPlayback } from "../hooks";
 
 interface VolumeControlProps {
   volume: number;
@@ -7,17 +6,13 @@ interface VolumeControlProps {
 }
 
 export function VolumeControl({ volume, setVolumeValue }: VolumeControlProps) {
-  const audio = useAudioPlayback();
-
   const handleVolumeChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = Number(e.target.value);
-      // Update browser audio volume immediately
-      audio.setVolume(value);
-      // Update backend volume state
+      // Update backend volume
       void setVolumeValue(value);
     },
-    [setVolumeValue, audio]
+    [setVolumeValue],
   );
 
   return (
