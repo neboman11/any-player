@@ -12,6 +12,7 @@ export interface PlaybackStatus {
   current_track: Track | null;
   position: number;
   duration: number;
+  queue: Track[];
 }
 
 export interface Track {
