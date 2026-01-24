@@ -10,15 +10,19 @@ export function NowPlaying() {
 
   const currentTrack = useMemo(() => {
     if (playback.playbackStatus?.current_track) {
-      return {
+      const track = {
         title: playback.playbackStatus.current_track.title,
         artist: playback.playbackStatus.current_track.artist,
         album: playback.playbackStatus.current_track.album,
+        image_url: playback.playbackStatus.current_track.image_url,
       };
+      console.log("Current track image_url:", track.image_url);
+      return track;
     }
     return {
       title: "No track playing",
       artist: "Select a track to play",
+      image_url: undefined,
     };
   }, [playback.playbackStatus?.current_track]);
 
@@ -27,7 +31,28 @@ export function NowPlaying() {
       <div className="now-playing-wrapper">
         <div className="now-playing-container">
           <div className="album-art">
-            <div className="placeholder">🎵</div>
+            {currentTrack.image_url ? (
+              <img
+                src={currentTrack.image_url}
+                alt={`${currentTrack.album || currentTrack.title} cover`}
+                className="album-art-image"
+                onError={(e) => {
+                  console.error(
+                    "Failed to load album art:",
+                    currentTrack.image_url,
+                  );
+                  e.currentTarget.style.display = "none";
+                }}
+                onLoad={() =>
+                  console.log(
+                    "Album art loaded successfully:",
+                    currentTrack.image_url,
+                  )
+                }
+              />
+            ) : (
+              <div className="placeholder">🎵</div>
+            )}
           </div>
           <div className="track-info">
             <h2 id="track-title">{currentTrack.title}</h2>

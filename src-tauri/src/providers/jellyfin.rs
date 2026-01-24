@@ -35,12 +35,16 @@ struct JellyfinItem {
     item_type: String,
     #[serde(rename = "Album")]
     album: Option<String>,
+    #[serde(rename = "AlbumId")]
+    album_id: Option<String>,
     #[serde(rename = "Artists")]
     artists: Option<Vec<String>>,
     #[serde(rename = "RunTimeTicks")]
     runtime_ticks: Option<u64>,
     #[serde(rename = "ImageTags")]
     image_tags: Option<Value>,
+    #[serde(rename = "AlbumPrimaryImageTag")]
+    album_primary_image_tag: Option<String>,
     #[serde(rename = "UserData")]
     #[allow(dead_code)]
     user_data: Option<Value>,
@@ -107,12 +111,26 @@ impl JellyfinProvider {
     }
 
     /// Helper method to get image URL if available
-    fn get_image_url(&self, item_id: &str, image_tags: &Option<Value>) -> Option<String> {
-        if let Some(tags) = image_tags {
+    /// For tracks, tries to use album artwork first, then falls back to item's own image
+    fn get_image_url(&self, item: &JellyfinItem) -> Option<String> {
+        // For audio tracks, use the album's primary image
+        if item.item_type == "Audio" {
+            if let (Some(album_id), Some(album_tag)) =
+                (&item.album_id, &item.album_primary_image_tag)
+            {
+                return Some(format!(
+                    "{}/Items/{}/Images/Primary?tag={}&api_key={}",
+                    self.base_url, album_id, album_tag, self.api_key
+                ));
+            }
+        }
+
+        // Fallback to item's own image tags
+        if let Some(tags) = &item.image_tags {
             if let Some(primary_tag) = tags.get("Primary").and_then(|v| v.as_str()) {
                 return Some(format!(
-                    "{}/Items/{}/Images/Primary?tag={}",
-                    self.base_url, item_id, primary_tag
+                    "{}/Items/{}/Images/Primary?tag={}&api_key={}",
+                    self.base_url, item.id, primary_tag, self.api_key
                 ));
             }
         }
@@ -147,7 +165,7 @@ impl JellyfinProvider {
             .album
             .clone()
             .unwrap_or_else(|| "Unknown Album".to_string());
-        let image_url = self.get_image_url(&item.id, &item.image_tags);
+        let image_url = self.get_image_url(item);
 
         // Generate the streaming URL for this track with required parameters
         // The universal endpoint requires UserId, Container format, and optionally AudioCodec
@@ -183,7 +201,7 @@ impl JellyfinProvider {
 
     /// Convert Jellyfin item to Playlist
     fn item_to_playlist(&self, item: &JellyfinItem) -> Playlist {
-        let image_url = self.get_image_url(&item.id, &item.image_tags);
+        let image_url = self.get_image_url(item);
 
         Playlist {
             id: item.id.clone(),

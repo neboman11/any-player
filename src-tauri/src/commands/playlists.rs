@@ -206,7 +206,7 @@ pub async fn play_tracks_immediate(
             artist: track_info.artist,
             album: track_info.album,
             duration_ms: track_info.duration,
-            image_url: None,
+            image_url: track_info.image_url,
             source,
             url: track_info.url,
             auth_headers,
