@@ -59,6 +59,7 @@ export function UnionPlaylistEditor({
   const [showRemoveSourceConfirm, setShowRemoveSourceConfirm] = useState<
     number | null
   >(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Load playlists when needed
   useEffect(() => {
@@ -225,6 +226,25 @@ export function UnionPlaylistEditor({
     const found = allPlaylists.find((p) => p.id === source.source_playlist_id);
     return found ? found.name : source.source_playlist_id;
   };
+
+  // Filter tracks based on search query
+  const filteredTracks =
+    searchQuery.trim() === ""
+      ? tracks
+      : tracks.filter((track) => {
+          const query = searchQuery.toLowerCase();
+          const title = track.title?.toLowerCase() || "";
+          const artist = track.artist?.toLowerCase() || "";
+          const album = track.album?.toLowerCase() || "";
+          const source = (track as Track).source?.toLowerCase() || "";
+
+          return (
+            title.includes(query) ||
+            artist.includes(query) ||
+            album.includes(query) ||
+            source.includes(query)
+          );
+        });
 
   return (
     <div className="custom-playlist-editor">
@@ -393,6 +413,26 @@ export function UnionPlaylistEditor({
       {/* Combined tracks section */}
       <div className="tracks-section">
         <h3>Combined Tracks ({tracks.length})</h3>
+        <div
+          className="search-container"
+          style={{ padding: "10px", marginBottom: "10px" }}
+        >
+          <input
+            type="text"
+            placeholder="Search tracks..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px 12px",
+              fontSize: "14px",
+              border: "1px solid #444",
+              borderRadius: "4px",
+              backgroundColor: "#1e1e1e",
+              color: "#fff",
+            }}
+          />
+        </div>
         {tracksLoading ? (
           <div className="loading">Loading tracks...</div>
         ) : tracks.length === 0 ? (
@@ -401,7 +441,7 @@ export function UnionPlaylistEditor({
           </div>
         ) : (
           <TrackTable
-            tracks={tracks}
+            tracks={filteredTracks}
             onPlayTrack={handlePlayTrack}
             onPlayFromTrack={handlePlayFromTrack}
           />

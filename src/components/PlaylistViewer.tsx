@@ -44,6 +44,7 @@ export function PlaylistViewer({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [regularTracks, setRegularTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const playback = usePlayback();
 
@@ -166,9 +167,32 @@ export function PlaylistViewer({
     }
   };
 
-  const tracks = isCustom ? customTracks : regularTracks;
+  const allTracks = isCustom ? customTracks : regularTracks;
   const isLoading = isCustom ? customLoading : loading;
   const trackCount = "track_count" in playlist ? playlist.track_count : 0;
+
+  // Filter tracks based on search query
+  const tracks =
+    searchQuery.trim() === ""
+      ? allTracks
+      : allTracks.filter((track) => {
+          const query = searchQuery.toLowerCase();
+          const title = track.title?.toLowerCase() || "";
+          const artist = track.artist?.toLowerCase() || "";
+          const album = track.album?.toLowerCase() || "";
+          const source =
+            ("track_source" in track
+              ? track.track_source
+              : (track as Track).source
+            )?.toLowerCase() || "";
+
+          return (
+            title.includes(query) ||
+            artist.includes(query) ||
+            album.includes(query) ||
+            source.includes(query)
+          );
+        });
 
   return (
     <div className="custom-playlist-editor">
@@ -274,6 +298,26 @@ export function PlaylistViewer({
       )}
 
       <div className="tracks-section">
+        <div
+          className="search-container"
+          style={{ padding: "10px", marginBottom: "10px" }}
+        >
+          <input
+            type="text"
+            placeholder="Search tracks..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px 12px",
+              fontSize: "14px",
+              border: "1px solid #444",
+              borderRadius: "4px",
+              backgroundColor: "#1e1e1e",
+              color: "#fff",
+            }}
+          />
+        </div>
         {isLoading ? (
           <div className="loading">Loading tracks...</div>
         ) : (
