@@ -1,5 +1,4 @@
 /// Cache management commands
-
 /// Write playlists cache to disk
 #[tauri::command]
 pub async fn write_playlists_cache(data: String) -> Result<(), String> {
