@@ -1,7 +1,14 @@
 import { useState, useMemo, useEffect } from "react";
 import { Toaster } from "react-hot-toast";
 import "./App.css";
-import { Sidebar, NowPlaying, Playlists, Search, Settings } from "./components";
+import {
+  Sidebar,
+  NowPlaying,
+  Playlists,
+  Search,
+  Settings,
+  BottomPlayBar,
+} from "./components";
 import { usePlaylists, useCustomPlaylists } from "./hooks";
 import { tauriAPI } from "./api";
 import type { Page } from "./types";
@@ -99,7 +106,10 @@ export default function App() {
       <Toaster position="top-right" />
       <div className="container">
         <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
-        <main className="main-content">{pageContent}</main>
+        <main className="main-content">
+          {pageContent}
+          {currentPage !== "now-playing" && <BottomPlayBar />}
+        </main>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ export { NowPlaying } from "./NowPlaying";
 export { Playlists } from "./Playlists";
 export { Search } from "./Search";
 export { Settings } from "./Settings";
+export { BottomPlayBar } from "./BottomPlayBar";
 export { NowPlayingControls } from "./NowPlayingControls";
 export { ProgressBar } from "./ProgressBar";
 export { VolumeControl } from "./VolumeControl";

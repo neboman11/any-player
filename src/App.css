@@ -105,6 +105,8 @@ body {
   overflow-y: auto;
   background-color: #1a1a1a;
   padding: 2rem;
+  padding-bottom: 100px; /* Add space for bottom bar */
+  position: relative;
 }
 
 .page {
@@ -903,3 +905,113 @@ input[type="range"] {
   flex-direction: column;
   gap: 0.5rem;
 }
+
+/* Bottom Play Bar */
+.bottom-play-bar {
+  position: fixed;
+  bottom: 0;
+  left: 200px; /* Sidebar width */
+  right: 0;
+  height: 80px;
+  background-color: #2a2a2a;
+  border-top: 1px solid #444;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+  z-index: 100;
+}
+
+.bottom-bar-track-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.bottom-bar-album-art {
+  width: 50px;
+  height: 50px;
+  background-color: #3a3a3a;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.bottom-bar-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bottom-bar-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bottom-bar-artist {
+  font-size: 0.85rem;
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bottom-bar-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+.bottom-bar-control-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: #3a3a3a;
+  border: 1px solid #555;
+  color: #fff;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.bottom-bar-control-btn:hover:not(:disabled) {
+  background-color: #4a4a4a;
+  border-color: #666;
+  transform: scale(1.05);
+}
+
+.bottom-bar-control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bottom-bar-control-btn.bottom-bar-play-pause {
+  width: 45px;
+  height: 45px;
+  background: linear-gradient(135deg, #4a9eff 0%, #357abd 100%);
+  border-color: #357abd;
+  font-size: 1.2rem;
+}
+
+.bottom-bar-control-btn.bottom-bar-play-pause:hover:not(:disabled) {
+  background: linear-gradient(135deg, #5aaeef 0%, #4a8acd 100%);
+}
+
+.bottom-bar-spacer {
+  flex: 1;
+}
+
