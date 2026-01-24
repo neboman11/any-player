@@ -44,6 +44,8 @@ pub async fn is_spotify_authenticated(state: State<'_, AppState>) -> Result<bool
 }
 
 /// Check if user has Spotify Premium
+///
+/// Returns true if authenticated user has Spotify Premium, false otherwise
 #[tauri::command]
 pub async fn check_spotify_premium(state: State<'_, AppState>) -> Result<bool, String> {
     let providers = state.providers.lock().await;
@@ -54,6 +56,9 @@ pub async fn check_spotify_premium(state: State<'_, AppState>) -> Result<bool, S
 }
 
 /// Initialize Spotify session for premium track streaming
+///
+/// This should be called after successful Spotify authentication to enable
+/// full track streaming for premium users via librespot.
 #[tauri::command]
 pub async fn initialize_spotify_session(
     state: State<'_, AppState>,
@@ -64,6 +69,9 @@ pub async fn initialize_spotify_session(
 }
 
 /// Initialize Spotify session using the stored provider access token
+/// This convenience command lets the frontend ask the backend to initialize
+/// the librespot session using the provider-managed OAuth token, avoiding
+/// the need for the frontend to pass the token value across IPC.
 #[tauri::command]
 pub async fn initialize_spotify_session_from_provider(
     state: State<'_, AppState>,
@@ -89,6 +97,9 @@ pub async fn is_spotify_session_ready(state: State<'_, AppState>) -> Result<bool
 }
 
 /// Refresh Spotify OAuth token and reinitialize session if needed
+///
+/// Called periodically or when token expires to maintain active authentication
+/// and session state for premium playback features.
 #[tauri::command]
 pub async fn refresh_spotify_token(state: State<'_, AppState>) -> Result<(), String> {
     let mut providers = state.providers.lock().await;
