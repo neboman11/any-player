@@ -100,6 +100,7 @@ export class TauriAPI {
       duration: track.duration_ms || 0,
       source: track.source,
       url: track.url || null,
+      image_url: track.image_url || null,
     }));
     return invoke<void>("play_tracks_immediate", { tracks: trackInfos });
   }
