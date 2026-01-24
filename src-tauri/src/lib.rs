@@ -17,6 +17,10 @@ use tracing_subscriber::{filter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod commands;
 
+// Re-export command functions from auth and custom_playlists modules only
+// Other modules (cache, playback, providers) share names with top-level modules
+pub use commands::{auth, custom_playlists};
+
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
