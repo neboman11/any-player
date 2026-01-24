@@ -157,6 +157,15 @@ export function PlaylistViewer({
     }
   };
 
+  const handlePlayFromTrack = async (index: number) => {
+    try {
+      await tauriAPI.playPlaylistFromTrack(tracks, index);
+      await playback.updateStatus();
+    } catch (err) {
+      console.error("Failed to play from track:", err);
+    }
+  };
+
   const tracks = isCustom ? customTracks : regularTracks;
   const isLoading = isCustom ? customLoading : loading;
   const trackCount = "track_count" in playlist ? playlist.track_count : 0;
@@ -243,7 +252,10 @@ export function PlaylistViewer({
               <button className="edit-btn" onClick={() => setIsEditing(true)}>
                 Edit
               </button>
-              <button className="delete-btn" onClick={() => setShowDeleteConfirm(true)}>
+              <button
+                className="delete-btn"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
                 Delete
               </button>
             </>
@@ -270,18 +282,25 @@ export function PlaylistViewer({
             onRemoveTrack={isCustom ? removeTrack : undefined}
             onReorderTrack={isCustom ? reorderTrack : undefined}
             onPlayTrack={handlePlayTrack}
+            onPlayFromTrack={handlePlayFromTrack}
           />
         )}
       </div>
 
       {/* Delete confirmation modal */}
       {showDeleteConfirm && (
-        <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
+        <div
+          className="modal-overlay"
+          onClick={() => setShowDeleteConfirm(false)}
+        >
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Delete Playlist</h3>
-            <p>Are you sure you want to delete "{playlist.name}"? This cannot be undone.</p>
+            <p>
+              Are you sure you want to delete "{playlist.name}"? This cannot be
+              undone.
+            </p>
             <div className="modal-actions">
-              <button 
+              <button
                 className="confirm-btn"
                 onClick={() => {
                   setShowDeleteConfirm(false);
@@ -290,7 +309,7 @@ export function PlaylistViewer({
               >
                 Delete
               </button>
-              <button 
+              <button
                 className="cancel-btn"
                 onClick={() => setShowDeleteConfirm(false)}
               >

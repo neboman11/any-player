@@ -105,6 +105,39 @@ export class TauriAPI {
     return invoke<void>("play_tracks_immediate", { tracks: trackInfos });
   }
 
+  async playPlaylistFromTrack(
+    tracks: Track[] | PlaylistTrack[],
+    startIndex: number,
+  ): Promise<void> {
+    // Convert tracks to Track format if they're PlaylistTrack
+    const normalizedTracks = tracks.map((track) => {
+      if ("track_source" in track) {
+        // This is a PlaylistTrack
+        return {
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          album: track.album || "",
+          duration_ms: track.duration_ms || 0,
+          source: track.track_source,
+          url: track.url || null,
+          image_url: track.image_url || null,
+        };
+      } else {
+        // This is already a Track
+        return track;
+      }
+    });
+
+    // Reorder tracks so the selected track is first, followed by the rest
+    const reorderedTracks = [
+      ...normalizedTracks.slice(startIndex),
+      ...normalizedTracks.slice(0, startIndex),
+    ];
+
+    return this.playTracksImmediate(reorderedTracks);
+  }
+
   // Spotify commands
   async getSpotifyAuthUrl(): Promise<string> {
     return invoke<string>("get_spotify_auth_url");

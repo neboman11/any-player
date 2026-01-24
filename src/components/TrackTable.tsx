@@ -8,6 +8,7 @@ interface TrackTableProps {
   onRemoveTrack?: (trackId: number) => void;
   onReorderTrack?: (trackId: number, newPosition: number) => void;
   onPlayTrack?: (track: PlaylistTrack | Track) => void;
+  onPlayFromTrack?: (index: number) => void;
 }
 
 const DEFAULT_COLUMNS: ColumnPreferences = {
@@ -27,6 +28,7 @@ export function TrackTable({
   onRemoveTrack,
   onReorderTrack,
   onPlayTrack,
+  onPlayFromTrack,
 }: TrackTableProps) {
   const [columnPrefs, setColumnPrefs] =
     useState<ColumnPreferences>(DEFAULT_COLUMNS);
@@ -119,6 +121,7 @@ export function TrackTable({
       <table>
         <thead>
           <tr>
+            {onPlayFromTrack && <th className="play-column"></th>}
             <th className="position-column">#</th>
             {visibleColumns.map((column) => (
               <th
@@ -144,6 +147,21 @@ export function TrackTable({
               className={draggedTrack === track.id ? "dragging" : ""}
               onClick={() => onPlayTrack?.(track)}
             >
+              {onPlayFromTrack && (
+                <td className="play-column">
+                  <button
+                    className="play-track-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPlayFromTrack(index);
+                    }}
+                    aria-label="Play from here"
+                    title="Play from here"
+                  >
+                    ▶
+                  </button>
+                </td>
+              )}
               <td className="position-column">{index + 1}</td>
               {visibleColumns.map((column) => (
                 <td
