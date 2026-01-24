@@ -56,7 +56,9 @@ export function UnionPlaylistEditor({
   const [selectedSourceType, setSelectedSourceType] = useState<string>("all");
   const [availablePlaylists, setAvailablePlaylists] = useState<Playlist[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showRemoveSourceConfirm, setShowRemoveSourceConfirm] = useState<number | null>(null);
+  const [showRemoveSourceConfirm, setShowRemoveSourceConfirm] = useState<
+    number | null
+  >(null);
 
   // Load playlists when needed
   useEffect(() => {
@@ -196,6 +198,15 @@ export function UnionPlaylistEditor({
     }
   };
 
+  const handlePlayFromTrack = async (index: number) => {
+    try {
+      await tauriAPI.playPlaylistFromTrack(tracks, index);
+      await playback.updateStatus();
+    } catch (err) {
+      console.error("Failed to play from track:", err);
+    }
+  };
+
   const getSourcePlaylistName = (source: UnionPlaylistSource): string => {
     // Try to find in available playlists or custom playlists
     const allPlaylists = [...availablePlaylists];
@@ -294,7 +305,10 @@ export function UnionPlaylistEditor({
               <button className="edit-btn" onClick={() => setIsEditing(true)}>
                 Edit
               </button>
-              <button className="delete-btn" onClick={() => setShowDeleteConfirm(true)}>
+              <button
+                className="delete-btn"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
                 Delete
               </button>
             </>
@@ -386,18 +400,28 @@ export function UnionPlaylistEditor({
             No tracks available. Add source playlists to see their tracks here.
           </div>
         ) : (
-          <TrackTable tracks={tracks} onPlayTrack={handlePlayTrack} />
+          <TrackTable
+            tracks={tracks}
+            onPlayTrack={handlePlayTrack}
+            onPlayFromTrack={handlePlayFromTrack}
+          />
         )}
       </div>
 
       {/* Delete confirmation modal */}
       {showDeleteConfirm && (
-        <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
+        <div
+          className="modal-overlay"
+          onClick={() => setShowDeleteConfirm(false)}
+        >
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Delete Playlist</h3>
-            <p>Are you sure you want to delete "{playlist.name}"? This cannot be undone.</p>
+            <p>
+              Are you sure you want to delete "{playlist.name}"? This cannot be
+              undone.
+            </p>
             <div className="modal-actions">
-              <button 
+              <button
                 className="confirm-btn"
                 onClick={() => {
                   setShowDeleteConfirm(false);
@@ -406,7 +430,7 @@ export function UnionPlaylistEditor({
               >
                 Delete
               </button>
-              <button 
+              <button
                 className="cancel-btn"
                 onClick={() => setShowDeleteConfirm(false)}
               >
@@ -419,18 +443,21 @@ export function UnionPlaylistEditor({
 
       {/* Remove source confirmation modal */}
       {showRemoveSourceConfirm !== null && (
-        <div className="modal-overlay" onClick={() => setShowRemoveSourceConfirm(null)}>
+        <div
+          className="modal-overlay"
+          onClick={() => setShowRemoveSourceConfirm(null)}
+        >
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h3>Remove Playlist</h3>
             <p>Remove this playlist from the union?</p>
             <div className="modal-actions">
-              <button 
+              <button
                 className="confirm-btn"
                 onClick={() => handleRemoveSource(showRemoveSourceConfirm)}
               >
                 Remove
               </button>
-              <button 
+              <button
                 className="cancel-btn"
                 onClick={() => setShowRemoveSourceConfirm(null)}
               >
