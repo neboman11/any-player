@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { TrackTable } from "./TrackTable";
-import { useCustomPlaylistTracks } from "../hooks";
+import { PlaylistHeader, DeleteConfirmModal } from "./shared";
+import { useCustomPlaylistTracks, usePlaylistEditor } from "../hooks";
 import type { CustomPlaylist, PlaylistTrack, Track } from "../types";
 import "./CustomPlaylistEditor.css";
 
@@ -23,46 +24,16 @@ export function CustomPlaylistEditor({
 }: CustomPlaylistEditorProps) {
   const { tracks, loading, removeTrack, reorderTrack, refresh } =
     useCustomPlaylistTracks(playlist.id);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState(playlist.name);
-  const [editDescription, setEditDescription] = useState(
-    playlist.description || "",
-  );
+
+  const editorState = usePlaylistEditor({
+    playlistName: playlist.name,
+    playlistDescription: playlist.description,
+    onUpdate,
+    onDelete,
+    onBack,
+  });
+
   const [showAddTrack, setShowAddTrack] = useState(false);
-
-  const handleSaveEdit = async () => {
-    try {
-      await onUpdate(
-        editName !== playlist.name ? editName : null,
-        editDescription !== (playlist.description || "")
-          ? editDescription
-          : null,
-        null,
-      );
-      setIsEditing(false);
-    } catch (err) {
-      console.error("Failed to update playlist:", err);
-      alert("Failed to update playlist");
-    }
-  };
-
-  const handleDelete = async () => {
-    if (
-      !confirm(
-        `Are you sure you want to delete "${playlist.name}"? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
-
-    try {
-      await onDelete();
-      onBack();
-    } catch (err) {
-      console.error("Failed to delete playlist:", err);
-      alert("Failed to delete playlist");
-    }
-  };
 
   const handlePlayTrack = (track: PlaylistTrack | Track) => {
     // TODO: Implement track playback
@@ -73,62 +44,27 @@ export function CustomPlaylistEditor({
     await refresh(true);
   };
 
+  const metaInfo = `${playlist.track_count} tracks • Created ${new Date(playlist.created_at * 1000).toLocaleDateString()}`;
+
   return (
     <div className="custom-playlist-editor">
+      <PlaylistHeader
+        isEditing={editorState.isEditing}
+        editName={editorState.editName}
+        editDescription={editorState.editDescription}
+        playlistName={playlist.name}
+        playlistDescription={playlist.description}
+        metaInfo={metaInfo}
+        onEditNameChange={editorState.setEditName}
+        onEditDescriptionChange={editorState.setEditDescription}
+        onSave={editorState.handleSaveEdit}
+        onCancelEdit={editorState.handleCancelEdit}
+        onBack={onBack}
+      />
+
       <div className="editor-header">
-        <button className="back-btn" onClick={onBack}>
-          ← Back
-        </button>
-
-        <div className="playlist-info">
-          {isEditing ? (
-            <div className="edit-form">
-              <input
-                type="text"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                placeholder="Playlist name"
-                className="edit-name-input"
-              />
-              <textarea
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="Description (optional)"
-                className="edit-description-input"
-                rows={3}
-              />
-              <div className="edit-actions">
-                <button className="save-btn" onClick={handleSaveEdit}>
-                  Save
-                </button>
-                <button
-                  className="cancel-btn"
-                  onClick={() => {
-                    setIsEditing(false);
-                    setEditName(playlist.name);
-                    setEditDescription(playlist.description || "");
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <h2>{playlist.name}</h2>
-              {playlist.description && (
-                <p className="playlist-description">{playlist.description}</p>
-              )}
-              <p className="playlist-meta">
-                {playlist.track_count} tracks • Created{" "}
-                {new Date(playlist.created_at * 1000).toLocaleDateString()}
-              </p>
-            </>
-          )}
-        </div>
-
         <div className="header-actions">
-          {!isEditing && (
+          {!editorState.isEditing && (
             <>
               <button
                 className="add-track-btn"
@@ -143,10 +79,16 @@ export function CustomPlaylistEditor({
               >
                 ⟳ Refresh
               </button>
-              <button className="edit-btn" onClick={() => setIsEditing(true)}>
+              <button
+                className="edit-btn"
+                onClick={() => editorState.setIsEditing(true)}
+              >
                 Edit
               </button>
-              <button className="delete-btn" onClick={handleDelete}>
+              <button
+                className="delete-btn"
+                onClick={() => editorState.setShowDeleteConfirm(true)}
+              >
                 Delete
               </button>
             </>
@@ -176,6 +118,14 @@ export function CustomPlaylistEditor({
           />
         )}
       </div>
+
+      <DeleteConfirmModal
+        show={editorState.showDeleteConfirm}
+        title="Delete Playlist"
+        message={`Are you sure you want to delete "${playlist.name}"? This cannot be undone.`}
+        onConfirm={editorState.handleDelete}
+        onCancel={() => editorState.setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

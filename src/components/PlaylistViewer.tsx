@@ -1,9 +1,13 @@
 import { useState, useEffect } from "react";
-import toast from "react-hot-toast";
 import { TrackTable } from "./TrackTable";
-import { useCustomPlaylistTracks } from "../hooks";
-import { usePlayback } from "../hooks";
+import { PlaylistHeader, DeleteConfirmModal, SearchBar } from "./shared";
+import {
+  useCustomPlaylistTracks,
+  usePlayback,
+  usePlaylistEditor,
+} from "../hooks";
 import { tauriAPI } from "../api";
+import { filterTracks } from "../utils/trackFilters";
 import type { CustomPlaylist, PlaylistTrack, Playlist, Track } from "../types";
 import "./CustomPlaylistEditor.css";
 
@@ -35,13 +39,16 @@ export function PlaylistViewer({
     refresh: refreshCustomTracks,
   } = useCustomPlaylistTracks(customPlaylistId);
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState(playlist.name);
-  const [editDescription, setEditDescription] = useState(
-    "description" in playlist ? playlist.description || "" : "",
-  );
+  const editorState = usePlaylistEditor({
+    playlistName: playlist.name,
+    playlistDescription:
+      "description" in playlist ? playlist.description : null,
+    onUpdate,
+    onDelete,
+    onBack,
+  });
+
   const [showAddTrack, setShowAddTrack] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [regularTracks, setRegularTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -70,38 +77,6 @@ export function PlaylistViewer({
       void loadTracks();
     }
   }, [isCustom, playlist.id, playlist]);
-
-  const handleSaveEdit = async () => {
-    if (!onUpdate) return;
-    try {
-      await onUpdate(
-        editName !== playlist.name ? editName : null,
-        editDescription !==
-          ("description" in playlist ? playlist.description || "" : "")
-          ? editDescription
-          : null,
-        null,
-      );
-      setIsEditing(false);
-      toast.success("Playlist updated successfully!");
-    } catch (err) {
-      console.error("Failed to update playlist:", err);
-      toast.error("Failed to update playlist");
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!onDelete) return;
-
-    try {
-      await onDelete();
-      onBack();
-      toast.success("Playlist deleted");
-    } catch (err) {
-      console.error("Failed to delete playlist:", err);
-      toast.error("Failed to delete playlist");
-    }
-  };
 
   const handleRefresh = async () => {
     if (isCustom && refreshCustomTracks) {
@@ -172,88 +147,35 @@ export function PlaylistViewer({
   const trackCount = "track_count" in playlist ? playlist.track_count : 0;
 
   // Filter tracks based on search query
-  const tracks =
-    searchQuery.trim() === ""
-      ? allTracks
-      : allTracks.filter((track) => {
-          const query = searchQuery.toLowerCase();
-          const title = track.title?.toLowerCase() || "";
-          const artist = track.artist?.toLowerCase() || "";
-          const album = track.album?.toLowerCase() || "";
-          const source =
-            ("track_source" in track
-              ? track.track_source
-              : (track as Track).source
-            )?.toLowerCase() || "";
+  const tracks = filterTracks(allTracks, searchQuery);
 
-          return (
-            title.includes(query) ||
-            artist.includes(query) ||
-            album.includes(query) ||
-            source.includes(query)
-          );
-        });
+  const playlistDescription =
+    "description" in playlist ? playlist.description : null;
+  const metaInfo = `${trackCount} tracks • ${
+    isCustom ? "You" : (playlist as Playlist).owner
+  }${
+    "created_at" in playlist
+      ? ` • Created ${new Date((playlist as CustomPlaylist).created_at * 1000).toLocaleDateString()}`
+      : ""
+  }`;
 
   return (
     <div className="custom-playlist-editor">
+      <PlaylistHeader
+        isEditing={editorState.isEditing}
+        editName={editorState.editName}
+        editDescription={editorState.editDescription}
+        playlistName={playlist.name}
+        playlistDescription={playlistDescription}
+        metaInfo={metaInfo}
+        onEditNameChange={editorState.setEditName}
+        onEditDescriptionChange={editorState.setEditDescription}
+        onSave={editorState.handleSaveEdit}
+        onCancelEdit={editorState.handleCancelEdit}
+        onBack={onBack}
+      />
+
       <div className="editor-header">
-        <button className="back-btn" onClick={onBack}>
-          ← Back
-        </button>
-
-        <div className="playlist-info">
-          {isEditing && isCustom ? (
-            <div className="edit-form">
-              <input
-                type="text"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                placeholder="Playlist name"
-                className="edit-name-input"
-              />
-              <textarea
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="Description (optional)"
-                className="edit-description-input"
-                rows={3}
-              />
-              <div className="edit-actions">
-                <button className="save-btn" onClick={handleSaveEdit}>
-                  Save
-                </button>
-                <button
-                  className="cancel-btn"
-                  onClick={() => {
-                    setIsEditing(false);
-                    setEditName(playlist.name);
-                    setEditDescription(
-                      "description" in playlist
-                        ? playlist.description || ""
-                        : "",
-                    );
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <h2>{playlist.name}</h2>
-              {"description" in playlist && playlist.description && (
-                <p className="playlist-description">{playlist.description}</p>
-              )}
-              <p className="playlist-meta">
-                {trackCount} tracks •{" "}
-                {isCustom ? "You" : (playlist as Playlist).owner}
-                {"created_at" in playlist &&
-                  ` • Created ${new Date((playlist as CustomPlaylist).created_at * 1000).toLocaleDateString()}`}
-              </p>
-            </>
-          )}
-        </div>
-
         <div className="header-actions">
           <button className="play-btn" onClick={handlePlayPlaylist}>
             ▶ Play All
@@ -265,7 +187,7 @@ export function PlaylistViewer({
           >
             ⟳ Refresh
           </button>
-          {isCustom && !isEditing && (
+          {isCustom && !editorState.isEditing && (
             <>
               <button
                 className="add-track-btn"
@@ -273,12 +195,15 @@ export function PlaylistViewer({
               >
                 + Add Track
               </button>
-              <button className="edit-btn" onClick={() => setIsEditing(true)}>
+              <button
+                className="edit-btn"
+                onClick={() => editorState.setIsEditing(true)}
+              >
                 Edit
               </button>
               <button
                 className="delete-btn"
-                onClick={() => setShowDeleteConfirm(true)}
+                onClick={() => editorState.setShowDeleteConfirm(true)}
               >
                 Delete
               </button>
@@ -298,26 +223,7 @@ export function PlaylistViewer({
       )}
 
       <div className="tracks-section">
-        <div
-          className="search-container"
-          style={{ padding: "10px", marginBottom: "10px" }}
-        >
-          <input
-            type="text"
-            placeholder="Search tracks..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "8px 12px",
-              fontSize: "14px",
-              border: "1px solid #444",
-              borderRadius: "4px",
-              backgroundColor: "#1e1e1e",
-              color: "#fff",
-            }}
-          />
-        </div>
+        <SearchBar value={searchQuery} onChange={setSearchQuery} />
         {isLoading ? (
           <div className="loading">Loading tracks...</div>
         ) : (
@@ -331,38 +237,13 @@ export function PlaylistViewer({
         )}
       </div>
 
-      {/* Delete confirmation modal */}
-      {showDeleteConfirm && (
-        <div
-          className="modal-overlay"
-          onClick={() => setShowDeleteConfirm(false)}
-        >
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Delete Playlist</h3>
-            <p>
-              Are you sure you want to delete "{playlist.name}"? This cannot be
-              undone.
-            </p>
-            <div className="modal-actions">
-              <button
-                className="confirm-btn"
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  handleDelete();
-                }}
-              >
-                Delete
-              </button>
-              <button
-                className="cancel-btn"
-                onClick={() => setShowDeleteConfirm(false)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteConfirmModal
+        show={editorState.showDeleteConfirm}
+        title="Delete Playlist"
+        message={`Are you sure you want to delete "${playlist.name}"? This cannot be undone.`}
+        onConfirm={editorState.handleDelete}
+        onCancel={() => editorState.setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }
