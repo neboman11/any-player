@@ -1,8 +1,12 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { usePlayback } from "../hooks";
 
 export function BottomPlayBar() {
   const playback = usePlayback();
+  const [imageLoadError, setImageLoadError] = useState(false);
+  const [lastImageUrl, setLastImageUrl] = useState<string | undefined>(
+    undefined,
+  );
 
   const progressPercentage = useMemo(() => {
     if (!playback.duration || playback.duration === 0) return 0;
@@ -33,6 +37,14 @@ export function BottomPlayBar() {
 
   const currentTrack = playback.playbackStatus.current_track;
 
+  // Reset image load error when track image URL changes
+  if (currentTrack.image_url !== lastImageUrl) {
+    setLastImageUrl(currentTrack.image_url);
+    if (imageLoadError) {
+      setImageLoadError(false);
+    }
+  }
+
   return (
     <div className="bottom-play-bar">
       <div className="bottom-bar-progress">
@@ -50,17 +62,17 @@ export function BottomPlayBar() {
       <div className="bottom-bar-content">
         <div className="bottom-bar-track-info">
           <div className="bottom-bar-album-art">
-            {currentTrack.image_url ? (
+            {currentTrack.image_url && !imageLoadError ? (
               <img
                 src={currentTrack.image_url}
                 alt={`${currentTrack.album || currentTrack.title} cover`}
                 className="bottom-bar-album-art-image"
-                onError={(e) => {
+                onError={() => {
                   console.error(
                     "Failed to load bottom bar album art:",
                     currentTrack.image_url,
                   );
-                  e.currentTarget.style.display = "none";
+                  setImageLoadError(true);
                 }}
               />
             ) : (

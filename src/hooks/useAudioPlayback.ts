@@ -87,7 +87,11 @@ export function useAudioPlayback() {
 
   const getDuration = useCallback(() => {
     const audio = getAudioElement();
-    return Math.floor(audio.duration * 1000);
+    const durationSeconds = audio.duration;
+    if (!Number.isFinite(durationSeconds)) {
+      return 0;
+    }
+    return Math.floor(durationSeconds * 1000);
   }, []);
 
   const cleanup = useCallback(() => {
