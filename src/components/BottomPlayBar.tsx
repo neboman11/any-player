@@ -4,9 +4,8 @@ import { usePlayback } from "../hooks";
 export function BottomPlayBar() {
   const playback = usePlayback();
   const [imageLoadError, setImageLoadError] = useState(false);
-  const [lastImageUrl, setLastImageUrl] = useState<string | undefined>(
-    undefined,
-  );
+
+  const currentTrack = playback.playbackStatus?.current_track;
 
   const progressPercentage = useMemo(() => {
     if (!playback.duration || playback.duration === 0) return 0;
@@ -31,18 +30,8 @@ export function BottomPlayBar() {
   );
 
   // Don't show the bar if there's no current track
-  if (!playback.playbackStatus?.current_track) {
+  if (!currentTrack) {
     return null;
-  }
-
-  const currentTrack = playback.playbackStatus.current_track;
-
-  // Reset image load error when track image URL changes
-  if (currentTrack.image_url !== lastImageUrl) {
-    setLastImageUrl(currentTrack.image_url);
-    if (imageLoadError) {
-      setImageLoadError(false);
-    }
   }
 
   return (
@@ -64,6 +53,7 @@ export function BottomPlayBar() {
           <div className="bottom-bar-album-art">
             {currentTrack.image_url && !imageLoadError ? (
               <img
+                key={currentTrack.image_url}
                 src={currentTrack.image_url}
                 alt={`${currentTrack.album || currentTrack.title} cover`}
                 className="bottom-bar-album-art-image"
@@ -97,13 +87,13 @@ export function BottomPlayBar() {
           <button
             className="bottom-bar-control-btn bottom-bar-play-pause"
             title={
-              playback.playbackStatus.state === "playing" ? "Pause" : "Play"
+              playback.playbackStatus?.state === "playing" ? "Pause" : "Play"
             }
             onClick={playback.togglePlayPause}
             disabled={playback.isLoading}
           >
             <span>
-              {playback.playbackStatus.state === "playing" ? "⏸" : "▶"}
+              {playback.playbackStatus?.state === "playing" ? "⏸" : "▶"}
             </span>
           </button>
           <button

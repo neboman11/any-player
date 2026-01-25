@@ -137,7 +137,10 @@ export function PlaylistViewer({
     try {
       // When using filtered tracks, we need to find the original index in the full tracks array
       const unfilteredTracks = isCustom ? customTracks : regularTracks;
-      const trackToPlay = tracks[index];
+      const filteredTracks = isCustom
+        ? filterTracks(customTracks, searchQuery)
+        : filterTracks(regularTracks, searchQuery);
+      const trackToPlay = filteredTracks[index];
       const originalIndex = unfilteredTracks.findIndex(
         (t) => t.id === trackToPlay.id,
       );
