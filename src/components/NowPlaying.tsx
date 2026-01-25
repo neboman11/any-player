@@ -8,9 +8,6 @@ export function NowPlaying() {
   const playback = usePlayback();
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [imageLoadError, setImageLoadError] = useState(false);
-  const [lastImageUrl, setLastImageUrl] = useState<string | undefined>(
-    undefined,
-  );
 
   const currentTrack = useMemo(() => {
     if (playback.playbackStatus?.current_track) {
@@ -31,14 +28,6 @@ export function NowPlaying() {
     };
   }, [playback.playbackStatus?.current_track]);
 
-  // Reset image load error when track image URL changes
-  if (currentTrack.image_url !== lastImageUrl) {
-    setLastImageUrl(currentTrack.image_url);
-    if (imageLoadError) {
-      setImageLoadError(false);
-    }
-  }
-
   return (
     <section id="now-playing" className="page active">
       <div className="now-playing-wrapper">
@@ -46,6 +35,7 @@ export function NowPlaying() {
           <div className="album-art">
             {currentTrack.image_url && !imageLoadError ? (
               <img
+                key={currentTrack.image_url}
                 src={currentTrack.image_url}
                 alt={`${currentTrack.album || currentTrack.title} cover`}
                 className="album-art-image"
