@@ -634,6 +634,11 @@ impl AudioPlayer {
             if let Ok(s) = sink_handle.try_lock() {
                 s.pause();
             }
+        } else {
+            // Start playback if not paused
+            if let Ok(s) = sink_handle.try_lock() {
+                s.play();
+            }
         }
 
         // Convert to f32 samples
@@ -960,7 +965,7 @@ impl AudioPlayer {
         // Load the track - pass false to start paused, and the initial position in milliseconds
         player.load(
             librespot_core::SpotifyUri::Track { id: spotify_id },
-            false, // Don't auto-play, start paused
+            false, // Don't auto-play, start paused - we'll call player.play() below
             initial_position_ms as u32,
         );
 
