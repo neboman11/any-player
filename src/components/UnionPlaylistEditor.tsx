@@ -374,10 +374,12 @@ export function UnionPlaylistEditor({
         title="Remove Playlist"
         message="Remove this playlist from the union?"
         confirmLabel="Remove"
-        onConfirm={() =>
-          showRemoveSourceConfirm !== null &&
-          handleRemoveSource(showRemoveSourceConfirm)
-        }
+        onConfirm={() => {
+          if (showRemoveSourceConfirm === null) {
+            return;
+          }
+          handleRemoveSource(showRemoveSourceConfirm);
+        }}
         onCancel={() => setShowRemoveSourceConfirm(null)}
       />
     </div>
