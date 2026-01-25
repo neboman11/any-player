@@ -36,7 +36,45 @@ pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackS
         duration: t.duration_ms,
         source: t.source.to_string(),
         url: t.url,
+        image_url: t.image_url,
     });
+
+    // Get queue tracks - only return tracks after the current index
+    // If shuffle is enabled, use shuffle_order to determine the actual play order
+    let queue_tracks: Vec<TrackInfo> = if info.shuffle && !info.shuffle_order.is_empty() {
+        // Get remaining tracks in shuffle order
+        info.shuffle_order
+            .iter()
+            .skip(info.current_index + 1)
+            .filter_map(|&idx| info.queue.get(idx))
+            .map(|t| TrackInfo {
+                id: t.id.clone(),
+                title: t.title.clone(),
+                artist: t.artist.clone(),
+                album: t.album.clone(),
+                duration: t.duration_ms,
+                source: t.source.to_string(),
+                url: t.url.clone(),
+                image_url: t.image_url.clone(),
+            })
+            .collect()
+    } else {
+        // Get remaining tracks in normal order
+        info.queue
+            .into_iter()
+            .skip(info.current_index + 1)
+            .map(|t| TrackInfo {
+                id: t.id,
+                title: t.title,
+                artist: t.artist,
+                album: t.album,
+                duration: t.duration_ms,
+                source: t.source.to_string(),
+                url: t.url,
+                image_url: t.image_url,
+            })
+            .collect()
+    };
 
     Ok(PlaybackStatus {
         state: state_str,
@@ -46,6 +84,7 @@ pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackS
         shuffle: info.shuffle,
         repeat_mode: repeat_str,
         duration,
+        queue: queue_tracks,
     })
 }
 

@@ -51,6 +51,29 @@
   color: #888;
 }
 
+.track-table .play-column {
+  width: 50px;
+  text-align: center;
+}
+
+.track-table .play-track-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.25rem 0.5rem;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+  border-radius: 4px;
+}
+
+.track-table .play-track-btn:hover {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.1);
+  transform: scale(1.1);
+}
+
 .track-table .actions-column {
   width: 80px;
   text-align: center;

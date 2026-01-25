@@ -100,8 +100,42 @@ export class TauriAPI {
       duration: track.duration_ms || 0,
       source: track.source,
       url: track.url || null,
+      image_url: track.image_url || null,
     }));
     return invoke<void>("play_tracks_immediate", { tracks: trackInfos });
+  }
+
+  async playPlaylistFromTrack(
+    tracks: Track[] | PlaylistTrack[],
+    startIndex: number,
+  ): Promise<void> {
+    // Convert tracks to Track format if they're PlaylistTrack
+    const normalizedTracks: Track[] = tracks.map((track) => {
+      if ("track_source" in track) {
+        // This is a PlaylistTrack
+        return {
+          id: String(track.track_id),
+          title: track.title,
+          artist: track.artist,
+          album: track.album || undefined,
+          duration_ms: track.duration_ms || 0,
+          source: track.track_source as "spotify" | "jellyfin" | "custom",
+          url: track.url,
+          image_url: track.image_url || undefined,
+        };
+      } else {
+        // This is already a Track
+        return track;
+      }
+    });
+
+    // Reorder tracks so the selected track is first, followed by the rest
+    const reorderedTracks = [
+      ...normalizedTracks.slice(startIndex),
+      ...normalizedTracks.slice(0, startIndex),
+    ];
+
+    return this.playTracksImmediate(reorderedTracks);
   }
 
   // Spotify commands

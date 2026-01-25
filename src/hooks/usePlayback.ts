@@ -4,7 +4,7 @@ import type { PlaybackStatus, RepeatMode } from "../types";
 
 export function usePlayback() {
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(
-    null
+    null,
   );
   const [isPlaying, setIsPlaying] = useState(false);
   const [shuffle, setShuffle] = useState(false);
@@ -121,7 +121,7 @@ export function usePlayback() {
         setIsLoading(false);
       }
     },
-    [updateStatus]
+    [updateStatus],
   );
 
   // Poll for status updates

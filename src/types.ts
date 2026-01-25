@@ -12,6 +12,7 @@ export interface PlaybackStatus {
   current_track: Track | null;
   position: number;
   duration: number;
+  queue: Track[];
 }
 
 export interface Track {
@@ -22,6 +23,7 @@ export interface Track {
   duration_ms?: number;
   source: "spotify" | "jellyfin" | "custom";
   url?: string;
+  image_url?: string;
 }
 
 export interface Playlist {
@@ -67,6 +69,7 @@ export interface PlaylistTrack {
   album: string | null;
   duration_ms: number | null;
   image_url: string | null;
+  url?: string;
 }
 
 export interface ColumnPreferences {
