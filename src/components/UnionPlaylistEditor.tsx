@@ -1,13 +1,16 @@
 import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import { TrackTable } from "./TrackTable";
+import { PlaylistHeader, DeleteConfirmModal, SearchBar } from "./shared";
 import {
   useUnionPlaylistSources,
   useUnionPlaylistTracks,
   useCustomPlaylists,
   usePlayback,
+  usePlaylistEditor,
 } from "../hooks";
 import { tauriAPI } from "../api";
+import { filterTracks } from "../utils/trackFilters";
 import type {
   CustomPlaylist,
   Track,
@@ -47,15 +50,18 @@ export function UnionPlaylistEditor({
   } = useUnionPlaylistTracks(playlist.id);
   const { playlists: customPlaylists } = useCustomPlaylists();
   const playback = usePlayback();
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState(playlist.name);
-  const [editDescription, setEditDescription] = useState(
-    playlist.description || "",
-  );
+
+  const editorState = usePlaylistEditor({
+    playlistName: playlist.name,
+    playlistDescription: playlist.description,
+    onUpdate,
+    onDelete,
+    onBack,
+  });
+
   const [showAddSource, setShowAddSource] = useState(false);
   const [selectedSourceType, setSelectedSourceType] = useState<string>("all");
   const [availablePlaylists, setAvailablePlaylists] = useState<Playlist[]>([]);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRemoveSourceConfirm, setShowRemoveSourceConfirm] = useState<
     number | null
   >(null);
@@ -111,33 +117,6 @@ export function UnionPlaylistEditor({
       setAvailablePlaylists(playlists);
     } catch (err) {
       console.error("Failed to load playlists:", err);
-    }
-  };
-
-  const handleSaveEdit = async () => {
-    try {
-      await onUpdate(
-        editName !== playlist.name ? editName : null,
-        editDescription !== (playlist.description || "")
-          ? editDescription
-          : null,
-        null,
-      );
-      setIsEditing(false);
-    } catch (err) {
-      console.error("Failed to update playlist:", err);
-      toast.error("Failed to update playlist");
-    }
-  };
-
-  const handleDelete = async () => {
-    try {
-      await onDelete();
-      onBack();
-      toast.success("Playlist deleted");
-    } catch (err) {
-      console.error("Failed to delete playlist:", err);
-      toast.error("Failed to delete playlist");
     }
   };
 
@@ -228,83 +207,30 @@ export function UnionPlaylistEditor({
   };
 
   // Filter tracks based on search query
-  const filteredTracks =
-    searchQuery.trim() === ""
-      ? tracks
-      : tracks.filter((track) => {
-          const query = searchQuery.toLowerCase();
-          const title = track.title?.toLowerCase() || "";
-          const artist = track.artist?.toLowerCase() || "";
-          const album = track.album?.toLowerCase() || "";
-          const source = (track as Track).source?.toLowerCase() || "";
+  const filteredTracks = filterTracks(tracks, searchQuery);
 
-          return (
-            title.includes(query) ||
-            artist.includes(query) ||
-            album.includes(query) ||
-            source.includes(query)
-          );
-        });
+  const metaInfo = `${sources.length} source playlists • ${tracks.length} total tracks • Created ${new Date(playlist.created_at * 1000).toLocaleDateString()}`;
 
   return (
     <div className="custom-playlist-editor">
+      <PlaylistHeader
+        isEditing={editorState.isEditing}
+        editName={editorState.editName}
+        editDescription={editorState.editDescription}
+        playlistName={playlist.name}
+        playlistDescription={playlist.description}
+        metaInfo={metaInfo}
+        badge={<span className="union-badge">UNION</span>}
+        onEditNameChange={editorState.setEditName}
+        onEditDescriptionChange={editorState.setEditDescription}
+        onSave={editorState.handleSaveEdit}
+        onCancelEdit={editorState.handleCancelEdit}
+        onBack={onBack}
+      />
+
       <div className="editor-header">
-        <button className="back-btn" onClick={onBack}>
-          ← Back
-        </button>
-
-        <div className="playlist-info">
-          {isEditing ? (
-            <div className="edit-form">
-              <input
-                type="text"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                placeholder="Playlist name"
-                className="edit-name-input"
-              />
-              <textarea
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="Description (optional)"
-                className="edit-description-input"
-                rows={3}
-              />
-              <div className="edit-actions">
-                <button className="save-btn" onClick={handleSaveEdit}>
-                  Save
-                </button>
-                <button
-                  className="cancel-btn"
-                  onClick={() => {
-                    setIsEditing(false);
-                    setEditName(playlist.name);
-                    setEditDescription(playlist.description || "");
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <h2>
-                {playlist.name} <span className="union-badge">UNION</span>
-              </h2>
-              {playlist.description && (
-                <p className="playlist-description">{playlist.description}</p>
-              )}
-              <p className="playlist-meta">
-                {sources.length} source playlists • {tracks.length} total tracks
-                • Created{" "}
-                {new Date(playlist.created_at * 1000).toLocaleDateString()}
-              </p>
-            </>
-          )}
-        </div>
-
         <div className="header-actions">
-          {!isEditing && (
+          {!editorState.isEditing && (
             <>
               <button className="play-btn" onClick={handlePlayPlaylist}>
                 ▶ Play All
@@ -322,12 +248,15 @@ export function UnionPlaylistEditor({
               >
                 ⟳ Refresh
               </button>
-              <button className="edit-btn" onClick={() => setIsEditing(true)}>
+              <button
+                className="edit-btn"
+                onClick={() => editorState.setIsEditing(true)}
+              >
                 Edit
               </button>
               <button
                 className="delete-btn"
-                onClick={() => setShowDeleteConfirm(true)}
+                onClick={() => editorState.setShowDeleteConfirm(true)}
               >
                 Delete
               </button>
@@ -413,26 +342,7 @@ export function UnionPlaylistEditor({
       {/* Combined tracks section */}
       <div className="tracks-section">
         <h3>Combined Tracks ({tracks.length})</h3>
-        <div
-          className="search-container"
-          style={{ padding: "10px", marginBottom: "10px" }}
-        >
-          <input
-            type="text"
-            placeholder="Search tracks..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "8px 12px",
-              fontSize: "14px",
-              border: "1px solid #444",
-              borderRadius: "4px",
-              backgroundColor: "#1e1e1e",
-              color: "#fff",
-            }}
-          />
-        </div>
+        <SearchBar value={searchQuery} onChange={setSearchQuery} />
         {tracksLoading ? (
           <div className="loading">Loading tracks...</div>
         ) : tracks.length === 0 ? (
@@ -448,65 +358,25 @@ export function UnionPlaylistEditor({
         )}
       </div>
 
-      {/* Delete confirmation modal */}
-      {showDeleteConfirm && (
-        <div
-          className="modal-overlay"
-          onClick={() => setShowDeleteConfirm(false)}
-        >
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Delete Playlist</h3>
-            <p>
-              Are you sure you want to delete "{playlist.name}"? This cannot be
-              undone.
-            </p>
-            <div className="modal-actions">
-              <button
-                className="confirm-btn"
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  handleDelete();
-                }}
-              >
-                Delete
-              </button>
-              <button
-                className="cancel-btn"
-                onClick={() => setShowDeleteConfirm(false)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteConfirmModal
+        show={editorState.showDeleteConfirm}
+        title="Delete Playlist"
+        message={`Are you sure you want to delete "${playlist.name}"? This cannot be undone.`}
+        onConfirm={editorState.handleDelete}
+        onCancel={() => editorState.setShowDeleteConfirm(false)}
+      />
 
-      {/* Remove source confirmation modal */}
-      {showRemoveSourceConfirm !== null && (
-        <div
-          className="modal-overlay"
-          onClick={() => setShowRemoveSourceConfirm(null)}
-        >
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Remove Playlist</h3>
-            <p>Remove this playlist from the union?</p>
-            <div className="modal-actions">
-              <button
-                className="confirm-btn"
-                onClick={() => handleRemoveSource(showRemoveSourceConfirm)}
-              >
-                Remove
-              </button>
-              <button
-                className="cancel-btn"
-                onClick={() => setShowRemoveSourceConfirm(null)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DeleteConfirmModal
+        show={showRemoveSourceConfirm !== null}
+        title="Remove Playlist"
+        message="Remove this playlist from the union?"
+        confirmLabel="Remove"
+        onConfirm={() =>
+          showRemoveSourceConfirm !== null &&
+          handleRemoveSource(showRemoveSourceConfirm)
+        }
+        onCancel={() => setShowRemoveSourceConfirm(null)}
+      />
     </div>
   );
 }

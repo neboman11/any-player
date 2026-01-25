@@ -10,3 +10,4 @@ export {
   useUnionPlaylistSources,
   useUnionPlaylistTracks,
 } from "./useCustomPlaylists";
+export { usePlaylistEditor } from "./usePlaylistEditor";
