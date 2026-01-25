@@ -142,12 +142,13 @@ export function PlaylistViewer({
     }
   };
 
-  const allTracks = isCustom ? customTracks : regularTracks;
   const isLoading = isCustom ? customLoading : loading;
   const trackCount = "track_count" in playlist ? playlist.track_count : 0;
 
-  // Filter tracks based on search query
-  const tracks = filterTracks(allTracks, searchQuery);
+  // Filter tracks based on search query - handle types separately
+  const tracks = isCustom
+    ? filterTracks(customTracks, searchQuery)
+    : filterTracks(regularTracks, searchQuery);
 
   const playlistDescription =
     "description" in playlist ? playlist.description : null;

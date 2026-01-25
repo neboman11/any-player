@@ -110,18 +110,18 @@ export class TauriAPI {
     startIndex: number,
   ): Promise<void> {
     // Convert tracks to Track format if they're PlaylistTrack
-    const normalizedTracks = tracks.map((track) => {
+    const normalizedTracks: Track[] = tracks.map((track) => {
       if ("track_source" in track) {
         // This is a PlaylistTrack
         return {
-          id: track.id,
+          id: String(track.track_id),
           title: track.title,
           artist: track.artist,
-          album: track.album || "",
+          album: track.album || undefined,
           duration_ms: track.duration_ms || 0,
-          source: track.track_source,
-          url: track.url || null,
-          image_url: track.image_url || null,
+          source: track.track_source as "spotify" | "jellyfin" | "custom",
+          url: track.url,
+          image_url: track.image_url || undefined,
         };
       } else {
         // This is already a Track

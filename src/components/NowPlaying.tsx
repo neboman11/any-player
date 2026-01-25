@@ -13,7 +13,7 @@ export function NowPlaying() {
       const track = {
         title: playback.playbackStatus.current_track.title,
         artist: playback.playbackStatus.current_track.artist,
-        album: playback.playbackStatus.current_track.album,
+        album: playback.playbackStatus.current_track.album || undefined,
         image_url: playback.playbackStatus.current_track.image_url,
       };
       console.log("Current track image_url:", track.image_url);
@@ -22,6 +22,7 @@ export function NowPlaying() {
     return {
       title: "No track playing",
       artist: "Select a track to play",
+      album: undefined,
       image_url: undefined,
     };
   }, [playback.playbackStatus?.current_track]);
@@ -58,7 +59,7 @@ export function NowPlaying() {
             <h2 id="track-title">{currentTrack.title}</h2>
             <p id="track-artist">{currentTrack.artist}</p>
             <p id="track-album" className="album-name">
-              {currentTrack.album}
+              {currentTrack.album || ""}
             </p>
           </div>
           <ProgressBar
