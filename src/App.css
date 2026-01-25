@@ -1175,3 +1175,19 @@ input[type="range"] {
   text-align: right;
 }
 
+/* SearchBar styles */
+.search-container {
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.search-container input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background-color: #1e1e1e;
+  color: #fff;
+}
+

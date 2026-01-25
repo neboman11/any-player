@@ -180,7 +180,10 @@ export function UnionPlaylistEditor({
 
   const handlePlayFromTrack = async (index: number) => {
     try {
-      await tauriAPI.playPlaylistFromTrack(tracks, index);
+      // When using filtered tracks, we need to find the original index in the full tracks array
+      const trackToPlay = filteredTracks[index];
+      const originalIndex = tracks.findIndex((t) => t.id === trackToPlay.id);
+      await tauriAPI.playPlaylistFromTrack(tracks, originalIndex);
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play from track:", err);
