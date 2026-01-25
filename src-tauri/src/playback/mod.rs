@@ -648,10 +648,8 @@ impl AudioPlayer {
             if let Ok(s) = sink_handle.try_lock() {
                 s.append(source);
             }
-        } else {
-            if let Ok(s) = sink_handle.try_lock() {
-                s.append(source);
-            }
+        } else if let Ok(s) = sink_handle.try_lock() {
+            s.append(source);
         }
 
         // Track playback progress - initialize from handle position for restore support
