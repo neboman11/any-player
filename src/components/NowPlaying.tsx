@@ -7,6 +7,10 @@ import { VolumeControl } from "./VolumeControl";
 export function NowPlaying() {
   const playback = usePlayback();
   const [isQueueOpen, setIsQueueOpen] = useState(false);
+  const [imageLoadError, setImageLoadError] = useState(false);
+  const [lastImageUrl, setLastImageUrl] = useState<string | undefined>(
+    undefined,
+  );
 
   const currentTrack = useMemo(() => {
     if (playback.playbackStatus?.current_track) {
@@ -27,22 +31,30 @@ export function NowPlaying() {
     };
   }, [playback.playbackStatus?.current_track]);
 
+  // Reset image load error when track image URL changes
+  if (currentTrack.image_url !== lastImageUrl) {
+    setLastImageUrl(currentTrack.image_url);
+    if (imageLoadError) {
+      setImageLoadError(false);
+    }
+  }
+
   return (
     <section id="now-playing" className="page active">
       <div className="now-playing-wrapper">
         <div className="now-playing-container">
           <div className="album-art">
-            {currentTrack.image_url ? (
+            {currentTrack.image_url && !imageLoadError ? (
               <img
                 src={currentTrack.image_url}
                 alt={`${currentTrack.album || currentTrack.title} cover`}
                 className="album-art-image"
-                onError={(e) => {
+                onError={() => {
                   console.error(
                     "Failed to load album art:",
                     currentTrack.image_url,
                   );
-                  e.currentTarget.style.display = "none";
+                  setImageLoadError(true);
                 }}
                 onLoad={() =>
                   console.log(

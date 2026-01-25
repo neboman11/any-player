@@ -135,7 +135,13 @@ export function PlaylistViewer({
 
   const handlePlayFromTrack = async (index: number) => {
     try {
-      await tauriAPI.playPlaylistFromTrack(tracks, index);
+      // When using filtered tracks, we need to find the original index in the full tracks array
+      const unfilteredTracks = isCustom ? customTracks : regularTracks;
+      const trackToPlay = tracks[index];
+      const originalIndex = unfilteredTracks.findIndex(
+        (t) => t.id === trackToPlay.id,
+      );
+      await tauriAPI.playPlaylistFromTrack(unfilteredTracks, originalIndex);
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play from track:", err);
