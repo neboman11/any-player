@@ -15,7 +15,7 @@ export function BottomPlayBar() {
       const positionMs = (percentage / 100) * (playback.duration || 1);
       void playback.seekTo(positionMs);
     },
-    [playback.duration, playback.seekTo],
+    [playback],
   );
 
   const handleVolumeChange = useCallback(
@@ -23,7 +23,7 @@ export function BottomPlayBar() {
       const value = Number(e.target.value);
       void playback.setVolumeValue(value);
     },
-    [playback.setVolumeValue],
+    [playback],
   );
 
   // Don't show the bar if there's no current track
