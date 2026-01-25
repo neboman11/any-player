@@ -1,9 +1,9 @@
 import type { Track, PlaylistTrack } from "../types";
 
-export function filterTracks(
-  tracks: (Track | PlaylistTrack)[],
+export function filterTracks<T extends Track | PlaylistTrack>(
+  tracks: T[],
   query: string,
-): (Track | PlaylistTrack)[] {
+): T[] {
   if (query.trim() === "") return tracks;
 
   const lowerQuery = query.toLowerCase();

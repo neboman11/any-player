@@ -69,6 +69,7 @@ export interface PlaylistTrack {
   album: string | null;
   duration_ms: number | null;
   image_url: string | null;
+  url?: string;
 }
 
 export interface ColumnPreferences {
