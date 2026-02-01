@@ -363,40 +363,6 @@ impl PlaybackQueue {
         self.shuffle_order.clear();
     }
 
-    /// Validate that all indices in shuffle_order are within bounds
-    /// and regenerate if invalid. This ensures robustness if tracks are
-    /// modified after shuffle order is generated.
-    /// Only validates if there's a potential issue (mismatched lengths).
-    fn validate_shuffle_order(&mut self) {
-        if self.shuffle_order.is_empty() {
-            return;
-        }
-
-        let track_count = self.tracks.len();
-
-        // Quick check: if shuffle_order length matches track count and all tracks exist,
-        // we can skip the expensive iteration through all indices
-        if self.shuffle_order.len() == track_count {
-            // Likely valid, but still check if any index is out of bounds
-            // This is a trade-off: we still iterate, but only when lengths match
-            let max_idx = self.shuffle_order.iter().max().copied().unwrap_or(0);
-            if max_idx < track_count {
-                return; // All indices must be valid
-            }
-        }
-
-        // Either length mismatch or found an out-of-bounds index - need full validation
-        let has_invalid = self.shuffle_order.iter().any(|&idx| idx >= track_count);
-
-        if has_invalid {
-            tracing::warn!(
-                "Shuffle order contains invalid indices (track count: {}), regenerating",
-                track_count
-            );
-            self.generate_shuffle_order();
-        }
-    }
-
     /// Get the current track respecting shuffle mode
     pub fn current_track_shuffled(&self, shuffle_enabled: bool) -> Option<&Track> {
         if shuffle_enabled && !self.shuffle_order.is_empty() {
@@ -424,7 +390,6 @@ impl PlaybackQueue {
     /// Move to the next track respecting shuffle mode
     pub fn next_track_shuffled(&mut self, shuffle_enabled: bool) -> Option<&Track> {
         if shuffle_enabled && !self.shuffle_order.is_empty() {
-            self.validate_shuffle_order();
             // In shuffle mode, navigate through shuffle_order
             if self.current_index < self.shuffle_order.len() - 1 {
                 self.current_index += 1;
@@ -450,7 +415,6 @@ impl PlaybackQueue {
     /// Move to the previous track respecting shuffle mode
     pub fn previous_shuffled(&mut self, shuffle_enabled: bool) -> Option<&Track> {
         if shuffle_enabled && !self.shuffle_order.is_empty() {
-            self.validate_shuffle_order();
             // In shuffle mode, navigate through shuffle_order
             if self.current_index > 0 {
                 self.current_index -= 1;
@@ -1399,16 +1363,42 @@ impl PlaybackManager {
         }
 
         // Update queue's current_index if this track is in the queue
+        // BUT: If shuffle is enabled, we need to find the track's position in the shuffle_order,
+        // not its position in the tracks array
         {
+            let info = self.info.lock().await;
+            let shuffle_enabled = info.shuffle;
+            drop(info);
+
             let mut queue = self.queue.lock().await;
-            // Find the track in the queue and set current_index
-            if let Some(index) = queue.tracks.iter().position(|t| t.id == track.id) {
-                queue.current_index = index;
-                tracing::debug!(
-                    "Set queue current_index to {} for track: {}",
-                    index,
-                    track.title
-                );
+
+            if shuffle_enabled && !queue.shuffle_order.is_empty() {
+                // Find the shuffle position (index in shuffle_order) that points to this track
+                if let Some(actual_index) = queue.tracks.iter().position(|t| t.id == track.id) {
+                    if let Some(shuffle_pos) = queue
+                        .shuffle_order
+                        .iter()
+                        .position(|&idx| idx == actual_index)
+                    {
+                        queue.current_index = shuffle_pos;
+                        tracing::debug!(
+                            "Set queue current_index to shuffle position {} (actual index {}) for track: {}",
+                            shuffle_pos,
+                            actual_index,
+                            track.title
+                        );
+                    }
+                }
+            } else {
+                // Normal mode: find the track in the queue and set current_index
+                if let Some(index) = queue.tracks.iter().position(|t| t.id == track.id) {
+                    queue.current_index = index;
+                    tracing::debug!(
+                        "Set queue current_index to {} for track: {}",
+                        index,
+                        track.title
+                    );
+                }
             }
         }
 
