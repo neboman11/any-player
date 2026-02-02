@@ -761,6 +761,7 @@ impl AudioPlayer {
         handle: &PlaybackHandle,
         providers: Arc<Mutex<ProviderRegistry>>,
         session: Option<Session>,
+        volume: u32,
     ) -> Result<(), String> {
         // Extract clean track ID, stripping all spotify:track: prefixes
         let mut clean_id = track_id.trim_start_matches("spotify:track:").to_string();
@@ -812,6 +813,7 @@ impl AudioPlayer {
                         &track_id_for_fetch,
                         &handle_clone,
                         sess,
+                        volume,
                     )
                     .await?;
                 } else {
@@ -835,6 +837,7 @@ impl AudioPlayer {
                                 &track_id_for_fetch,
                                 &handle_clone,
                                 session,
+                                volume,
                             )
                             .await?;
                         }
@@ -848,7 +851,7 @@ impl AudioPlayer {
                                 &format!("spotify:track:{}", track_id_for_fetch),
                                 &handle_clone,
                                 None,
-                                100, // Default volume for simulation
+                                volume,
                             )
                             .await?;
                         }
@@ -903,6 +906,7 @@ impl AudioPlayer {
         track_id: &str,
         handle: &PlaybackHandle,
         _session: Session,
+        volume: u32,
     ) -> Result<(), String> {
         tracing::info!(
             "Starting real Spotify playback with librespot for: {}",
@@ -978,6 +982,13 @@ impl AudioPlayer {
                 tracing::info!(
                     "Sink handle connected to PlaybackHandle for direct pause/play control"
                 );
+
+                // Apply initial volume (0-100 scale converted to 0.0-1.0)
+                let volume_f32 = (volume.min(100) as f32) / 100.0;
+                if let Ok(s) = sink_handle.try_lock() {
+                    s.set_volume(volume_f32);
+                    tracing::info!("Set initial volume to {} ({}%)", volume_f32, volume);
+                }
 
                 // Always call player.play() to start the librespot Player state machine.
                 // This is necessary for audio data to flow and seeking to work.
@@ -1465,7 +1476,14 @@ impl PlaybackManager {
                 let track_complete_tx = self.track_complete_tx.clone();
                 let monitoring_abort = self.monitoring_task_abort.clone();
                 let state_save_tx = self.state_save_tx.clone();
-                match self.play_spotify_track(url).await {
+
+                // Get current volume
+                let volume = {
+                    let info = self.info.lock().await;
+                    info.volume
+                };
+
+                match self.play_spotify_track(url, volume).await {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
                         let info_arc = self.info.clone();
@@ -1914,7 +1932,11 @@ impl PlaybackManager {
     ///
     /// This method handles playback of full Spotify tracks for premium users.
     /// Returns a PlaybackHandle to control playback.
-    pub async fn play_spotify_track(&self, track_id: &str) -> Result<PlaybackHandle, String> {
+    pub async fn play_spotify_track(
+        &self,
+        track_id: &str,
+        volume: u32,
+    ) -> Result<PlaybackHandle, String> {
         // Check if session is initialized
         if !self.spotify_session.is_initialized().await {
             return Err(
@@ -1945,7 +1967,7 @@ impl PlaybackManager {
             let session = spotify_session_clone.get_session().await;
 
             let result = audio_player
-                .play_spotify_track(&track_id, &handle_for_spawn, providers, session)
+                .play_spotify_track(&track_id, &handle_for_spawn, providers, session, volume)
                 .await;
 
             match result {
@@ -2109,6 +2131,7 @@ impl PlaybackManager {
                         let audio_player = self.audio_player.clone();
                         let providers = self.providers.clone();
                         let spotify_session_clone = self.spotify_session.clone();
+                        let volume = saved_state.volume;
 
                         tokio::spawn(async move {
                             let session = spotify_session_clone.get_session().await;
@@ -2118,6 +2141,7 @@ impl PlaybackManager {
                                     &handle_for_spawn,
                                     providers,
                                     session,
+                                    volume,
                                 )
                                 .await;
 
