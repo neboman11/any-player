@@ -141,6 +141,27 @@ pub async fn previous_track(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Skip to a specific track in the queue by index
+#[tauri::command]
+pub async fn skip_to_queue_index(state: State<'_, AppState>, index: usize) -> Result<(), String> {
+    let playback = { state.playback.lock().await };
+    let _ = playback.skip_to_queue_index(index).await;
+
+    // Trigger eager loading for upcoming tracks in the background
+    let playback_arc = state.playback.clone();
+    let providers_arc = state.providers.clone();
+    tokio::spawn(async move {
+        let pb = playback_arc.lock().await;
+        let info = pb.get_info().await;
+        let current_idx = info.current_index;
+        drop(pb);
+
+        super::helpers::enrich_queued_tracks_eager(playback_arc, providers_arc, current_idx).await;
+    });
+
+    Ok(())
+}
+
 /// Seek to position in milliseconds
 #[tauri::command]
 pub async fn seek(state: State<'_, AppState>, position: u64) -> Result<(), String> {

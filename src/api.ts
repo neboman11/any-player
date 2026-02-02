@@ -53,6 +53,10 @@ export class TauriAPI {
     return invoke<void>("previous_track");
   }
 
+  async skipToQueueIndex(index: number): Promise<void> {
+    return invoke<void>("skip_to_queue_index", { index });
+  }
+
   async seek(position: number): Promise<void> {
     return invoke<void>("seek", { position });
   }

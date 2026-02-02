@@ -92,7 +92,11 @@ export function NowPlaying() {
               {playback.playbackStatus?.queue &&
               playback.playbackStatus.queue.length > 0 ? (
                 playback.playbackStatus.queue.map((track, index) => (
-                  <li key={`${track.id}-${index}`}>
+                  <li
+                    key={`${track.id}-${index}`}
+                    onClick={() => playback.skipToQueueIndex(index)}
+                    title="Click to play this track"
+                  >
                     <div className="queue-track-title">{track.title}</div>
                     <div className="queue-track-artist">{track.artist}</div>
                   </li>

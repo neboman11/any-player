@@ -340,6 +340,16 @@ body {
   padding: 1rem;
   border-bottom: 1px solid #3a3a3a;
   color: #999;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.queue-list li:hover {
+  background-color: #3a3a3a;
+}
+
+.queue-list li:active {
+  background-color: #4a4a4a;
 }
 
 .queue-track-title {

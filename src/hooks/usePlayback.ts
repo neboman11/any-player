@@ -69,6 +69,21 @@ export function usePlayback() {
     }
   }, [updateStatus]);
 
+  const skipToQueueIndex = useCallback(
+    async (index: number) => {
+      try {
+        setIsLoading(true);
+        await tauriAPI.skipToQueueIndex(index);
+        await updateStatus();
+      } catch (error) {
+        console.error("Error skipping to queue index:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [updateStatus],
+  );
+
   const toggleShuffle = useCallback(async () => {
     try {
       await tauriAPI.toggleShuffle();
@@ -144,6 +159,7 @@ export function usePlayback() {
     togglePlayPause,
     nextTrack,
     previousTrack,
+    skipToQueueIndex,
     toggleShuffle,
     cycleRepeatMode,
     setVolumeValue,

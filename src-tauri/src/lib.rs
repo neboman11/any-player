@@ -83,6 +83,7 @@ pub fn run() {
             commands::toggle_play_pause,
             commands::next_track,
             commands::previous_track,
+            commands::skip_to_queue_index,
             commands::seek,
             commands::set_volume,
             commands::toggle_shuffle,

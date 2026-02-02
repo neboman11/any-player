@@ -470,6 +470,45 @@ impl PlaybackQueue {
             self.previous()
         }
     }
+
+    /// Skip to a specific index in the queue
+    /// The index represents the position in the displayed queue (respecting shuffle order)
+    pub fn skip_to_queue_index(
+        &mut self,
+        queue_index: usize,
+        shuffle_enabled: bool,
+    ) -> Option<&Track> {
+        if shuffle_enabled && !self.shuffle_order.is_empty() {
+            // In shuffle mode, queue_index refers to position in shuffle_order
+            // We need to add 1 because the queue displayed to the user starts after current track
+            let target_shuffle_index = self.current_index + 1 + queue_index;
+
+            if target_shuffle_index < self.shuffle_order.len() {
+                self.current_index = target_shuffle_index;
+                let actual_index = self.shuffle_order[self.current_index];
+
+                if actual_index < self.tracks.len() {
+                    return Some(&self.tracks[actual_index]);
+                } else {
+                    tracing::warn!(
+                        "Shuffle order index {} out of bounds (track count: {})",
+                        actual_index,
+                        self.tracks.len()
+                    );
+                }
+            }
+            None
+        } else {
+            // Normal mode - queue_index refers to position after current track
+            let target_index = self.current_index + 1 + queue_index;
+
+            if target_index < self.tracks.len() {
+                self.current_index = target_index;
+                return self.current_track();
+            }
+            None
+        }
+    }
 }
 
 impl Default for PlaybackQueue {
@@ -1818,6 +1857,28 @@ impl PlaybackManager {
 
         let mut queue = self.queue.lock().await;
         let track_opt = queue.previous_shuffled(shuffle_enabled);
+
+        if let Some(track) = track_opt {
+            let track_clone = track.clone();
+            drop(queue); // Release the queue lock before calling play_track
+            self.play_track(track_clone.clone()).await;
+            Some(track_clone)
+        } else {
+            None
+        }
+    }
+
+    /// Skip to a specific track in the queue by its index
+    /// The index represents the position in the displayed queue (0-based, after current track)
+    pub async fn skip_to_queue_index(&self, queue_index: usize) -> Option<Track> {
+        // Get shuffle state from info
+        let shuffle_enabled = {
+            let info = self.info.lock().await;
+            info.shuffle
+        };
+
+        let mut queue = self.queue.lock().await;
+        let track_opt = queue.skip_to_queue_index(queue_index, shuffle_enabled);
 
         if let Some(track) = track_opt {
             let track_clone = track.clone();
