@@ -358,6 +358,40 @@ impl PlaybackQueue {
         tracing::info!("Generated shuffle order: {:?}", self.shuffle_order);
     }
 
+    /// Generate a shuffle order that keeps the first track at position 0
+    /// This is used when playing from a specific track - we want that track first,
+    /// then shuffle the rest
+    pub fn generate_shuffle_order_keep_first(&mut self) {
+        use rand::seq::SliceRandom;
+        use rand::thread_rng;
+
+        let track_count = self.tracks.len();
+        if track_count == 0 {
+            self.shuffle_order.clear();
+            return;
+        }
+
+        if track_count == 1 {
+            self.shuffle_order = vec![0];
+            return;
+        }
+
+        // Create a vector starting with 0, then shuffle the rest
+        let mut indices: Vec<usize> = vec![0];
+        let mut rest: Vec<usize> = (1..track_count).collect();
+
+        // Shuffle the remaining indices
+        let mut rng = thread_rng();
+        rest.shuffle(&mut rng);
+
+        indices.extend(rest);
+        self.shuffle_order = indices;
+        tracing::info!(
+            "Generated shuffle order (keeping first): {:?}",
+            self.shuffle_order
+        );
+    }
+
     /// Clear the shuffle order (used when shuffle is disabled)
     pub fn clear_shuffle_order(&mut self) {
         self.shuffle_order.clear();

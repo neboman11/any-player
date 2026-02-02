@@ -257,26 +257,19 @@ pub async fn play_tracks_immediate(
     // Check if shuffle is enabled and determine first track index
     let info = playback.get_info().await;
     let first_track_index = if info.shuffle {
-        // Generate shuffle order
+        // Generate shuffle order that keeps the first track at position 0
+        // This ensures when a user clicks to play a specific track, that track plays first
         let queue_arc = playback.get_queue_arc();
         let mut queue = queue_arc.lock().await;
-        queue.generate_shuffle_order();
+        queue.generate_shuffle_order_keep_first();
         queue.current_index = 0;
 
-        // Get the first track according to shuffle order
-        let idx =
-            if !queue.shuffle_order.is_empty() && queue.shuffle_order[0] < internal_tracks.len() {
-                queue.shuffle_order[0]
-            } else {
-                0
-            };
-
-        // If we enriched the first track and it's the one we're playing, update it in the queue
-        if idx == 0 && enriched_first_track.is_some() {
-            queue.tracks[idx] = enriched_first_track.clone().unwrap();
+        // If we enriched the first track, update it in the queue
+        if enriched_first_track.is_some() {
+            queue.tracks[0] = enriched_first_track.clone().unwrap();
         }
         drop(queue);
-        idx
+        0 // Always play the first track when shuffle keeps first
     } else {
         // If we enriched the first track, update it in the queue
         if let Some(enriched) = &enriched_first_track {
