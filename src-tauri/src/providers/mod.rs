@@ -300,23 +300,34 @@ impl ProviderRegistry {
             },
         };
 
-        let mut provider = handle.lock().await;
-        provider.complete_auth(request).await?;
+        // Hold the provider lock only as long as needed to complete auth and extract any token.
+        let spotify_token = {
+            let mut provider = handle.lock().await;
+            provider.complete_auth(request).await?;
 
-        if source == Source::Spotify {
-            if let Some(spotify) = provider.as_any().downcast_ref::<spotify::SpotifyProvider>() {
-                if let Some(token) = spotify.get_token().await {
-                    tracing::info!("Retrieved token from provider, saving to keyring");
-                    let mut tokens = crate::config::Config::load_tokens()
-                        .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
-                    tokens.spotify_token = Some(token);
-                    crate::config::Config::save_tokens(&tokens)
-                        .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
-                    tracing::info!("Token saved to keyring successfully");
+            // Extract Spotify token (if any) while holding the lock, but perform I/O after dropping it.
+            if source == Source::Spotify {
+                if let Some(spotify) = provider.as_any().downcast_ref::<spotify::SpotifyProvider>() {
+                    spotify.get_token().await
                 } else {
-                    tracing::warn!("Authentication succeeded but no token was retrieved");
+                    None
                 }
+            } else {
+                None
             }
+        };
+        // Provider lock is dropped here
+
+        if let Some(token) = spotify_token {
+            tracing::info!("Retrieved token from provider, saving to keyring");
+            let mut tokens = crate::config::Config::load_tokens()
+                .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+            tokens.spotify_token = Some(token);
+            crate::config::Config::save_tokens(&tokens)
+                .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
+            tracing::info!("Token saved to keyring successfully");
+        } else if source == Source::Spotify {
+            tracing::warn!("Authentication succeeded but no token was retrieved");
         }
 
         Ok(())
@@ -473,8 +484,11 @@ impl ProviderRegistry {
                     }
                 }
 
-                crate::config::Config::clear_tokens()
-                    .map_err(|e| ProviderError(format!("Failed to clear tokens: {}", e)))?;
+                let mut tokens = crate::config::Config::load_tokens()
+                    .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+                tokens.spotify_token = None;
+                crate::config::Config::save_tokens(&tokens)
+                    .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
             }
             Source::Jellyfin => {
                 let mut tokens = crate::config::Config::load_tokens()

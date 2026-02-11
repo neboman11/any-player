@@ -59,24 +59,35 @@ pub async fn enrich_queued_tracks_eager(
         (total_tracks, shuffle_enabled, shuffle_order, tracks_info)
     };
 
-    // Now fetch track details without holding any locks
-    let providers_lock = providers.lock().await;
+    // Now fetch track details without holding the registry lock
     let mut enriched_tracks = Vec::new();
 
     for (track_idx, track_id, source) in tracks_to_enrich {
-        // Fetch full track details
-        let enriched_track_result = match source {
-            crate::models::Source::Spotify | crate::models::Source::Jellyfin => {
-                providers_lock.get_track(source, &track_id).await
+        // Get the provider handle, then release the registry lock before fetching
+        let provider_handle = {
+            let providers_lock = providers.lock().await;
+            match source {
+                crate::models::Source::Spotify | crate::models::Source::Jellyfin => {
+                    providers_lock.get(source)
+                }
+                _ => None,
             }
-            _ => continue, // Skip custom tracks
         };
 
-        if let Ok(enriched_track) = enriched_track_result {
-            enriched_tracks.push((track_idx, enriched_track));
-            tracing::debug!("Eagerly enriched track {} at index {}", track_id, track_idx);
+        if let Some(provider) = provider_handle {
+            let provider_locked = provider.lock().await;
+            let enriched_track_result = provider_locked.get_track(&track_id).await;
+
+            if let Ok(enriched_track) = enriched_track_result {
+                enriched_tracks.push((track_idx, enriched_track));
+                tracing::debug!("Eagerly enriched track {} at index {}", track_id, track_idx);
+            } else {
+                tracing::warn!("Failed to enrich track {} at index {}", track_id, track_idx);
+            }
+        } else if matches!(source, crate::models::Source::Custom) {
+            tracing::debug!("Skipping custom track {} at index {}", track_id, track_idx);
         } else {
-            tracing::warn!("Failed to enrich track {} at index {}", track_id, track_idx);
+            tracing::warn!("Provider not found for track {} (source: {:?}) at index {}", track_id, source, track_idx);
         }
 
         // Small delay to avoid overwhelming the API
@@ -85,8 +96,6 @@ pub async fn enrich_queued_tracks_eager(
         ))
         .await;
     }
-
-    drop(providers_lock);
 
     // Update all enriched tracks in a single lock acquisition
     if !enriched_tracks.is_empty() {
