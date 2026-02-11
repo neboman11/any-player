@@ -1,4 +1,4 @@
-use super::{MusicProvider, ProviderError};
+use super::{MusicProvider, ProviderAuthRequest, ProviderAuthResponse, ProviderError};
 /// Jellyfin provider implementation
 use crate::models::{Playlist, Source, Track};
 use async_trait::async_trait;
@@ -83,7 +83,7 @@ impl JellyfinProvider {
 
     /// Get authentication headers for streaming requests
     /// Returns headers as Vec<(String, String)> for use with audio playback
-    pub fn get_auth_headers(&self) -> Vec<(String, String)> {
+    fn build_auth_headers_vec(&self) -> Vec<(String, String)> {
         vec![
             ("X-Emby-Token".to_string(), self.api_key.clone()),
             ("X-Emby-Authorization".to_string(), format!(
@@ -91,6 +91,19 @@ impl JellyfinProvider {
                 self.api_key
             )),
         ]
+    }
+
+    fn apply_auth_request(&mut self, request: &ProviderAuthRequest) -> Result<(), ProviderError> {
+        let url = request
+            .get("url")
+            .ok_or_else(|| ProviderError("Missing Jellyfin url".to_string()))?;
+        let api_key = request
+            .get("api_key")
+            .ok_or_else(|| ProviderError("Missing Jellyfin api_key".to_string()))?;
+
+        self.base_url = url.to_string();
+        self.api_key = api_key.to_string();
+        Ok(())
     }
 
     /// Helper method to build API request headers
@@ -178,13 +191,7 @@ impl JellyfinProvider {
         );
 
         // Prepare authentication headers for streaming requests
-        let auth_headers = vec![
-            ("X-Emby-Token".to_string(), self.api_key.clone()),
-            ("X-Emby-Authorization".to_string(), format!(
-                "MediaBrowser Token=\"{}\", Client=\"AnyPlayer\", Device=\"AnyPlayer\", DeviceId=\"AnyPlayer\", Version=\"1.0.0\"",
-                self.api_key
-            )),
-        ];
+        let auth_headers = self.build_auth_headers_vec();
 
         Track {
             id: item.id.clone(),
@@ -218,8 +225,30 @@ impl JellyfinProvider {
 
 #[async_trait]
 impl MusicProvider for JellyfinProvider {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn source(&self) -> Source {
         Source::Jellyfin
+    }
+
+    async fn begin_auth(
+        &mut self,
+        _request: ProviderAuthRequest,
+    ) -> Result<ProviderAuthResponse, ProviderError> {
+        Err(ProviderError(
+            "Jellyfin authentication requires url and api_key".to_string(),
+        ))
+    }
+
+    async fn complete_auth(&mut self, request: ProviderAuthRequest) -> Result<(), ProviderError> {
+        self.apply_auth_request(&request)?;
+        self.authenticate().await
     }
 
     async fn authenticate(&mut self) -> Result<(), ProviderError> {
@@ -581,6 +610,10 @@ impl MusicProvider for JellyfinProvider {
         ))
     }
 
+    async fn get_auth_headers(&self) -> Option<Vec<(String, String)>> {
+        Some(self.build_auth_headers_vec())
+    }
+
     async fn create_playlist(
         &self,
         name: &str,
@@ -737,5 +770,11 @@ impl MusicProvider for JellyfinProvider {
             .collect();
 
         Ok(tracks)
+    }
+
+    async fn disconnect(&mut self) -> Result<(), ProviderError> {
+        self.authenticated = false;
+        self.user_id = None;
+        Ok(())
     }
 }

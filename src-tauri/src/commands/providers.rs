@@ -1,5 +1,6 @@
 /// Provider-specific commands for Spotify and Jellyfin
 use crate::commands::{AppState, PlaylistInfo, PlaylistResponse, TrackInfo};
+use crate::Source;
 use tauri::State;
 
 // ============================================================================
@@ -14,7 +15,7 @@ pub async fn get_spotify_playlists(
     let providers = state.providers.lock().await;
 
     let playlists = providers
-        .get_spotify_playlists()
+        .get_playlists(Source::Spotify)
         .await
         .map_err(|e| format!("Failed to get playlists: {}", e))?;
 
@@ -40,7 +41,7 @@ pub async fn get_spotify_playlist(
     let providers = state.providers.lock().await;
 
     let playlist = providers
-        .get_spotify_playlist(&id)
+        .get_playlist(Source::Spotify, &id)
         .await
         .map_err(|e| format!("Failed to get Spotify playlist: {}", e))?;
 
@@ -79,7 +80,7 @@ pub async fn search_spotify_tracks(
     let providers = state.providers.lock().await;
 
     let tracks = providers
-        .search_spotify_tracks(&query)
+        .search_tracks(Source::Spotify, &query)
         .await
         .map_err(|e| format!("Failed to search Spotify tracks: {}", e))?;
 
@@ -110,7 +111,7 @@ pub async fn get_jellyfin_playlists(
     let providers = state.providers.lock().await;
 
     let playlists = providers
-        .get_jellyfin_playlists()
+        .get_playlists(Source::Jellyfin)
         .await
         .map_err(|e| format!("Failed to get Jellyfin playlists: {}", e))?;
 
@@ -136,7 +137,7 @@ pub async fn get_jellyfin_playlist(
     let providers = state.providers.lock().await;
 
     let playlist = providers
-        .get_jellyfin_playlist(&id)
+        .get_playlist(Source::Jellyfin, &id)
         .await
         .map_err(|e| format!("Failed to get Jellyfin playlist: {}", e))?;
 
@@ -175,7 +176,7 @@ pub async fn search_jellyfin_tracks(
     let providers = state.providers.lock().await;
 
     let tracks = providers
-        .search_jellyfin_tracks(&query)
+        .search_tracks(Source::Jellyfin, &query)
         .await
         .map_err(|e| format!("Failed to search Jellyfin tracks: {}", e))?;
 
@@ -203,7 +204,7 @@ pub async fn search_jellyfin_playlists(
     let providers = state.providers.lock().await;
 
     let playlists = providers
-        .search_jellyfin_playlists(&query)
+        .search_playlists(Source::Jellyfin, &query)
         .await
         .map_err(|e| format!("Failed to search Jellyfin playlists: {}", e))?;
 
@@ -229,7 +230,7 @@ pub async fn get_jellyfin_recently_played(
     let providers = state.providers.lock().await;
 
     let tracks = providers
-        .get_jellyfin_recently_played(limit)
+        .get_recently_played(Source::Jellyfin, limit)
         .await
         .map_err(|e| format!("Failed to get recently played: {}", e))?;
 

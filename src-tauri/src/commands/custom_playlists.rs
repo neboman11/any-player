@@ -2,6 +2,7 @@
 use crate::commands::AppState;
 use crate::database::{ColumnPreferences, CustomPlaylist, PlaylistTrack, UnionPlaylistSource};
 use crate::models::Track;
+use crate::Source;
 use tauri::State;
 
 #[tauri::command]
@@ -81,7 +82,7 @@ pub async fn get_custom_playlists(
                     match source.source_type.as_str() {
                         "spotify" => {
                             if let Ok(p) = providers
-                                .get_spotify_playlist(&source.source_playlist_id)
+                                .get_playlist(Source::Spotify, &source.source_playlist_id)
                                 .await
                             {
                                 total_tracks += p.track_count as i64;
@@ -89,7 +90,7 @@ pub async fn get_custom_playlists(
                         }
                         "jellyfin" => {
                             if let Ok(p) = providers
-                                .get_jellyfin_playlist(&source.source_playlist_id)
+                                .get_playlist(Source::Jellyfin, &source.source_playlist_id)
                                 .await
                             {
                                 total_tracks += p.track_count as i64;
@@ -283,7 +284,7 @@ pub async fn get_union_playlist_tracks(
         match source.source_type.as_str() {
             "spotify" => {
                 match providers
-                    .get_spotify_playlist(&source.source_playlist_id)
+                    .get_playlist(Source::Spotify, &source.source_playlist_id)
                     .await
                 {
                     Ok(playlist) => {
@@ -301,7 +302,7 @@ pub async fn get_union_playlist_tracks(
             }
             "jellyfin" => {
                 match providers
-                    .get_jellyfin_playlist(&source.source_playlist_id)
+                    .get_playlist(Source::Jellyfin, &source.source_playlist_id)
                     .await
                 {
                     Ok(playlist) => {
@@ -369,7 +370,7 @@ pub(super) async fn play_custom_playlist_internal(
             match source.source_type.as_str() {
                 "spotify" => {
                     if let Ok(playlist) = providers
-                        .get_spotify_playlist(&source.source_playlist_id)
+                        .get_playlist(Source::Spotify, &source.source_playlist_id)
                         .await
                     {
                         all_tracks.extend(playlist.tracks);
@@ -377,7 +378,7 @@ pub(super) async fn play_custom_playlist_internal(
                 }
                 "jellyfin" => {
                     if let Ok(playlist) = providers
-                        .get_jellyfin_playlist(&source.source_playlist_id)
+                        .get_playlist(Source::Jellyfin, &source.source_playlist_id)
                         .await
                     {
                         all_tracks.extend(playlist.tracks);
@@ -405,8 +406,10 @@ pub(super) async fn play_custom_playlist_internal(
         let mut tracks = Vec::new();
         for pt in playlist_tracks {
             let track_result = match pt.track_source.as_str() {
-                "Spotify" | "spotify" => providers.get_spotify_track(&pt.track_id).await,
-                "Jellyfin" | "jellyfin" => providers.get_jellyfin_track(&pt.track_id).await,
+                "Spotify" | "spotify" => providers.get_track(Source::Spotify, &pt.track_id).await,
+                "Jellyfin" | "jellyfin" => {
+                    providers.get_track(Source::Jellyfin, &pt.track_id).await
+                }
                 _ => Ok(pt.to_track()),
             };
 

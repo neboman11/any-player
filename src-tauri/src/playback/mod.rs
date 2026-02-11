@@ -832,7 +832,7 @@ impl AudioPlayer {
 
                 // Fetch track info from Spotify using rspotify to get metadata
                 let track = providers_locked
-                    .get_spotify_track(&track_id_for_fetch)
+                    .get_track(crate::models::Source::Spotify, &track_id_for_fetch)
                     .await
                     .map_err(|e| format!("Failed to fetch track info: {}", e))?;
 
@@ -858,7 +858,7 @@ impl AudioPlayer {
                 } else {
                     // Get the OAuth access token from the providers
                     let access_token = providers_locked
-                        .get_spotify_access_token()
+                        .get_access_token(crate::models::Source::Spotify)
                         .await
                         .ok_or("No Spotify access token available".to_string())?;
 

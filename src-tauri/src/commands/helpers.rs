@@ -66,8 +66,9 @@ pub async fn enrich_queued_tracks_eager(
     for (track_idx, track_id, source) in tracks_to_enrich {
         // Fetch full track details
         let enriched_track_result = match source {
-            crate::models::Source::Spotify => providers_lock.get_spotify_track(&track_id).await,
-            crate::models::Source::Jellyfin => providers_lock.get_jellyfin_track(&track_id).await,
+            crate::models::Source::Spotify | crate::models::Source::Jellyfin => {
+                providers_lock.get_track(source, &track_id).await
+            }
             _ => continue, // Skip custom tracks
         };
 
@@ -108,11 +109,17 @@ pub async fn enrich_queued_tracks_eager(
 pub async fn initialize_premium_session_if_needed(state: &AppState) -> Result<(), String> {
     let providers = state.providers.lock().await;
 
-    match providers.is_spotify_premium().await {
+    match providers
+        .premium_status(crate::models::Source::Spotify)
+        .await
+    {
         Some(true) => {
             tracing::info!("User is Spotify Premium - initializing session");
 
-            if let Some(access_token) = providers.get_spotify_access_token().await {
+            if let Some(access_token) = providers
+                .get_access_token(crate::models::Source::Spotify)
+                .await
+            {
                 tracing::info!(
                     "Retrieved Spotify access token (len={})",
                     access_token.len()
