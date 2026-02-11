@@ -307,7 +307,8 @@ impl ProviderRegistry {
 
             // Extract Spotify token (if any) while holding the lock, but perform I/O after dropping it.
             if source == Source::Spotify {
-                if let Some(spotify) = provider.as_any().downcast_ref::<spotify::SpotifyProvider>() {
+                if let Some(spotify) = provider.as_any().downcast_ref::<spotify::SpotifyProvider>()
+                {
                     spotify.get_token().await
                 } else {
                     None

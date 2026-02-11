@@ -87,7 +87,12 @@ pub async fn enrich_queued_tracks_eager(
         } else if matches!(source, crate::models::Source::Custom) {
             tracing::debug!("Skipping custom track {} at index {}", track_id, track_idx);
         } else {
-            tracing::warn!("Provider not found for track {} (source: {:?}) at index {}", track_id, source, track_idx);
+            tracing::warn!(
+                "Provider not found for track {} (source: {:?}) at index {}",
+                track_id,
+                source,
+                track_idx
+            );
         }
 
         // Small delay to avoid overwhelming the API
