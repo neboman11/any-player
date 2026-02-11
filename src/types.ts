@@ -93,6 +93,20 @@ export interface OAuthCallbackData {
   error?: string;
 }
 
+export interface SpotifyAuthStatus {
+  authenticated: boolean;
+  premium: boolean | null;
+  session_ready: boolean;
+}
+
+export interface JellyfinAuthStatus {
+  authenticated: boolean;
+}
+
+export interface OAuthCodeReceived {
+  source: "spotify";
+}
+
 export type TauriSource = "spotify" | "jellyfin" | "custom" | "all";
 export type SearchType = "tracks" | "playlists";
 export type RepeatMode = "off" | "one" | "all";

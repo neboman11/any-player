@@ -1,15 +1,14 @@
 import { useState, useCallback, useEffect } from "react";
 import { tauriAPI } from "../api";
+import { backendSocket } from "../websocket";
 import { retryWithDelay } from "../utils/retryHelper";
+import type { OAuthCodeReceived, SpotifyAuthStatus } from "../types";
 
 // Time to wait for backend to finish processing OAuth authentication (in milliseconds).
 // NOTE: 2000ms was chosen based on observed worst-case latency for the backend to
 //       exchange the OAuth code for tokens and persist session state. Reducing this
 //       delay may reintroduce race conditions where `checkAuthStatus` runs before the
-//       session is fully ready. If backend performance improves, consider:
-//       - Lowering this value, or
-//       - Replacing the fixed delay with short-interval polling of auth status
-//         until it reports as authenticated or a timeout is reached.
+//       session is fully ready.
 const AUTH_PROCESSING_DELAY_MS = 2000;
 
 export function useSpotifyAuth() {
@@ -68,6 +67,22 @@ export function useSpotifyAuth() {
     void checkWithRetry();
   }, [checkAuthStatus]);
 
+  useEffect(() => {
+    const unsubscribe = backendSocket.on<SpotifyAuthStatus>(
+      "spotify-auth-status",
+      (status) => {
+        if (!status) {
+          return;
+        }
+        setIsConnected(status.authenticated);
+        setIsPremium(status.premium ?? null);
+        setSessionReady(status.session_ready ?? false);
+      },
+    );
+
+    return unsubscribe;
+  }, []);
+
   const getAuthUrl = useCallback(async (): Promise<string> => {
     try {
       return await tauriAPI.getSpotifyAuthUrl();
@@ -79,39 +94,52 @@ export function useSpotifyAuth() {
     }
   }, []);
 
-  const pollForAuth = useCallback(async () => {
-    let pollCount = 0;
-    const maxPolls = 600; // 10 minutes at 1 second intervals
-
+  const waitForAuthCallback = useCallback(async () => {
     return new Promise<void>((resolve) => {
-      const checkInterval = setInterval(async () => {
-        pollCount++;
-        try {
-          const hasCode = await tauriAPI.checkOAuthCode();
-          if (hasCode) {
-            clearInterval(checkInterval);
+      let resolved = false;
 
-            // Wait for backend to complete authentication
-            await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
-
-            // Re-check auth status from backend
-            await checkAuthStatus();
-            setAuthUrl(null);
-            setIsLoading(false);
-
-            resolve();
+      const timeoutId = window.setTimeout(
+        () => {
+          if (resolved) {
+            return;
           }
-        } catch (err) {
-          console.error("Auth polling error:", err);
-        }
-
-        if (pollCount >= maxPolls) {
-          clearInterval(checkInterval);
+          resolved = true;
           setError("Authentication timeout");
           setIsLoading(false);
           resolve();
-        }
-      }, 1000);
+        },
+        10 * 60 * 1000,
+      );
+
+      const unsubscribe = backendSocket.on<OAuthCodeReceived>(
+        "oauth-code-received",
+        async (payload) => {
+          if (resolved || payload?.source !== "spotify") {
+            return;
+          }
+
+          resolved = true;
+          window.clearTimeout(timeoutId);
+          unsubscribe();
+
+          try {
+            const hasCode = await tauriAPI.checkOAuthCode();
+            if (hasCode) {
+              await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
+              await checkAuthStatus();
+            } else {
+              setError("Authentication failed");
+            }
+          } catch (err) {
+            console.error("Auth completion error:", err);
+            setError("Authentication failed");
+          } finally {
+            setAuthUrl(null);
+            setIsLoading(false);
+            resolve();
+          }
+        },
+      );
     });
   }, [checkAuthStatus]);
 
@@ -134,15 +162,15 @@ export function useSpotifyAuth() {
         }
       }
 
-      // Start polling for auth completion
-      console.log("Starting polling for OAuth callback completion");
-      await pollForAuth();
+      // Wait for websocket notification of OAuth completion
+      console.log("Waiting for OAuth callback completion");
+      await waitForAuthCallback();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Connection failed";
       setError(message);
       setIsLoading(false);
     }
-  }, [getAuthUrl, pollForAuth]);
+  }, [getAuthUrl, waitForAuthCallback]);
 
   const disconnect = useCallback(async () => {
     try {

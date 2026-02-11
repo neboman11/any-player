@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { tauriAPI } from "../api";
+import { backendSocket } from "../websocket";
 import type { PlaybackStatus, RepeatMode } from "../types";
 
 export function usePlayback() {
@@ -139,11 +140,26 @@ export function usePlayback() {
     [updateStatus],
   );
 
-  // Poll for status updates
   useEffect(() => {
+    const unsubscribe = backendSocket.on<PlaybackStatus>(
+      "playback-status",
+      (status) => {
+        if (!status) {
+          return;
+        }
+        setPlaybackStatus(status);
+        setIsPlaying(status.state === "playing");
+        setShuffle(status.shuffle);
+        setRepeatMode(status.repeat_mode as RepeatMode);
+        setVolume(status.volume);
+        setPosition(status.position ?? 0);
+        setDuration(status.duration ?? 0);
+      },
+    );
+
     void updateStatus();
-    const interval = setInterval(() => void updateStatus(), 500);
-    return () => clearInterval(interval);
+
+    return unsubscribe;
   }, [updateStatus]);
 
   return {
