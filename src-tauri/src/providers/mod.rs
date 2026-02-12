@@ -311,11 +311,10 @@ impl ProviderRegistry {
                     if let Some(spotify) =
                         provider.as_any().downcast_ref::<spotify::SpotifyProvider>()
                     {
-                        if let Some(token) = spotify.get_token().await {
-                            Some((None, None, Some(token)))
-                        } else {
-                            None
-                        }
+                        spotify
+                            .get_token()
+                            .await
+                            .map(|token| (None, None, Some(token)))
                     } else {
                         None
                     }
