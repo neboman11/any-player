@@ -199,7 +199,7 @@ export function useSpotifyAuth() {
           }
         });
     });
-    
+
     return promise;
   }, [checkAuthStatus]);
 
