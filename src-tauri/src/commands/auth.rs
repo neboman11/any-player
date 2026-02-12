@@ -211,8 +211,6 @@ pub async fn authenticate_jellyfin(
     url: String,
     api_key: String,
 ) -> Result<(), String> {
-    use crate::config::Config;
-
     let mut providers = state.providers.lock().await;
 
     providers
@@ -223,14 +221,7 @@ pub async fn authenticate_jellyfin(
         .await
         .map_err(|e| format!("Failed to authenticate Jellyfin: {}", e))?;
 
-    // Save credentials to secure storage after successful authentication
-    let mut tokens = Config::load_tokens().map_err(|e| format!("Failed to load tokens: {}", e))?;
-    tokens.jellyfin_api_key = Some(api_key);
-    tokens.jellyfin_url = Some(url);
-    Config::save_tokens(&tokens)
-        .map_err(|e| format!("Failed to save Jellyfin credentials: {}", e))?;
-
-    tracing::info!("Jellyfin credentials saved to secure storage");
+    // Credentials are now automatically saved within complete_auth for consistency with Spotify
 
     Ok(())
 }

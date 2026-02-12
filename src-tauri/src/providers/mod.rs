@@ -300,35 +300,62 @@ impl ProviderRegistry {
             },
         };
 
-        // Hold the provider lock only as long as needed to complete auth and extract any token.
-        let spotify_token = {
+        // Hold the provider lock only as long as needed to complete auth and extract credentials.
+        let credentials = {
             let mut provider = handle.lock().await;
-            provider.complete_auth(request).await?;
+            provider.complete_auth(request.clone()).await?;
 
-            // Extract Spotify token (if any) while holding the lock, but perform I/O after dropping it.
-            if source == Source::Spotify {
-                if let Some(spotify) = provider.as_any().downcast_ref::<spotify::SpotifyProvider>()
-                {
-                    spotify.get_token().await
-                } else {
-                    None
+            // Extract provider credentials while holding the lock, but perform I/O after dropping it.
+            match source {
+                Source::Spotify => {
+                    if let Some(spotify) = provider.as_any().downcast_ref::<spotify::SpotifyProvider>()
+                    {
+                        if let Some(token) = spotify.get_token().await {
+                            Some((None, None, Some(token)))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 }
-            } else {
-                None
+                Source::Jellyfin => {
+                    // Extract Jellyfin credentials from the request
+                    let url = request.get("url").map(|s| s.to_string());
+                    let api_key = request.get("api_key").map(|s| s.to_string());
+                    if url.is_some() && api_key.is_some() {
+                        Some((url, api_key, None))
+                    } else {
+                        None
+                    }
+                }
+                Source::Custom => None,
             }
         };
         // Provider lock is dropped here
 
-        if let Some(token) = spotify_token {
-            tracing::info!("Retrieved token from provider, saving to keyring");
+        // Save credentials to keyring after dropping the provider lock
+        if let Some((jellyfin_url, jellyfin_api_key, spotify_token)) = credentials {
             let mut tokens = crate::config::Config::load_tokens()
                 .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
-            tokens.spotify_token = Some(token);
+            
+            if let Some(token) = spotify_token {
+                tracing::info!("Retrieved Spotify token from provider, saving to keyring");
+                tokens.spotify_token = Some(token);
+                tracing::info!("Spotify token saved to keyring successfully");
+            } else if source == Source::Spotify {
+                tracing::warn!("Spotify authentication succeeded but no token was retrieved");
+            }
+            
+            if let (Some(url), Some(api_key)) = (jellyfin_url, jellyfin_api_key) {
+                tracing::info!("Retrieved Jellyfin credentials from request, saving to keyring");
+                tokens.jellyfin_url = Some(url);
+                tokens.jellyfin_api_key = Some(api_key);
+                tracing::info!("Jellyfin credentials saved to keyring successfully");
+            }
+            
             crate::config::Config::save_tokens(&tokens)
                 .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
-            tracing::info!("Token saved to keyring successfully");
-        } else if source == Source::Spotify {
-            tracing::warn!("Authentication succeeded but no token was retrieved");
         }
 
         Ok(())
