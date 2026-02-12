@@ -43,9 +43,9 @@ pub fn broadcast_event<T: Serialize>(
 
 pub async fn emit_spotify_status(state: &AppState) {
     let providers = state.providers.lock().await;
-    let authenticated = providers.is_spotify_authenticated().await;
+    let authenticated = providers.is_authenticated(crate::Source::Spotify).await;
     let premium = if authenticated {
-        providers.is_spotify_premium().await
+        providers.premium_status(crate::Source::Spotify).await
     } else {
         None
     };
@@ -68,7 +68,7 @@ pub async fn emit_spotify_status(state: &AppState) {
 
 pub async fn emit_jellyfin_status(state: &AppState) {
     let providers = state.providers.lock().await;
-    let authenticated = providers.is_jellyfin_authenticated().await;
+    let authenticated = providers.is_authenticated(crate::Source::Jellyfin).await;
     drop(providers);
 
     broadcast_event(
@@ -118,16 +118,24 @@ pub async fn start_ws_server(
                         };
 
                         if !is_allowed {
-                            tracing::warn!("Rejected WebSocket connection from unauthorized origin: {}", origin_str);
+                            tracing::warn!(
+                                "Rejected WebSocket connection from unauthorized origin: {}",
+                                origin_str
+                            );
                             return Err(Response::builder()
                                 .status(403)
-                                .body(Some("Forbidden: WebSocket connections only allowed from localhost".to_string()))
+                                .body(Some(
+                                    "Forbidden: WebSocket connections only allowed from localhost"
+                                        .into(),
+                                ))
                                 .unwrap());
                         }
                     }
                 }
                 Ok(response)
-            }).await {
+            })
+            .await
+            {
                 Ok(ws) => ws,
                 Err(err) => {
                     tracing::warn!(?err, "Failed to accept websocket connection");
@@ -147,7 +155,7 @@ pub async fn start_ws_server(
                 loop {
                     match rx.recv().await {
                         Ok(message) => {
-                            if ws_write.send(Message::Text(message)).await.is_err() {
+                            if ws_write.send(Message::Text(message.into())).await.is_err() {
                                 break;
                             }
                         }
@@ -219,7 +227,10 @@ async fn send_initial_state(
     }) {
         Ok(msg) => Some(msg),
         Err(e) => {
-            tracing::error!("Failed to serialize playback-status WebSocket message: {}", e);
+            tracing::error!(
+                "Failed to serialize playback-status WebSocket message: {}",
+                e
+            );
             None
         }
     };
@@ -230,7 +241,10 @@ async fn send_initial_state(
     }) {
         Ok(msg) => Some(msg),
         Err(e) => {
-            tracing::error!("Failed to serialize spotify-auth-status WebSocket message: {}", e);
+            tracing::error!(
+                "Failed to serialize spotify-auth-status WebSocket message: {}",
+                e
+            );
             None
         }
     };
@@ -241,19 +255,26 @@ async fn send_initial_state(
     }) {
         Ok(msg) => Some(msg),
         Err(e) => {
-            tracing::error!("Failed to serialize jellyfin-auth-status WebSocket message: {}", e);
+            tracing::error!(
+                "Failed to serialize jellyfin-auth-status WebSocket message: {}",
+                e
+            );
             None
         }
     };
 
     if let Some(playback_message) = playback_message {
-        ws_write.send(Message::Text(playback_message)).await?;
+        ws_write
+            .send(Message::Text(playback_message.into()))
+            .await?;
     }
     if let Some(spotify_message) = spotify_message {
-        ws_write.send(Message::Text(spotify_message)).await?;
+        ws_write.send(Message::Text(spotify_message.into())).await?;
     }
     if let Some(jellyfin_message) = jellyfin_message {
-        ws_write.send(Message::Text(jellyfin_message)).await?;
+        ws_write
+            .send(Message::Text(jellyfin_message.into()))
+            .await?;
     }
 
     Ok(())
@@ -261,9 +282,9 @@ async fn send_initial_state(
 
 async fn build_spotify_status(state: &AppState) -> SpotifyAuthStatus {
     let providers = state.providers.lock().await;
-    let authenticated = providers.is_spotify_authenticated().await;
+    let authenticated = providers.is_authenticated(crate::Source::Spotify).await;
     let premium = if authenticated {
-        providers.is_spotify_premium().await
+        providers.premium_status(crate::Source::Spotify).await
     } else {
         None
     };
@@ -282,7 +303,7 @@ async fn build_spotify_status(state: &AppState) -> SpotifyAuthStatus {
 
 async fn build_jellyfin_status(state: &AppState) -> JellyfinAuthStatus {
     let providers = state.providers.lock().await;
-    let authenticated = providers.is_jellyfin_authenticated().await;
+    let authenticated = providers.is_authenticated(crate::Source::Jellyfin).await;
     drop(providers);
 
     JellyfinAuthStatus { authenticated }
