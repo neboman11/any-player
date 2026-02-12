@@ -107,8 +107,8 @@ pub async fn start_ws_server(
                             let host = url.host_str().unwrap_or("");
                             // Allow connections from localhost, 127.0.0.1, or ::1 (IPv6)
                             host == "localhost" || host == "127.0.0.1" || host == "::1"
-                        } else if origin_str.starts_with("tauri://") {
-                            // Allow tauri:// protocol for Tauri applications
+                        } else if origin_str == "tauri://localhost" {
+                            // Allow tauri://localhost specifically for Tauri applications
                             true
                         } else {
                             false

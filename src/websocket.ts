@@ -105,6 +105,7 @@ class BackendSocket {
       if (this.listeners.size === 0 && this.ws) {
         this.ws.close();
         this.ws = null;
+        this.connecting = false;
       }
     };
   }
