@@ -68,6 +68,7 @@ pub async fn initialize_spotify_session(
 ) -> Result<(), String> {
     let playback = state.playback.lock().await;
     playback.initialize_spotify_session(&access_token).await?;
+    drop(playback);
 
     crate::websocket::emit_spotify_status(&state).await;
 
@@ -131,6 +132,7 @@ pub async fn refresh_spotify_token(state: State<'_, AppState>) -> Result<(), Str
                     tracing::warn!("Failed to reinitialize session after token refresh: {}", e);
                 }
             }
+            drop(playback);
         }
     }
 
@@ -177,6 +179,7 @@ pub async fn disconnect_spotify(state: State<'_, AppState>) -> Result<(), String
         .disconnect_spotify()
         .await
         .map_err(|e| format!("Failed to disconnect Spotify: {}", e))?;
+    drop(providers);
 
     crate::websocket::emit_spotify_status(&state).await;
 
@@ -192,6 +195,7 @@ pub async fn restore_spotify_session(state: State<'_, AppState>) -> Result<bool,
         .restore_spotify_session()
         .await
         .map_err(|e| format!("Failed to restore Spotify session: {}", e))?;
+    drop(providers);
 
     crate::websocket::emit_spotify_status(&state).await;
 
@@ -228,6 +232,7 @@ pub async fn authenticate_jellyfin(
         .authenticate_jellyfin(&url, &api_key)
         .await
         .map_err(|e| format!("Failed to authenticate Jellyfin: {}", e))?;
+    drop(providers);
 
     // Save credentials to secure storage after successful authentication
     let mut tokens = Config::load_tokens().map_err(|e| format!("Failed to load tokens: {}", e))?;
@@ -261,6 +266,7 @@ pub async fn disconnect_jellyfin(state: State<'_, AppState>) -> Result<(), Strin
         .disconnect_jellyfin()
         .await
         .map_err(|e| format!("Failed to disconnect Jellyfin: {}", e))?;
+    drop(providers);
 
     // Clear stored Jellyfin credentials from secure storage
     let mut tokens = Config::load_tokens().map_err(|e| format!("Failed to load tokens: {}", e))?;
@@ -300,6 +306,7 @@ pub async fn restore_jellyfin_session(state: State<'_, AppState>) -> Result<bool
         .restore_jellyfin_session()
         .await
         .map_err(|e| format!("Failed to restore Jellyfin session: {}", e))?;
+    drop(providers);
 
     crate::websocket::emit_jellyfin_status(&state).await;
 

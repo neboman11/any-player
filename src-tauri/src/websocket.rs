@@ -7,8 +7,9 @@ use tauri::Manager;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, Mutex};
 use tokio::time::{sleep, Duration};
+use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{accept_async, WebSocketStream};
+use tokio_tungstenite::{accept_hdr_async, WebSocketStream};
 
 const WS_ADDR: &str = "127.0.0.1:8990";
 
@@ -88,7 +89,7 @@ pub async fn start_ws_server(
     tracing::info!("WebSocket server listening on {}", WS_ADDR);
 
     loop {
-        let (stream, _) = listener
+        let (stream, peer_addr) = listener
             .accept()
             .await
             .map_err(|e| format!("WebSocket accept error: {}", e))?;
@@ -96,7 +97,37 @@ pub async fn start_ws_server(
         let handle_clone = app_handle.clone();
 
         tokio::spawn(async move {
-            let ws_stream = match accept_async(stream).await {
+            let ws_stream = match accept_hdr_async(stream, |req: &Request, response: Response| {
+                // Validate that the connection is from localhost
+                // Check Origin header if present
+                if let Some(origin) = req.headers().get("Origin") {
+                    if let Ok(origin_str) = origin.to_str() {
+                        // Parse origin URL and validate hostname
+                        let is_allowed = if let Ok(url) = url::Url::parse(origin_str) {
+                            if let Some(host) = url.host_str() {
+                                // Allow connections from localhost, 127.0.0.1, or ::1 (IPv6)
+                                host == "localhost" || host == "127.0.0.1" || host == "::1"
+                            } else {
+                                false
+                            }
+                        } else if origin_str == "tauri://localhost" {
+                            // Allow tauri://localhost specifically for Tauri applications
+                            true
+                        } else {
+                            false
+                        };
+
+                        if !is_allowed {
+                            tracing::warn!("Rejected WebSocket connection from unauthorized origin: {}", origin_str);
+                            return Err(Response::builder()
+                                .status(403)
+                                .body(Some("Forbidden: WebSocket connections only allowed from localhost".to_string()))
+                                .unwrap());
+                        }
+                    }
+                }
+                Ok(response)
+            }).await {
                 Ok(ws) => ws,
                 Err(err) => {
                     tracing::warn!(?err, "Failed to accept websocket connection");
@@ -113,9 +144,22 @@ pub async fn start_ws_server(
 
             let mut rx = sender_clone.subscribe();
             let write_task = tokio::spawn(async move {
-                while let Ok(message) = rx.recv().await {
-                    if ws_write.send(Message::Text(message)).await.is_err() {
-                        break;
+                loop {
+                    match rx.recv().await {
+                        Ok(message) => {
+                            if ws_write.send(Message::Text(message)).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            // The receiver has fallen behind; skip dropped messages and continue.
+                            tracing::warn!(peer = %peer_addr, "WebSocket client lagged, skipped {} messages", skipped);
+                            continue;
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            // The sender has been closed; exit the loop.
+                            break;
+                        }
                     }
                 }
             });
@@ -138,14 +182,17 @@ pub async fn start_playback_broadcast(
     let mut last_payload = String::new();
 
     loop {
-        let status = build_playback_status(&playback).await;
-        if let Ok(text) = serde_json::to_string(&WsMessage {
-            event: "playback-status",
-            data: status,
-        }) {
-            if text != last_payload {
-                let _ = sender.send(text.clone());
-                last_payload = text;
+        // Only poll and broadcast if there are active subscribers
+        if sender.receiver_count() > 0 {
+            let status = build_playback_status(&playback).await;
+            if let Ok(text) = serde_json::to_string(&WsMessage {
+                event: "playback-status",
+                data: status,
+            }) {
+                if text != last_payload {
+                    let _ = sender.send(text.clone());
+                    last_payload = text;
+                }
             }
         }
 
@@ -166,31 +213,46 @@ async fn send_initial_state(
     let spotify_status = build_spotify_status(&state).await;
     let jellyfin_status = build_jellyfin_status(&state).await;
 
-    let playback_message = serde_json::to_string(&WsMessage {
+    let playback_message = match serde_json::to_string(&WsMessage {
         event: "playback-status",
         data: playback_status,
-    })
-    .unwrap_or_else(|_| "".to_string());
+    }) {
+        Ok(msg) => Some(msg),
+        Err(e) => {
+            tracing::error!("Failed to serialize playback-status WebSocket message: {}", e);
+            None
+        }
+    };
 
-    let spotify_message = serde_json::to_string(&WsMessage {
+    let spotify_message = match serde_json::to_string(&WsMessage {
         event: "spotify-auth-status",
         data: spotify_status,
-    })
-    .unwrap_or_else(|_| "".to_string());
+    }) {
+        Ok(msg) => Some(msg),
+        Err(e) => {
+            tracing::error!("Failed to serialize spotify-auth-status WebSocket message: {}", e);
+            None
+        }
+    };
 
-    let jellyfin_message = serde_json::to_string(&WsMessage {
+    let jellyfin_message = match serde_json::to_string(&WsMessage {
         event: "jellyfin-auth-status",
         data: jellyfin_status,
-    })
-    .unwrap_or_else(|_| "".to_string());
+    }) {
+        Ok(msg) => Some(msg),
+        Err(e) => {
+            tracing::error!("Failed to serialize jellyfin-auth-status WebSocket message: {}", e);
+            None
+        }
+    };
 
-    if !playback_message.is_empty() {
+    if let Some(playback_message) = playback_message {
         ws_write.send(Message::Text(playback_message)).await?;
     }
-    if !spotify_message.is_empty() {
+    if let Some(spotify_message) = spotify_message {
         ws_write.send(Message::Text(spotify_message)).await?;
     }
-    if !jellyfin_message.is_empty() {
+    if let Some(jellyfin_message) = jellyfin_message {
         ws_write.send(Message::Text(jellyfin_message)).await?;
     }
 

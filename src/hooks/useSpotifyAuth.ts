@@ -97,6 +97,7 @@ export function useSpotifyAuth() {
   const waitForAuthCallback = useCallback(async () => {
     return new Promise<void>((resolve) => {
       let resolved = false;
+      let unsubscribe: (() => void) | null = null;
 
       const timeoutId = window.setTimeout(
         () => {
@@ -104,6 +105,9 @@ export function useSpotifyAuth() {
             return;
           }
           resolved = true;
+          if (unsubscribe) {
+            unsubscribe();
+          }
           setError("Authentication timeout");
           setIsLoading(false);
           resolve();
@@ -111,7 +115,7 @@ export function useSpotifyAuth() {
         10 * 60 * 1000,
       );
 
-      const unsubscribe = backendSocket.on<OAuthCodeReceived>(
+      unsubscribe = backendSocket.on<OAuthCodeReceived>(
         "oauth-code-received",
         async (payload) => {
           if (resolved || payload?.source !== "spotify") {
@@ -120,7 +124,9 @@ export function useSpotifyAuth() {
 
           resolved = true;
           window.clearTimeout(timeoutId);
-          unsubscribe();
+          if (unsubscribe) {
+            unsubscribe();
+          }
 
           try {
             const hasCode = await tauriAPI.checkOAuthCode();
