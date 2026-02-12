@@ -243,7 +243,7 @@ pub fn run() {
                 // Restore session without holding the lock during the entire process
                 let restored = {
                     let mut providers = providers_clone.lock().await;
-                    match providers.restore_spotify_session().await {
+                    match providers.restore_session(Source::Spotify).await {
                         Ok(restored) => {
                             if restored {
                                 tracing::info!("✓ Spotify session restored from cache on startup");
@@ -263,13 +263,13 @@ pub fn run() {
                 if restored {
                     let is_premium = {
                         let providers = providers_clone.lock().await;
-                        providers.is_spotify_premium().await
+                        providers.premium_status(Source::Spotify).await
                     };
 
                     if let Some(true) = is_premium {
                         let access_token = {
                             let providers = providers_clone.lock().await;
-                            providers.get_spotify_access_token().await
+                            providers.get_access_token(Source::Spotify).await
                         };
 
                         if let Some(access_token) = access_token {
@@ -302,7 +302,7 @@ pub fn run() {
                 // Also try to restore Jellyfin session
                 {
                     let mut providers = providers_for_jellyfin.lock().await;
-                    match providers.restore_jellyfin_session().await {
+                    match providers.restore_session(Source::Jellyfin).await {
                         Ok(restored) => {
                             if restored {
                                 tracing::info!(

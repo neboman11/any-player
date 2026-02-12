@@ -827,12 +827,18 @@ impl AudioPlayer {
         tokio::spawn(async move {
             #[allow(clippy::redundant_closure_call)]
             let result = (|| async {
-                // Lock the providers registry to fetch track info and get session
-                let providers_locked = providers_clone.lock().await;
+                // Get the Spotify provider handle, then drop the registry lock
+                let spotify_provider = {
+                    let providers_locked = providers_clone.lock().await;
+                    providers_locked
+                        .get(crate::models::Source::Spotify)
+                        .ok_or("Spotify provider not initialized".to_string())?
+                };
 
-                // Fetch track info from Spotify using rspotify to get metadata
-                let track = providers_locked
-                    .get_spotify_track(&track_id_for_fetch)
+                // Lock the provider to fetch track info
+                let provider_locked = spotify_provider.lock().await;
+                let track = provider_locked
+                    .get_track(&track_id_for_fetch)
                     .await
                     .map_err(|e| format!("Failed to fetch track info: {}", e))?;
 
@@ -847,6 +853,7 @@ impl AudioPlayer {
                 // If a session was provided (manager created it), use it; otherwise obtain token and create one
                 if let Some(sess) = session {
                     tracing::info!("Using existing librespot Session from manager");
+                    drop(provider_locked); // Release provider lock before playback
                     Self::play_spotify_with_librespot(
                         &audio_player_clone,
                         &track_id_for_fetch,
@@ -856,13 +863,13 @@ impl AudioPlayer {
                     )
                     .await?;
                 } else {
-                    // Get the OAuth access token from the providers
-                    let access_token = providers_locked
-                        .get_spotify_access_token()
+                    // Get the OAuth access token from the provider
+                    let access_token = provider_locked
+                        .get_access_token()
                         .await
                         .ok_or("No Spotify access token available".to_string())?;
 
-                    drop(providers_locked); // Release lock before async operations
+                    drop(provider_locked); // Release lock before async operations
 
                     tracing::info!("Retrieved OAuth token for Spotify playback");
 
