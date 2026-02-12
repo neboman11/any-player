@@ -120,25 +120,29 @@ pub async fn refresh_spotify_token(state: State<'_, AppState>) -> Result<(), Str
         .await
         .map_err(|e| format!("Failed to refresh Spotify token: {}", e))?;
 
-    // If token was refreshed and user is premium, reinitialize session
-    if let Some(true) = providers.is_spotify_premium().await {
-        if let Some(access_token) = providers.get_spotify_access_token().await {
-            drop(providers); // Release providers lock
-            let playback = state.playback.lock().await;
-            match playback.initialize_spotify_session(&access_token).await {
-                Ok(()) => {
-                    tracing::info!("Spotify session reinitialized after token refresh");
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to reinitialize session after token refresh: {}", e);
-                }
-            }
-            drop(playback);
-        } else {
-            drop(providers); // Release providers lock if no access token
-        }
+    // Check if we need to reinitialize session for premium users
+    let should_reinit = providers.is_spotify_premium().await.unwrap_or(false);
+    let access_token = if should_reinit {
+        providers.get_spotify_access_token().await
     } else {
-        drop(providers); // Release providers lock if not premium
+        None
+    };
+
+    // Always drop providers lock before any further operations
+    drop(providers);
+
+    // Reinitialize session if we have a token
+    if let Some(token) = access_token {
+        let playback = state.playback.lock().await;
+        match playback.initialize_spotify_session(&token).await {
+            Ok(()) => {
+                tracing::info!("Spotify session reinitialized after token refresh");
+            }
+            Err(e) => {
+                tracing::warn!("Failed to reinitialize session after token refresh: {}", e);
+            }
+        }
+        drop(playback);
     }
 
     crate::websocket::emit_spotify_status(&state).await;
