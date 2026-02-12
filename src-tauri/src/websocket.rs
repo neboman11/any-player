@@ -102,12 +102,23 @@ pub async fn start_ws_server(
                 // Check Origin header if present
                 if let Some(origin) = req.headers().get("Origin") {
                     if let Ok(origin_str) = origin.to_str() {
-                        // Allow connections from localhost, 127.0.0.1, or tauri://localhost
-                        if !origin_str.contains("localhost") && !origin_str.contains("127.0.0.1") && !origin_str.starts_with("tauri://") {
+                        // Parse origin URL and validate hostname
+                        let is_allowed = if let Ok(url) = url::Url::parse(origin_str) {
+                            let host = url.host_str().unwrap_or("");
+                            // Allow connections from localhost, 127.0.0.1, or [::1]
+                            host == "localhost" || host == "127.0.0.1" || host == "[::1]"
+                        } else if origin_str.starts_with("tauri://") {
+                            // Allow tauri:// protocol for Tauri applications
+                            true
+                        } else {
+                            false
+                        };
+
+                        if !is_allowed {
                             tracing::warn!("Rejected WebSocket connection from unauthorized origin: {}", origin_str);
                             return Err(Response::builder()
                                 .status(403)
-                                .body(None)
+                                .body(Some("Forbidden: WebSocket connections only allowed from localhost".to_string()))
                                 .unwrap());
                         }
                     }
