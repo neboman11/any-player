@@ -91,6 +91,7 @@ pub async fn initialize_spotify_session_from_provider(
             .initialize_spotify_session(&access_token)
             .await
             .map_err(|e| format!("Failed to initialize session: {}", e))?;
+        drop(playback);
 
         crate::websocket::emit_spotify_status(&state).await;
 
@@ -133,7 +134,11 @@ pub async fn refresh_spotify_token(state: State<'_, AppState>) -> Result<(), Str
                 }
             }
             drop(playback);
+        } else {
+            drop(providers); // Release providers lock if no access token
         }
+    } else {
+        drop(providers); // Release providers lock if not premium
     }
 
     crate::websocket::emit_spotify_status(&state).await;

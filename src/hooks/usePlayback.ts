@@ -159,7 +159,16 @@ export function usePlayback() {
 
     void updateStatus();
 
-    return unsubscribe;
+    // Fallback polling in case websocket is unavailable
+    // Poll every 5 seconds as a backup to websocket updates
+    const fallbackInterval = setInterval(() => {
+      void updateStatus();
+    }, 5000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(fallbackInterval);
+    };
   }, [updateStatus]);
 
   return {

@@ -95,9 +95,25 @@ export function useSpotifyAuth() {
   }, []);
 
   const waitForAuthCallback = useCallback(async () => {
-    return new Promise<void>((resolve) => {
+    return new Promise<void>(async (resolve) => {
       let resolved = false;
       let unsubscribe: (() => void) | null = null;
+
+      // Immediately check if auth already completed (in case websocket missed the event)
+      try {
+        const hasCode = await tauriAPI.checkOAuthCode();
+        if (hasCode) {
+          resolved = true;
+          await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
+          await checkAuthStatus();
+          setAuthUrl(null);
+          setIsLoading(false);
+          resolve();
+          return;
+        }
+      } catch (err) {
+        console.warn("Initial auth check failed, will wait for websocket event:", err);
+      }
 
       const timeoutId = window.setTimeout(
         () => {

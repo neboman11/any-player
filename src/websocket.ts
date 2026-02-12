@@ -64,7 +64,15 @@ class BackendSocket {
       }
 
       handlers.forEach((handler) => {
-        handler(parsed?.data);
+        try {
+          handler(parsed.data);
+        } catch (err) {
+          console.error(
+            "Error in WebSocket handler for event:",
+            parsed.event,
+            err,
+          );
+        }
       });
     };
   }

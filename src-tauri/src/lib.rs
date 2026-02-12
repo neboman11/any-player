@@ -30,6 +30,8 @@ use tokio::sync::Mutex;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize logging
+    // Default log level is INFO - anything above (DEBUG, TRACE) will drastically
+    // increase log output and may impact performance. Use higher levels only for debugging.
     let filter = filter::Targets::new()
         .with_default(filter::LevelFilter::INFO)
         .with_target("any_player_lib", filter::LevelFilter::INFO)
