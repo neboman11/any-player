@@ -89,10 +89,13 @@ pub async fn start_ws_server(
     tracing::info!("WebSocket server listening on {}", WS_ADDR);
 
     loop {
-        let (stream, peer_addr) = listener
-            .accept()
-            .await
-            .map_err(|e| format!("WebSocket accept error: {}", e))?;
+        let (stream, peer_addr) = match listener.accept().await {
+            Ok(connection) => connection,
+            Err(e) => {
+                tracing::error!("WebSocket accept error: {}", e);
+                continue;
+            }
+        };
         let sender_clone = sender.clone();
         let handle_clone = app_handle.clone();
 

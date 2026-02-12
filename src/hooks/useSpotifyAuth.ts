@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { tauriAPI } from "../api";
 import { backendSocket } from "../websocket";
 import { retryWithDelay } from "../utils/retryHelper";
@@ -18,6 +18,13 @@ export function useSpotifyAuth() {
   const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [isPremium, setIsPremium] = useState<boolean | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const checkAuthStatus = useCallback(async () => {
     try {
@@ -95,7 +102,7 @@ export function useSpotifyAuth() {
   }, []);
 
   const waitForAuthCallback = useCallback(async () => {
-    return new Promise<void>((resolve) => {
+    const promise = new Promise<void>((resolve) => {
       let resolved = false;
       let unsubscribe: (() => void) | null = null;
 
@@ -107,8 +114,10 @@ export function useSpotifyAuth() {
             resolved = true;
             await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
             await checkAuthStatus();
-            setAuthUrl(null);
-            setIsLoading(false);
+            if (mountedRef.current) {
+              setAuthUrl(null);
+              setIsLoading(false);
+            }
             resolve();
             return true;
           }
@@ -131,8 +140,10 @@ export function useSpotifyAuth() {
               if (unsubscribe) {
                 unsubscribe();
               }
-              setError("Authentication timeout");
-              setIsLoading(false);
+              if (mountedRef.current) {
+                setError("Authentication timeout");
+                setIsLoading(false);
+              }
               resolve();
             },
             10 * 60 * 1000,
@@ -147,9 +158,12 @@ export function useSpotifyAuth() {
 
             resolved = true;
             window.clearTimeout(timeoutId);
-            if (unsubscribe) {
-              unsubscribe();
-            }
+            // Defer unsubscription to avoid mutating the listener set during iteration.
+            window.setTimeout(() => {
+              if (unsubscribe) {
+                unsubscribe();
+              }
+            }, 0);
 
             try {
               const hasCode = await tauriAPI.checkOAuthCode();
@@ -157,14 +171,20 @@ export function useSpotifyAuth() {
                 await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
                 await checkAuthStatus();
               } else {
-                setError("Authentication failed");
+                if (mountedRef.current) {
+                  setError("Authentication failed");
+                }
               }
             } catch (err) {
               console.error("Auth completion error:", err);
-              setError("Authentication failed");
+              if (mountedRef.current) {
+                setError("Authentication failed");
+              }
             } finally {
-              setAuthUrl(null);
-              setIsLoading(false);
+              if (mountedRef.current) {
+                setAuthUrl(null);
+                setIsLoading(false);
+              }
               resolve();
             }
           },
@@ -172,13 +192,15 @@ export function useSpotifyAuth() {
       })
         .catch((err) => {
           console.error("Error in auth initialization:", err);
-          if (!resolved) {
+          if (!resolved && mountedRef.current) {
             setError("Authentication initialization failed");
             setIsLoading(false);
             resolve();
           }
         });
     });
+    
+    return promise;
   }, [checkAuthStatus]);
 
   const connect = useCallback(async () => {

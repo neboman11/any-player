@@ -590,7 +590,7 @@ export class UI {
   }
 
   private async waitForSpotifyAuth(): Promise<void> {
-    return new Promise((resolve) => {
+    const promise = new Promise<void>((resolve) => {
       let resolved = false;
       let unsubscribe: (() => void) | null = null;
 
@@ -660,9 +660,12 @@ export class UI {
 
               resolved = true;
               window.clearTimeout(timeoutId);
-              if (unsubscribe) {
-                unsubscribe();
-              }
+              // Defer unsubscription to avoid mutating the listener set during iteration.
+              window.setTimeout(() => {
+                if (unsubscribe) {
+                  unsubscribe();
+                }
+              }, 0);
 
               try {
                 const codeProcessed = await tauriAPI.checkOAuthCode();
@@ -707,6 +710,8 @@ export class UI {
           }
         });
     });
+    
+    return promise;
   }
 
   private async completeSpotifyAuth(code: string): Promise<void> {
