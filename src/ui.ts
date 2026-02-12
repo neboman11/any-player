@@ -622,10 +622,11 @@ export class UI {
         return false;
       };
 
-      void checkInitialAuth().then((completed) => {
-        if (completed) return;
+      checkInitialAuth()
+        .then((completed) => {
+          if (completed) return;
 
-        const timeoutId = window.setTimeout(
+          const timeoutId = window.setTimeout(
           () => {
             if (resolved) {
               return;
@@ -691,7 +692,17 @@ export class UI {
           }
         },
       );
-    });
+    })
+      .catch((err) => {
+        console.error("Error in auth initialization:", err);
+        if (!resolved) {
+          const statusEl = document.getElementById("spotify-status");
+          if (statusEl) {
+            statusEl.textContent = "⚠ Auth initialization error";
+          }
+          resolve();
+        }
+      });
   }
 
   private async completeSpotifyAuth(code: string): Promise<void> {

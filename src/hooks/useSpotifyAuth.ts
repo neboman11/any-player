@@ -118,10 +118,11 @@ export function useSpotifyAuth() {
         return false;
       };
 
-      void checkInitialAuth().then((completed) => {
-        if (completed) return;
+      checkInitialAuth()
+        .then((completed) => {
+          if (completed) return;
 
-        const timeoutId = window.setTimeout(
+          const timeoutId = window.setTimeout(
           () => {
             if (resolved) {
               return;
@@ -168,7 +169,15 @@ export function useSpotifyAuth() {
             }
           },
         );
-      });
+      })
+        .catch((err) => {
+          console.error("Error in auth initialization:", err);
+          if (!resolved) {
+            setError("Authentication initialization failed");
+            setIsLoading(false);
+            resolve();
+          }
+        });
     });
   }, [checkAuthStatus]);
 

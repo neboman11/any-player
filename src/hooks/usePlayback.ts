@@ -159,8 +159,8 @@ export function usePlayback() {
 
     void updateStatus();
 
-    // Fallback polling in case websocket is unavailable
-    // Poll every 5 seconds as a backup to websocket updates
+    // Fallback polling in case websocket is unavailable (5-second interval is infrequent
+    // enough to avoid performance impact while ensuring UI doesn't freeze if websocket fails)
     const fallbackInterval = setInterval(() => {
       void updateStatus();
     }, 5000);
