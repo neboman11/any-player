@@ -134,8 +134,6 @@ pub async fn refresh_spotify_token(state: State<'_, AppState>) -> Result<(), Str
             }
             drop(playback);
         }
-    } else {
-        drop(providers);
     }
 
     crate::websocket::emit_spotify_status(&state).await;

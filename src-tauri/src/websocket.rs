@@ -105,8 +105,8 @@ pub async fn start_ws_server(
                         // Parse origin URL and validate hostname
                         let is_allowed = if let Ok(url) = url::Url::parse(origin_str) {
                             let host = url.host_str().unwrap_or("");
-                            // Allow connections from localhost, 127.0.0.1, or [::1]
-                            host == "localhost" || host == "127.0.0.1" || host == "[::1]"
+                            // Allow connections from localhost, 127.0.0.1, or ::1 (IPv6)
+                            host == "localhost" || host == "127.0.0.1" || host == "::1"
                         } else if origin_str.starts_with("tauri://") {
                             // Allow tauri:// protocol for Tauri applications
                             true
