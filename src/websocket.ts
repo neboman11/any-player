@@ -26,6 +26,10 @@ class BackendSocket {
 
     this.ws.onopen = () => {
       this.connecting = false;
+      if (this.reconnectTimer !== null) {
+        window.clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
     };
 
     this.ws.onclose = () => {
