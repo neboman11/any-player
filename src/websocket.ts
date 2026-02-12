@@ -118,6 +118,11 @@ class BackendSocket {
         this.ws.close();
         this.ws = null;
         this.connecting = false;
+        // Clear any pending reconnect timer to avoid unnecessary reconnection
+        if (this.reconnectTimer !== null) {
+          window.clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
       }
     };
   }
