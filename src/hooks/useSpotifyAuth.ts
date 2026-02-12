@@ -99,53 +99,85 @@ export function useSpotifyAuth() {
       let resolved = false;
       let unsubscribe: (() => void) | null = null;
 
-      const timeoutId = window.setTimeout(
-        () => {
-          if (resolved) {
-            return;
-          }
-          resolved = true;
-          if (unsubscribe) {
-            unsubscribe();
-          }
-          setError("Authentication timeout");
-          setIsLoading(false);
-          resolve();
-        },
-        10 * 60 * 1000,
-      );
-
-      unsubscribe = backendSocket.on<OAuthCodeReceived>(
-        "oauth-code-received",
-        async (payload) => {
-          if (resolved || payload?.source !== "spotify") {
-            return;
-          }
-
-          resolved = true;
-          window.clearTimeout(timeoutId);
-          if (unsubscribe) {
-            unsubscribe();
-          }
-
-          try {
-            const hasCode = await tauriAPI.checkOAuthCode();
-            if (hasCode) {
-              await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
-              await checkAuthStatus();
-            } else {
-              setError("Authentication failed");
-            }
-          } catch (err) {
-            console.error("Auth completion error:", err);
-            setError("Authentication failed");
-          } finally {
+      // Immediately check if auth already completed (in case websocket missed the event)
+      const checkInitialAuth = async () => {
+        try {
+          const hasCode = await tauriAPI.checkOAuthCode();
+          if (hasCode) {
+            resolved = true;
+            await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
+            await checkAuthStatus();
             setAuthUrl(null);
             setIsLoading(false);
             resolve();
+            return true;
           }
-        },
-      );
+        } catch (err) {
+          console.warn("Initial auth check failed, will wait for websocket event:", err);
+        }
+        return false;
+      };
+
+      checkInitialAuth()
+        .then((completed) => {
+          if (completed) return;
+
+          const timeoutId = window.setTimeout(
+            () => {
+              if (resolved) {
+                return;
+              }
+              resolved = true;
+              if (unsubscribe) {
+                unsubscribe();
+              }
+              setError("Authentication timeout");
+              setIsLoading(false);
+              resolve();
+            },
+            10 * 60 * 1000,
+          );
+
+        unsubscribe = backendSocket.on<OAuthCodeReceived>(
+          "oauth-code-received",
+          async (payload) => {
+            if (resolved || payload?.source !== "spotify") {
+              return;
+            }
+
+            resolved = true;
+            window.clearTimeout(timeoutId);
+            if (unsubscribe) {
+              unsubscribe();
+            }
+
+            try {
+              const hasCode = await tauriAPI.checkOAuthCode();
+              if (hasCode) {
+                await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
+                await checkAuthStatus();
+              } else {
+                setError("Authentication failed");
+              }
+            } catch (err) {
+              console.error("Auth completion error:", err);
+              setError("Authentication failed");
+            } finally {
+              setAuthUrl(null);
+              setIsLoading(false);
+              resolve();
+            }
+          },
+        );
+      })
+        .catch((err) => {
+          console.error("Error in auth initialization:", err);
+          if (!resolved) {
+            setError("Authentication initialization failed");
+            setIsLoading(false);
+            resolve();
+          }
+        });
     });
   }, [checkAuthStatus]);
 

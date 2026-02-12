@@ -159,7 +159,16 @@ export function usePlayback() {
 
     void updateStatus();
 
-    return unsubscribe;
+    // Fallback polling in case websocket is unavailable (5-second interval is infrequent
+    // enough to avoid performance impact while ensuring UI doesn't freeze if websocket fails)
+    const fallbackInterval = setInterval(() => {
+      void updateStatus();
+    }, 5000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(fallbackInterval);
+    };
   }, [updateStatus]);
 
   return {

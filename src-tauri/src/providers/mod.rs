@@ -344,9 +344,12 @@ impl ProviderRegistry {
             }
         }
 
-        // Clear stored tokens
-        crate::config::Config::clear_tokens()
-            .map_err(|e| ProviderError(format!("Failed to clear tokens: {}", e)))?;
+        // Clear only Spotify tokens, preserving other provider tokens
+        let mut tokens = crate::config::Config::load_tokens()
+            .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+        tokens.spotify_token = None;
+        crate::config::Config::save_tokens(&tokens)
+            .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
 
         self.spotify_provider = None;
         Ok(())
