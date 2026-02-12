@@ -123,20 +123,20 @@ export function useSpotifyAuth() {
           if (completed) return;
 
           const timeoutId = window.setTimeout(
-          () => {
-            if (resolved) {
-              return;
-            }
-            resolved = true;
-            if (unsubscribe) {
-              unsubscribe();
-            }
-            setError("Authentication timeout");
-            setIsLoading(false);
-            resolve();
-          },
-          10 * 60 * 1000,
-        );
+            () => {
+              if (resolved) {
+                return;
+              }
+              resolved = true;
+              if (unsubscribe) {
+                unsubscribe();
+              }
+              setError("Authentication timeout");
+              setIsLoading(false);
+              resolve();
+            },
+            10 * 60 * 1000,
+          );
 
         unsubscribe = backendSocket.on<OAuthCodeReceived>(
           "oauth-code-received",
