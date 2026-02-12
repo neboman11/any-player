@@ -89,7 +89,7 @@ pub async fn start_ws_server(
     tracing::info!("WebSocket server listening on {}", WS_ADDR);
 
     loop {
-        let (stream, _) = listener
+        let (stream, peer_addr) = listener
             .accept()
             .await
             .map_err(|e| format!("WebSocket accept error: {}", e))?;
@@ -104,9 +104,12 @@ pub async fn start_ws_server(
                     if let Ok(origin_str) = origin.to_str() {
                         // Parse origin URL and validate hostname
                         let is_allowed = if let Ok(url) = url::Url::parse(origin_str) {
-                            let host = url.host_str().unwrap_or("");
-                            // Allow connections from localhost, 127.0.0.1, or ::1 (IPv6)
-                            host == "localhost" || host == "127.0.0.1" || host == "::1"
+                            if let Some(host) = url.host_str() {
+                                // Allow connections from localhost, 127.0.0.1, or ::1 (IPv6)
+                                host == "localhost" || host == "127.0.0.1" || host == "::1"
+                            } else {
+                                false
+                            }
                         } else if origin_str == "tauri://localhost" {
                             // Allow tauri://localhost specifically for Tauri applications
                             true
@@ -150,7 +153,7 @@ pub async fn start_ws_server(
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                             // The receiver has fallen behind; skip dropped messages and continue.
-                            tracing::warn!("WebSocket client lagged, skipped {} messages", skipped);
+                            tracing::warn!(peer = %peer_addr, "WebSocket client lagged, skipped {} messages", skipped);
                             continue;
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {
