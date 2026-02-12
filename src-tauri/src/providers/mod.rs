@@ -308,7 +308,8 @@ impl ProviderRegistry {
             // Extract provider credentials while holding the lock, but perform I/O after dropping it.
             match source {
                 Source::Spotify => {
-                    if let Some(spotify) = provider.as_any().downcast_ref::<spotify::SpotifyProvider>()
+                    if let Some(spotify) =
+                        provider.as_any().downcast_ref::<spotify::SpotifyProvider>()
                     {
                         if let Some(token) = spotify.get_token().await {
                             Some((None, None, Some(token)))
@@ -338,7 +339,7 @@ impl ProviderRegistry {
         if let Some((jellyfin_url, jellyfin_api_key, spotify_token)) = credentials {
             let mut tokens = crate::config::Config::load_tokens()
                 .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
-            
+
             if let Some(token) = spotify_token {
                 tracing::info!("Retrieved Spotify token from provider, saving to keyring");
                 tokens.spotify_token = Some(token);
@@ -346,14 +347,14 @@ impl ProviderRegistry {
             } else if source == Source::Spotify {
                 tracing::warn!("Spotify authentication succeeded but no token was retrieved");
             }
-            
+
             if let (Some(url), Some(api_key)) = (jellyfin_url, jellyfin_api_key) {
                 tracing::info!("Retrieved Jellyfin credentials from request, saving to keyring");
                 tokens.jellyfin_url = Some(url);
                 tokens.jellyfin_api_key = Some(api_key);
                 tracing::info!("Jellyfin credentials saved to keyring successfully");
             }
-            
+
             crate::config::Config::save_tokens(&tokens)
                 .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
         }
