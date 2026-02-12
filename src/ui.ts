@@ -592,6 +592,7 @@ export class UI {
   private async waitForSpotifyAuth(): Promise<void> {
     return new Promise((resolve) => {
       let resolved = false;
+      let unsubscribe: (() => void) | null = null;
 
       const timeoutId = window.setTimeout(
         () => {
@@ -599,6 +600,9 @@ export class UI {
             return;
           }
           resolved = true;
+          if (unsubscribe) {
+            unsubscribe();
+          }
           console.log("Auth websocket timeout after 10 minutes");
           const statusEl = document.getElementById("spotify-status");
           if (
@@ -612,7 +616,7 @@ export class UI {
         10 * 60 * 1000,
       );
 
-      const unsubscribe = backendSocket.on<OAuthCodeReceived>(
+      unsubscribe = backendSocket.on<OAuthCodeReceived>(
         "oauth-code-received",
         async (payload) => {
           if (resolved || payload?.source !== "spotify") {
@@ -621,7 +625,9 @@ export class UI {
 
           resolved = true;
           window.clearTimeout(timeoutId);
-          unsubscribe();
+          if (unsubscribe) {
+            unsubscribe();
+          }
 
           try {
             const codeProcessed = await tauriAPI.checkOAuthCode();

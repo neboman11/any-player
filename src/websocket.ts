@@ -12,6 +12,8 @@ class BackendSocket {
   private listeners: ListenerMap = new Map();
   private reconnectTimer: number | null = null;
   private connecting = false;
+  // Hard-coded to match the backend websocket server port.
+  // If the backend port changes or is configurable, this must be updated.
   private readonly url = "ws://127.0.0.1:8990";
 
   private connect() {
@@ -98,6 +100,11 @@ class BackendSocket {
       handlers.delete(handler as WsHandler<unknown>);
       if (handlers.size === 0) {
         this.listeners.delete(event);
+      }
+      // Close the websocket if no listeners remain
+      if (this.listeners.size === 0 && this.ws) {
+        this.ws.close();
+        this.ws = null;
       }
     };
   }
