@@ -1,5 +1,6 @@
 /// Authentication commands for Spotify and Jellyfin
 use crate::commands::AppState;
+use crate::{providers::ProviderAuthRequest, Source};
 use tauri::State;
 
 /// Initialize Spotify OAuth flow and get authorization URL (no credentials needed)
@@ -7,9 +8,15 @@ use tauri::State;
 pub async fn get_spotify_auth_url(state: State<'_, AppState>) -> Result<String, String> {
     let mut providers = state.providers.lock().await;
 
-    let auth_url = providers
-        .get_spotify_auth_url_default()
+    let auth_response = providers
+        .begin_auth(Source::Spotify, ProviderAuthRequest::default())
+        .await
         .map_err(|e| format!("Failed to get auth URL: {}", e))?;
+
+    let auth_url = auth_response
+        .auth_url()
+        .ok_or_else(|| "Provider did not return an auth URL".to_string())?
+        .to_string();
 
     Ok(auth_url)
 }
@@ -19,9 +26,12 @@ pub async fn get_spotify_auth_url(state: State<'_, AppState>) -> Result<String, 
 pub async fn authenticate_spotify(state: State<'_, AppState>, code: String) -> Result<(), String> {
     tracing::info!("Starting Spotify authentication with authorization code");
 
-    let providers = state.providers.lock().await;
+    let mut providers = state.providers.lock().await;
     providers
-        .authenticate_spotify(&code)
+        .complete_auth(
+            Source::Spotify,
+            ProviderAuthRequest::from_pairs([("code", code)]),
+        )
         .await
         .map_err(|e| format!("Failed to authenticate: {}", e))?;
     drop(providers);
@@ -38,7 +48,7 @@ pub async fn authenticate_spotify(state: State<'_, AppState>, code: String) -> R
 #[tauri::command]
 pub async fn is_spotify_authenticated(state: State<'_, AppState>) -> Result<bool, String> {
     let providers = state.providers.lock().await;
-    let authenticated = providers.is_spotify_authenticated().await;
+    let authenticated = providers.is_authenticated(Source::Spotify).await;
     tracing::debug!("is_spotify_authenticated query result: {}", authenticated);
     Ok(authenticated)
 }
@@ -50,7 +60,7 @@ pub async fn is_spotify_authenticated(state: State<'_, AppState>) -> Result<bool
 pub async fn check_spotify_premium(state: State<'_, AppState>) -> Result<bool, String> {
     let providers = state.providers.lock().await;
     providers
-        .is_spotify_premium()
+        .premium_status(Source::Spotify)
         .await
         .ok_or_else(|| "Spotify not authenticated".to_string())
 }
@@ -77,7 +87,7 @@ pub async fn initialize_spotify_session_from_provider(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let providers = state.providers.lock().await;
-    if let Some(access_token) = providers.get_spotify_access_token().await {
+    if let Some(access_token) = providers.get_access_token(Source::Spotify).await {
         drop(providers);
         let playback = state.playback.lock().await;
         playback
@@ -104,13 +114,13 @@ pub async fn is_spotify_session_ready(state: State<'_, AppState>) -> Result<bool
 pub async fn refresh_spotify_token(state: State<'_, AppState>) -> Result<(), String> {
     let mut providers = state.providers.lock().await;
     providers
-        .refresh_spotify_token()
+        .refresh_auth(Source::Spotify)
         .await
         .map_err(|e| format!("Failed to refresh Spotify token: {}", e))?;
 
     // If token was refreshed and user is premium, reinitialize session
-    if let Some(true) = providers.is_spotify_premium().await {
-        if let Some(access_token) = providers.get_spotify_access_token().await {
+    if let Some(true) = providers.premium_status(Source::Spotify).await {
+        if let Some(access_token) = providers.get_access_token(Source::Spotify).await {
             drop(providers); // Release providers lock
             let playback = state.playback.lock().await;
             match playback.initialize_spotify_session(&access_token).await {
@@ -136,9 +146,12 @@ pub async fn check_oauth_code(state: State<'_, AppState>) -> Result<bool, String
         tracing::info!("OAuth code found in storage");
         drop(oauth_code);
 
-        let providers = state.providers.lock().await;
+        let mut providers = state.providers.lock().await;
         providers
-            .authenticate_spotify(&code)
+            .complete_auth(
+                Source::Spotify,
+                ProviderAuthRequest::from_pairs([("code", code)]),
+            )
             .await
             .map_err(|e| format!("Failed to authenticate: {}", e))?;
         drop(providers);
@@ -160,7 +173,7 @@ pub async fn disconnect_spotify(state: State<'_, AppState>) -> Result<(), String
     let mut providers = state.providers.lock().await;
 
     providers
-        .disconnect_spotify()
+        .disconnect(Source::Spotify)
         .await
         .map_err(|e| format!("Failed to disconnect Spotify: {}", e))
 }
@@ -171,7 +184,7 @@ pub async fn restore_spotify_session(state: State<'_, AppState>) -> Result<bool,
     let mut providers = state.providers.lock().await;
 
     providers
-        .restore_spotify_session()
+        .restore_session(Source::Spotify)
         .await
         .map_err(|e| format!("Failed to restore Spotify session: {}", e))
 }
@@ -183,7 +196,7 @@ pub async fn clear_spotify_session(state: State<'_, AppState>) -> Result<(), Str
 
     let mut providers = state.providers.lock().await;
     providers
-        .disconnect_spotify()
+        .disconnect(Source::Spotify)
         .await
         .map_err(|e| format!("Failed to disconnect Spotify during session clear: {}", e))?;
     drop(providers);
@@ -198,23 +211,17 @@ pub async fn authenticate_jellyfin(
     url: String,
     api_key: String,
 ) -> Result<(), String> {
-    use crate::config::Config;
-
     let mut providers = state.providers.lock().await;
 
     providers
-        .authenticate_jellyfin(&url, &api_key)
+        .complete_auth(
+            Source::Jellyfin,
+            ProviderAuthRequest::from_pairs([("url", url.clone()), ("api_key", api_key.clone())]),
+        )
         .await
         .map_err(|e| format!("Failed to authenticate Jellyfin: {}", e))?;
 
-    // Save credentials to secure storage after successful authentication
-    let mut tokens = Config::load_tokens().map_err(|e| format!("Failed to load tokens: {}", e))?;
-    tokens.jellyfin_api_key = Some(api_key);
-    tokens.jellyfin_url = Some(url);
-    Config::save_tokens(&tokens)
-        .map_err(|e| format!("Failed to save Jellyfin credentials: {}", e))?;
-
-    tracing::info!("Jellyfin credentials saved to secure storage");
+    // Credentials are now automatically saved within complete_auth for consistency with Spotify
 
     Ok(())
 }
@@ -223,31 +230,18 @@ pub async fn authenticate_jellyfin(
 #[tauri::command]
 pub async fn is_jellyfin_authenticated(state: State<'_, AppState>) -> Result<bool, String> {
     let providers = state.providers.lock().await;
-    Ok(providers.is_jellyfin_authenticated().await)
+    Ok(providers.is_authenticated(Source::Jellyfin).await)
 }
 
 /// Disconnect and revoke Jellyfin authentication
 #[tauri::command]
 pub async fn disconnect_jellyfin(state: State<'_, AppState>) -> Result<(), String> {
-    use crate::config::Config;
-
     let mut providers = state.providers.lock().await;
 
     providers
-        .disconnect_jellyfin()
+        .disconnect(Source::Jellyfin)
         .await
-        .map_err(|e| format!("Failed to disconnect Jellyfin: {}", e))?;
-
-    // Clear stored Jellyfin credentials from secure storage
-    let mut tokens = Config::load_tokens().map_err(|e| format!("Failed to load tokens: {}", e))?;
-    tokens.jellyfin_api_key = None;
-    tokens.jellyfin_url = None;
-    Config::save_tokens(&tokens)
-        .map_err(|e| format!("Failed to clear Jellyfin credentials: {}", e))?;
-
-    tracing::info!("Jellyfin credentials cleared from secure storage");
-
-    Ok(())
+        .map_err(|e| format!("Failed to disconnect Jellyfin: {}", e))
 }
 
 /// Get stored Jellyfin credentials
@@ -271,7 +265,7 @@ pub async fn restore_jellyfin_session(state: State<'_, AppState>) -> Result<bool
     let mut providers = state.providers.lock().await;
 
     providers
-        .restore_jellyfin_session()
+        .restore_session(Source::Jellyfin)
         .await
         .map_err(|e| format!("Failed to restore Jellyfin session: {}", e))
 }

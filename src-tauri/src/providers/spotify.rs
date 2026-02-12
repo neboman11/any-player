@@ -1,4 +1,4 @@
-use super::{MusicProvider, ProviderError};
+use super::{MusicProvider, ProviderAuthRequest, ProviderAuthResponse, ProviderError};
 use crate::models::{Playlist, Source, Track};
 use async_trait::async_trait;
 use futures::stream::StreamExt;
@@ -449,6 +449,14 @@ impl SpotifyProvider {
 
 #[async_trait]
 impl MusicProvider for SpotifyProvider {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn source(&self) -> Source {
         Source::Spotify
     }
@@ -460,6 +468,26 @@ impl MusicProvider for SpotifyProvider {
                 "Not authenticated. Use get_auth_url() and authenticate_with_code()".to_string(),
             )
         })
+    }
+
+    async fn begin_auth(
+        &mut self,
+        _request: ProviderAuthRequest,
+    ) -> Result<ProviderAuthResponse, ProviderError> {
+        if self.client.is_none() {
+            let (credentials, oauth) = Self::default_oauth_config();
+            self.client = Some(AuthCodePkceSpotify::new(credentials, oauth));
+        }
+
+        let auth_url = self.get_auth_url()?;
+        Ok(ProviderAuthResponse::with_auth_url(auth_url))
+    }
+
+    async fn complete_auth(&mut self, request: ProviderAuthRequest) -> Result<(), ProviderError> {
+        let code = request
+            .get("code")
+            .ok_or_else(|| ProviderError("Missing Spotify authorization code".to_string()))?;
+        self.authenticate_with_code(code).await
     }
 
     fn is_authenticated(&self) -> bool {
@@ -760,5 +788,25 @@ impl MusicProvider for SpotifyProvider {
         Err(ProviderError(
             "Get recently played not yet implemented".to_string(),
         ))
+    }
+
+    async fn get_access_token(&self) -> Option<String> {
+        SpotifyProvider::get_access_token(self).await
+    }
+
+    async fn refresh_auth(&mut self) -> Result<(), ProviderError> {
+        SpotifyProvider::refresh_token(self).await
+    }
+
+    async fn premium_status(&self) -> Option<bool> {
+        Some(self.is_premium())
+    }
+
+    async fn disconnect(&mut self) -> Result<(), ProviderError> {
+        self.client = None;
+        self.is_authenticated = false;
+        self.is_premium = false;
+        self.access_token = None;
+        Ok(())
     }
 }

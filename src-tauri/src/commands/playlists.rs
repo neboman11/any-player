@@ -31,11 +31,11 @@ pub async fn play_track(
     // Get the track from the appropriate provider
     let track = match normalized_source.as_str() {
         "spotify" => providers
-            .get_spotify_track(&track_id)
+            .get_track(crate::models::Source::Spotify, &track_id)
             .await
             .map_err(|e| format!("Failed to get Spotify track: {}", e))?,
         "jellyfin" => providers
-            .get_jellyfin_track(&track_id)
+            .get_track(crate::models::Source::Jellyfin, &track_id)
             .await
             .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
         "custom" => {
@@ -72,11 +72,11 @@ pub async fn queue_track(
     // Get the track from the appropriate provider
     let track = match normalized_source.as_str() {
         "spotify" => providers
-            .get_spotify_track(&track_id)
+            .get_track(crate::models::Source::Spotify, &track_id)
             .await
             .map_err(|e| format!("Failed to get Spotify track: {}", e))?,
         "jellyfin" => providers
-            .get_jellyfin_track(&track_id)
+            .get_track(crate::models::Source::Jellyfin, &track_id)
             .await
             .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
         "custom" => {
@@ -109,11 +109,11 @@ pub async fn play_playlist(
     // Get the playlist with all tracks from the appropriate provider
     let playlist = match source.as_str() {
         "spotify" => providers
-            .get_spotify_playlist(&playlist_id)
+            .get_playlist(crate::models::Source::Spotify, &playlist_id)
             .await
             .map_err(|e| format!("Failed to get Spotify playlist: {}", e))?,
         "jellyfin" => providers
-            .get_jellyfin_playlist(&playlist_id)
+            .get_playlist(crate::models::Source::Jellyfin, &playlist_id)
             .await
             .map_err(|e| format!("Failed to get Jellyfin playlist: {}", e))?,
         "custom" => {
@@ -229,13 +229,19 @@ pub async fn play_tracks_immediate(
     let enriched_first_track = if needs_enrichment {
         match first_track_for_enrichment.source {
             crate::models::Source::Spotify => providers
-                .get_spotify_track(&first_track_for_enrichment.id)
+                .get_track(
+                    crate::models::Source::Spotify,
+                    &first_track_for_enrichment.id,
+                )
                 .await
                 .ok(),
             crate::models::Source::Jellyfin => {
                 // Must enrich Jellyfin tracks immediately to get auth headers
                 providers
-                    .get_jellyfin_track(&first_track_for_enrichment.id)
+                    .get_track(
+                        crate::models::Source::Jellyfin,
+                        &first_track_for_enrichment.id,
+                    )
                     .await
                     .ok()
             }

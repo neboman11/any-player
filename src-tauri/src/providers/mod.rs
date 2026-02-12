@@ -4,6 +4,8 @@ pub mod spotify;
 
 use crate::models::{Playlist, Source, Track};
 use async_trait::async_trait;
+use std::any::Any;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Error type for provider operations
@@ -18,14 +20,86 @@ impl std::fmt::Display for ProviderError {
 
 impl std::error::Error for ProviderError {}
 
+/// Generic provider authentication request payload.
+#[derive(Debug, Clone, Default)]
+pub struct ProviderAuthRequest {
+    params: HashMap<String, String>,
+}
+
+impl ProviderAuthRequest {
+    pub fn new(params: HashMap<String, String>) -> Self {
+        Self { params }
+    }
+
+    pub fn from_pairs<I, K, V>(pairs: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: Into<String>,
+    {
+        let mut params = HashMap::new();
+        for (key, value) in pairs {
+            params.insert(key.into(), value.into());
+        }
+        Self { params }
+    }
+
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.params.get(key).map(|value| value.as_str())
+    }
+
+    pub fn insert(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        self.params.insert(key.into(), value.into());
+    }
+}
+
+/// Generic provider authentication response payload.
+#[derive(Debug, Clone, Default)]
+pub struct ProviderAuthResponse {
+    data: HashMap<String, String>,
+}
+
+impl ProviderAuthResponse {
+    pub fn with_auth_url(url: String) -> Self {
+        let mut data = HashMap::new();
+        data.insert("auth_url".to_string(), url);
+        Self { data }
+    }
+
+    pub fn auth_url(&self) -> Option<&str> {
+        self.data.get("auth_url").map(|value| value.as_str())
+    }
+}
+
 /// Core trait that all music providers must implement
 #[async_trait]
 pub trait MusicProvider: Send + Sync {
+    fn as_any(&self) -> &dyn Any;
+
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+
     /// Get the source provider type
     fn source(&self) -> Source;
 
     /// Authenticate with the provider
     async fn authenticate(&mut self) -> Result<(), ProviderError>;
+
+    /// Begin provider authentication flow (e.g., generate OAuth URL)
+    async fn begin_auth(
+        &mut self,
+        _request: ProviderAuthRequest,
+    ) -> Result<ProviderAuthResponse, ProviderError> {
+        Err(ProviderError(
+            "Authentication start is not supported for this provider".to_string(),
+        ))
+    }
+
+    /// Complete provider authentication flow (e.g., exchange code or verify API key)
+    async fn complete_auth(&mut self, _request: ProviderAuthRequest) -> Result<(), ProviderError> {
+        Err(ProviderError(
+            "Authentication completion is not supported for this provider".to_string(),
+        ))
+    }
 
     /// Check if provider is authenticated
     fn is_authenticated(&self) -> bool;
@@ -48,6 +122,11 @@ pub trait MusicProvider: Send + Sync {
     /// Get a streamable URL for a track
     /// Returns the URL where the track can be streamed from
     async fn get_stream_url(&self, track_id: &str) -> Result<String, ProviderError>;
+
+    /// Optional auth headers for streaming requests
+    async fn get_auth_headers(&self) -> Option<Vec<(String, String)>> {
+        None
+    }
 
     /// Create a new playlist
     async fn create_playlist(
@@ -72,433 +151,457 @@ pub trait MusicProvider: Send + Sync {
 
     /// Get recently played tracks
     async fn get_recently_played(&self, limit: usize) -> Result<Vec<Track>, ProviderError>;
+
+    /// Optional access token for providers that support token-based sessions
+    async fn get_access_token(&self) -> Option<String> {
+        None
+    }
+
+    /// Refresh provider authentication state
+    async fn refresh_auth(&mut self) -> Result<(), ProviderError> {
+        Err(ProviderError(
+            "Authentication refresh is not supported for this provider".to_string(),
+        ))
+    }
+
+    /// Provider-specific premium status (if applicable)
+    async fn premium_status(&self) -> Option<bool> {
+        None
+    }
+
+    /// Disconnect provider and clear any in-memory state
+    async fn disconnect(&mut self) -> Result<(), ProviderError> {
+        Ok(())
+    }
 }
 
 /// Provider registry for managing multiple providers
+pub type ProviderHandle = Arc<tokio::sync::Mutex<Box<dyn MusicProvider>>>;
+
 pub struct ProviderRegistry {
-    providers: std::collections::HashMap<Source, Arc<dyn MusicProvider>>,
-    spotify_provider: Option<Arc<tokio::sync::Mutex<spotify::SpotifyProvider>>>,
-    jellyfin_provider: Option<Arc<tokio::sync::Mutex<jellyfin::JellyfinProvider>>>,
+    providers: HashMap<Source, ProviderHandle>,
 }
 
 impl ProviderRegistry {
     pub fn new() -> Self {
         Self {
-            providers: std::collections::HashMap::new(),
-            spotify_provider: None,
-            jellyfin_provider: None,
+            providers: HashMap::new(),
         }
     }
 
-    pub fn register(&mut self, provider: Arc<dyn MusicProvider>) {
-        self.providers.insert(provider.source(), provider);
+    pub fn register(&mut self, provider: impl MusicProvider + 'static) -> ProviderHandle {
+        let source = provider.source();
+        let boxed: Box<dyn MusicProvider> = Box::new(provider);
+        let handle: ProviderHandle = Arc::new(tokio::sync::Mutex::new(boxed));
+        self.providers.insert(source, handle.clone());
+        handle
     }
 
-    pub fn get(&self, source: Source) -> Option<Arc<dyn MusicProvider>> {
+    pub fn register_boxed(&mut self, provider: Box<dyn MusicProvider>) -> ProviderHandle {
+        let source = provider.source();
+        let handle = Arc::new(tokio::sync::Mutex::new(provider));
+        self.providers.insert(source, handle.clone());
+        handle
+    }
+
+    pub fn get(&self, source: Source) -> Option<ProviderHandle> {
         self.providers.get(&source).cloned()
     }
 
-    pub fn get_all(&self) -> Vec<Arc<dyn MusicProvider>> {
+    pub fn get_all(&self) -> Vec<ProviderHandle> {
         self.providers.values().cloned().collect()
     }
 
-    /// Initialize Spotify provider with default OAuth configuration (PKCE - no secrets needed)
-    pub fn get_spotify_auth_url_default(&mut self) -> Result<String, ProviderError> {
-        // Use default OAuth without cache - keyring is our source of truth for token persistence
-        let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth();
-
-        // PKCE requires mutable reference to generate verifier
-        let auth_url = spotify_provider.get_auth_url()?;
-        self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
-
-        Ok(auth_url)
+    fn require_provider(&self, source: Source) -> Result<ProviderHandle, ProviderError> {
+        self.get(source).ok_or_else(|| {
+            ProviderError(format!("Provider not initialized for source: {}", source))
+        })
     }
 
-    /// Initialize Spotify provider with OAuth configuration
-    pub fn get_spotify_auth_url(
+    fn build_spotify_provider(request: &ProviderAuthRequest) -> Box<dyn MusicProvider> {
+        let client_id = request.get("client_id");
+        let client_secret = request.get("client_secret");
+        let redirect_uri = request.get("redirect_uri");
+
+        if let (Some(client_id), Some(client_secret), Some(redirect_uri)) =
+            (client_id, client_secret, redirect_uri)
+        {
+            Box::new(spotify::SpotifyProvider::with_oauth(
+                client_id.to_string(),
+                client_secret.to_string(),
+                redirect_uri.to_string(),
+            ))
+        } else {
+            Box::new(spotify::SpotifyProvider::with_default_oauth())
+        }
+    }
+
+    fn build_jellyfin_provider(
+        request: &ProviderAuthRequest,
+    ) -> Result<Box<dyn MusicProvider>, ProviderError> {
+        let url = request
+            .get("url")
+            .ok_or_else(|| ProviderError("Missing Jellyfin url".to_string()))?;
+        let api_key = request
+            .get("api_key")
+            .ok_or_else(|| ProviderError("Missing Jellyfin api_key".to_string()))?;
+
+        Ok(Box::new(jellyfin::JellyfinProvider::new(
+            url.to_string(),
+            api_key.to_string(),
+        )))
+    }
+
+    pub async fn begin_auth(
         &mut self,
-        client_id: &str,
-        client_secret: &str,
-        redirect_uri: &str,
-    ) -> Result<String, ProviderError> {
-        let mut spotify_provider = spotify::SpotifyProvider::with_oauth(
-            client_id.to_string(),
-            client_secret.to_string(),
-            redirect_uri.to_string(),
-        );
+        source: Source,
+        request: ProviderAuthRequest,
+    ) -> Result<ProviderAuthResponse, ProviderError> {
+        let handle = match self.get(source) {
+            Some(existing) => existing,
+            None => match source {
+                Source::Spotify => self.register_boxed(Self::build_spotify_provider(&request)),
+                Source::Jellyfin => {
+                    return Err(ProviderError(
+                        "Jellyfin authentication must be completed with credentials".to_string(),
+                    ))
+                }
+                Source::Custom => {
+                    return Err(ProviderError(
+                        "Custom provider does not support authentication".to_string(),
+                    ))
+                }
+            },
+        };
 
-        // PKCE requires mutable reference to generate verifier
-        let auth_url = spotify_provider.get_auth_url()?;
-        self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
-
-        Ok(auth_url)
-    }
-    /// Complete Spotify authentication with authorization code
-    pub async fn authenticate_spotify(&self, code: &str) -> Result<(), ProviderError> {
-        tracing::info!("Starting Spotify authentication with code");
-
-        if let Some(provider) = &self.spotify_provider {
-            let mut spotify = provider.lock().await;
-            spotify.authenticate_with_code(code).await?;
-            tracing::info!("Authentication with code successful");
-
-            // Save the token after successful authentication
-            // Save the token after successful authentication
-            // The provider mutex in AppState ensures that concurrent authenticate_spotify
-            // calls are serialized at the command handler level. Within this function,
-            // we perform a load-modify-save sequence on the token storage. While there's
-            // a theoretical race if another process modifies the keyring between our load
-            // and save operations, this is extremely unlikely in a single-user desktop
-            // application context where only this process accesses these keyring entries.
-            if let Some(token) = spotify.get_token().await {
-                tracing::info!("Retrieved token from provider, saving to keyring");
-                let mut tokens = crate::config::Config::load_tokens()
-                    .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
-                tokens.spotify_token = Some(token);
-                crate::config::Config::save_tokens(&tokens)
-                    .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
-                tracing::info!("Token saved to keyring successfully");
-            } else {
-                tracing::warn!("Authentication succeeded but no token was retrieved");
-            }
-        } else {
-            return Err(ProviderError(
-                "Spotify provider not initialized".to_string(),
-            ));
-        }
-        Ok(())
+        let mut provider = handle.lock().await;
+        provider.begin_auth(request).await
     }
 
-    /// Check if Spotify is authenticated
-    pub async fn is_spotify_authenticated(&self) -> bool {
-        if let Some(provider) = &self.spotify_provider {
-            let spotify = provider.lock().await;
-            spotify.is_authenticated_status()
-        } else {
-            false
-        }
-    }
-
-    /// Get Spotify playlists
-    pub async fn get_spotify_playlists(&self) -> Result<Vec<Playlist>, ProviderError> {
-        if let Some(provider) = &self.spotify_provider {
-            let spotify = provider.lock().await;
-            spotify.get_playlists().await
-        } else {
-            Err(ProviderError(
-                "Spotify provider not authenticated".to_string(),
-            ))
-        }
-    }
-
-    /// Get a specific Spotify track by ID
-    pub async fn get_spotify_track(&self, id: &str) -> Result<Track, ProviderError> {
-        if let Some(provider) = &self.spotify_provider {
-            let spotify = provider.lock().await;
-            spotify.get_track(id).await
-        } else {
-            Err(ProviderError(
-                "Spotify provider not authenticated".to_string(),
-            ))
-        }
-    }
-
-    /// Get a specific Spotify playlist by ID
-    pub async fn get_spotify_playlist(&self, id: &str) -> Result<Playlist, ProviderError> {
-        if let Some(provider) = &self.spotify_provider {
-            let spotify = provider.lock().await;
-            spotify.get_playlist(id).await
-        } else {
-            Err(ProviderError(
-                "Spotify provider not authenticated".to_string(),
-            ))
-        }
-    }
-
-    /// Authenticate with Jellyfin
-    pub async fn authenticate_jellyfin(
+    pub async fn complete_auth(
         &mut self,
-        url: &str,
-        api_key: &str,
+        source: Source,
+        request: ProviderAuthRequest,
     ) -> Result<(), ProviderError> {
-        let mut jellyfin_provider =
-            jellyfin::JellyfinProvider::new(url.to_string(), api_key.to_string());
-        jellyfin_provider.authenticate().await?;
-        self.jellyfin_provider = Some(Arc::new(tokio::sync::Mutex::new(jellyfin_provider)));
+        let handle = match self.get(source) {
+            Some(existing) => existing,
+            None => match source {
+                Source::Spotify => {
+                    return Err(ProviderError(
+                        "Spotify provider not initialized. Call begin_auth first.".to_string(),
+                    ))
+                }
+                Source::Jellyfin => self.register_boxed(Self::build_jellyfin_provider(&request)?),
+                Source::Custom => {
+                    return Err(ProviderError(
+                        "Custom provider does not support authentication".to_string(),
+                    ))
+                }
+            },
+        };
+
+        // Hold the provider lock only as long as needed to complete auth and extract credentials.
+        let credentials = {
+            let mut provider = handle.lock().await;
+            provider.complete_auth(request.clone()).await?;
+
+            // Extract provider credentials while holding the lock, but perform I/O after dropping it.
+            match source {
+                Source::Spotify => {
+                    if let Some(spotify) =
+                        provider.as_any().downcast_ref::<spotify::SpotifyProvider>()
+                    {
+                        spotify
+                            .get_token()
+                            .await
+                            .map(|token| (None, None, Some(token)))
+                    } else {
+                        None
+                    }
+                }
+                Source::Jellyfin => {
+                    // Extract Jellyfin credentials from the request
+                    let url = request.get("url").map(|s| s.to_string());
+                    let api_key = request.get("api_key").map(|s| s.to_string());
+                    if url.is_some() && api_key.is_some() {
+                        Some((url, api_key, None))
+                    } else {
+                        None
+                    }
+                }
+                Source::Custom => None,
+            }
+        };
+        // Provider lock is dropped here
+
+        // Save credentials to keyring after dropping the provider lock
+        if let Some((jellyfin_url, jellyfin_api_key, spotify_token)) = credentials {
+            let mut tokens = crate::config::Config::load_tokens()
+                .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+
+            if let Some(token) = spotify_token {
+                tracing::info!("Retrieved Spotify token from provider, saving to keyring");
+                tokens.spotify_token = Some(token);
+                tracing::info!("Spotify token saved to keyring successfully");
+            } else if source == Source::Spotify {
+                tracing::warn!("Spotify authentication succeeded but no token was retrieved");
+            }
+
+            if let (Some(url), Some(api_key)) = (jellyfin_url, jellyfin_api_key) {
+                tracing::info!("Retrieved Jellyfin credentials from request, saving to keyring");
+                tokens.jellyfin_url = Some(url);
+                tokens.jellyfin_api_key = Some(api_key);
+                tracing::info!("Jellyfin credentials saved to keyring successfully");
+            }
+
+            crate::config::Config::save_tokens(&tokens)
+                .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
+        }
+
         Ok(())
     }
 
-    /// Check if Jellyfin is authenticated
-    pub async fn is_jellyfin_authenticated(&self) -> bool {
-        if let Some(provider) = &self.jellyfin_provider {
-            let jellyfin = provider.lock().await;
-            jellyfin.is_authenticated()
+    pub async fn is_authenticated(&self, source: Source) -> bool {
+        if let Some(provider) = self.get(source) {
+            let provider = provider.lock().await;
+            provider.is_authenticated()
         } else {
             false
         }
     }
 
-    /// Get Jellyfin playlists
-    pub async fn get_jellyfin_playlists(&self) -> Result<Vec<Playlist>, ProviderError> {
-        if let Some(provider) = &self.jellyfin_provider {
-            let jellyfin = provider.lock().await;
-            jellyfin.get_playlists().await
-        } else {
-            Err(ProviderError(
-                "Jellyfin provider not authenticated".to_string(),
-            ))
-        }
+    pub async fn get_playlists(&self, source: Source) -> Result<Vec<Playlist>, ProviderError> {
+        let provider = self.require_provider(source)?;
+        let provider = provider.lock().await;
+        provider.get_playlists().await
     }
 
-    /// Get a specific Jellyfin track by ID
-    pub async fn get_jellyfin_track(&self, id: &str) -> Result<Track, ProviderError> {
-        if let Some(provider) = &self.jellyfin_provider {
-            let jellyfin = provider.lock().await;
-            jellyfin.get_track(id).await
-        } else {
-            Err(ProviderError(
-                "Jellyfin provider not authenticated".to_string(),
-            ))
-        }
+    pub async fn get_playlist(&self, source: Source, id: &str) -> Result<Playlist, ProviderError> {
+        let provider = self.require_provider(source)?;
+        let provider = provider.lock().await;
+        provider.get_playlist(id).await
     }
 
-    /// Get a specific Jellyfin playlist
-    pub async fn get_jellyfin_playlist(&self, id: &str) -> Result<Playlist, ProviderError> {
-        if let Some(provider) = &self.jellyfin_provider {
-            let jellyfin = provider.lock().await;
-            jellyfin.get_playlist(id).await
-        } else {
-            Err(ProviderError(
-                "Jellyfin provider not authenticated".to_string(),
-            ))
-        }
+    pub async fn get_track(&self, source: Source, id: &str) -> Result<Track, ProviderError> {
+        let provider = self.require_provider(source)?;
+        let provider = provider.lock().await;
+        provider.get_track(id).await
     }
 
-    /// Search tracks on Jellyfin
-    pub async fn search_jellyfin_tracks(&self, query: &str) -> Result<Vec<Track>, ProviderError> {
-        if let Some(provider) = &self.jellyfin_provider {
-            let jellyfin = provider.lock().await;
-            jellyfin.search_tracks(query).await
-        } else {
-            Err(ProviderError(
-                "Jellyfin provider not authenticated".to_string(),
-            ))
-        }
-    }
-
-    /// Search tracks on Spotify
-    pub async fn search_spotify_tracks(&self, query: &str) -> Result<Vec<Track>, ProviderError> {
-        if let Some(provider) = &self.spotify_provider {
-            let spotify = provider.lock().await;
-            spotify.search_tracks(query).await
-        } else {
-            Err(ProviderError(
-                "Spotify provider not authenticated".to_string(),
-            ))
-        }
-    }
-
-    /// Search playlists on Jellyfin
-    pub async fn search_jellyfin_playlists(
+    pub async fn search_tracks(
         &self,
+        source: Source,
+        query: &str,
+    ) -> Result<Vec<Track>, ProviderError> {
+        let provider = self.require_provider(source)?;
+        let provider = provider.lock().await;
+        provider.search_tracks(query).await
+    }
+
+    pub async fn search_playlists(
+        &self,
+        source: Source,
         query: &str,
     ) -> Result<Vec<Playlist>, ProviderError> {
-        if let Some(provider) = &self.jellyfin_provider {
-            let jellyfin = provider.lock().await;
-            jellyfin.search_playlists(query).await
-        } else {
-            Err(ProviderError(
-                "Jellyfin provider not authenticated".to_string(),
-            ))
-        }
+        let provider = self.require_provider(source)?;
+        let provider = provider.lock().await;
+        provider.search_playlists(query).await
     }
 
-    /// Get recently played tracks from Jellyfin
-    pub async fn get_jellyfin_recently_played(
+    pub async fn get_stream_url(
         &self,
+        source: Source,
+        track_id: &str,
+    ) -> Result<String, ProviderError> {
+        let provider = self.require_provider(source)?;
+        let provider = provider.lock().await;
+        provider.get_stream_url(track_id).await
+    }
+
+    pub async fn create_playlist(
+        &self,
+        source: Source,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<Playlist, ProviderError> {
+        let provider = self.require_provider(source)?;
+        let provider = provider.lock().await;
+        provider.create_playlist(name, description).await
+    }
+
+    pub async fn add_track_to_playlist(
+        &self,
+        source: Source,
+        playlist_id: &str,
+        track: &Track,
+    ) -> Result<(), ProviderError> {
+        let provider = self.require_provider(source)?;
+        let provider = provider.lock().await;
+        provider.add_track_to_playlist(playlist_id, track).await
+    }
+
+    pub async fn remove_track_from_playlist(
+        &self,
+        source: Source,
+        playlist_id: &str,
+        track_id: &str,
+    ) -> Result<(), ProviderError> {
+        let provider = self.require_provider(source)?;
+        let provider = provider.lock().await;
+        provider
+            .remove_track_from_playlist(playlist_id, track_id)
+            .await
+    }
+
+    pub async fn get_recently_played(
+        &self,
+        source: Source,
         limit: usize,
     ) -> Result<Vec<Track>, ProviderError> {
-        if let Some(provider) = &self.jellyfin_provider {
-            let jellyfin = provider.lock().await;
-            jellyfin.get_recently_played(limit).await
-        } else {
-            Err(ProviderError(
-                "Jellyfin provider not authenticated".to_string(),
-            ))
-        }
+        let provider = self.require_provider(source)?;
+        let provider = provider.lock().await;
+        provider.get_recently_played(limit).await
     }
 
-    /// Disconnect Spotify
-    pub async fn disconnect_spotify(&mut self) -> Result<(), ProviderError> {
-        // Clear the cache file when disconnecting
-        if let Ok(config_dir) = crate::config::Config::config_dir() {
-            let cache_path = config_dir.join("spotify_cache.json");
-            if cache_path.exists() {
-                if let Err(e) = std::fs::remove_file(&cache_path) {
-                    tracing::warn!(
-                        "Failed to remove Spotify cache file ({}): {}",
-                        cache_path.display(),
-                        e
-                    );
-                }
-            }
-        }
-
-        // Clear stored tokens
-        crate::config::Config::clear_tokens()
-            .map_err(|e| ProviderError(format!("Failed to clear tokens: {}", e)))?;
-
-        self.spotify_provider = None;
-        Ok(())
-    }
-
-    /// Check if Spotify user has Premium subscription
-    ///
-    /// Returns Some(true) if user is premium, Some(false) if free tier,
-    /// or None if Spotify is not authenticated
-    pub async fn is_spotify_premium(&self) -> Option<bool> {
-        if let Some(provider) = &self.spotify_provider {
-            let spotify = provider.lock().await;
-            Some(spotify.is_premium())
-        } else {
-            None
-        }
-    }
-
-    /// Get Spotify access token for session initialization
-    ///
-    /// Returns the OAuth access token if authenticated, None otherwise.
-    /// This token can be used to initialize the librespot session.
-    pub async fn get_spotify_access_token(&self) -> Option<String> {
-        if let Some(provider) = &self.spotify_provider {
-            let spotify = provider.lock().await;
-            spotify.get_access_token().await
-        } else {
-            None
-        }
-    }
-
-    /// Refresh Spotify token and reinitialize session if needed
-    ///
-    /// This is called periodically to ensure the OAuth token stays valid.
-    /// After token refresh, the playback session may need to be reinitialized.
-    pub async fn refresh_spotify_token(&mut self) -> Result<(), ProviderError> {
-        if let Some(provider) = &self.spotify_provider {
-            let mut spotify = provider.lock().await;
-            spotify.refresh_token().await?;
-            Ok(())
-        } else {
-            Err(ProviderError(
-                "Spotify provider not authenticated".to_string(),
-            ))
-        }
-    }
-
-    /// Disconnect Jellyfin
-    pub async fn disconnect_jellyfin(&mut self) -> Result<(), ProviderError> {
-        self.jellyfin_provider = None;
-        Ok(())
-    }
-
-    /// Restore Jellyfin session from saved credentials
-    pub async fn restore_jellyfin_session(&mut self) -> Result<bool, ProviderError> {
-        use crate::config::Config;
-
-        tracing::info!("Starting Jellyfin session restoration from keyring");
-
-        // Load credentials from keyring
-        let tokens = Config::load_tokens()
-            .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
-
-        if tokens.jellyfin_api_key.is_none() || tokens.jellyfin_url.is_none() {
-            tracing::info!("No Jellyfin credentials found in keyring");
-            return Ok(false);
-        }
-
-        let api_key = tokens.jellyfin_api_key.unwrap();
-        let url = tokens.jellyfin_url.unwrap();
-
-        tracing::info!("Found Jellyfin credentials in keyring, authenticating");
-
-        // Authenticate with stored credentials
-        self.authenticate_jellyfin(&url, &api_key).await?;
-
-        tracing::info!("Jellyfin session restored successfully");
-        Ok(true)
-    }
-
-    /// Get Spotify provider for token access (internal use)
-    pub fn get_spotify_provider(
-        &self,
-    ) -> Option<&Arc<tokio::sync::Mutex<spotify::SpotifyProvider>>> {
-        self.spotify_provider.as_ref()
-    }
-
-    /// Check if we have saved tokens that can be used for authentication
-    pub fn has_saved_tokens(&self) -> bool {
-        // This will be called before the provider is initialized
-        // We'll check for token files in the config directory
-        use crate::config::Config;
-
-        if let Ok(tokens) = Config::load_tokens() {
-            tokens.spotify_token.is_some()
-        } else {
-            false
-        }
-    }
-
-    /// Get authentication headers for a specific source
-    /// Returns None for sources that don't require authentication headers
     pub async fn get_auth_headers(&self, source: Source) -> Option<Vec<(String, String)>> {
-        match source {
-            Source::Jellyfin => {
-                if let Some(provider_mutex) = &self.jellyfin_provider {
-                    let provider = provider_mutex.lock().await;
-                    return Some(provider.get_auth_headers());
-                }
-                None
-            }
-            _ => None,
+        if let Some(provider) = self.get(source) {
+            let provider = provider.lock().await;
+            provider.get_auth_headers().await
+        } else {
+            None
         }
     }
 
-    /// Restore Spotify session from saved tokens
-    pub async fn restore_spotify_session(&mut self) -> Result<bool, ProviderError> {
-        use crate::config::Config;
+    pub async fn get_access_token(&self, source: Source) -> Option<String> {
+        if let Some(provider) = self.get(source) {
+            let provider = provider.lock().await;
+            provider.get_access_token().await
+        } else {
+            None
+        }
+    }
 
-        tracing::info!("Starting Spotify session restoration from keyring");
+    pub async fn refresh_auth(&mut self, source: Source) -> Result<(), ProviderError> {
+        let provider = self.require_provider(source)?;
+        let mut provider = provider.lock().await;
+        provider.refresh_auth().await
+    }
 
-        // Load tokens from keyring
-        let tokens = Config::load_tokens()
-            .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+    pub async fn premium_status(&self, source: Source) -> Option<bool> {
+        if let Some(provider) = self.get(source) {
+            let provider = provider.lock().await;
+            provider.premium_status().await
+        } else {
+            None
+        }
+    }
 
-        if tokens.spotify_token.is_none() {
-            tracing::info!("No Spotify token found in keyring");
-            return Ok(false);
+    pub async fn disconnect(&mut self, source: Source) -> Result<(), ProviderError> {
+        match source {
+            Source::Spotify => {
+                if let Ok(config_dir) = crate::config::Config::config_dir() {
+                    let cache_path = config_dir.join("spotify_cache.json");
+                    if cache_path.exists() {
+                        if let Err(e) = std::fs::remove_file(&cache_path) {
+                            tracing::warn!(
+                                "Failed to remove Spotify cache file ({}): {}",
+                                cache_path.display(),
+                                e
+                            );
+                        }
+                    }
+                }
+
+                let mut tokens = crate::config::Config::load_tokens()
+                    .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+                tokens.spotify_token = None;
+                crate::config::Config::save_tokens(&tokens)
+                    .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
+            }
+            Source::Jellyfin => {
+                let mut tokens = crate::config::Config::load_tokens()
+                    .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+                tokens.jellyfin_api_key = None;
+                tokens.jellyfin_url = None;
+                crate::config::Config::save_tokens(&tokens)
+                    .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
+            }
+            Source::Custom => {}
         }
 
-        tracing::info!("Found Spotify token in keyring, creating provider");
+        if let Some(handle) = self.get(source) {
+            let mut provider = handle.lock().await;
+            provider.disconnect().await?;
+        }
 
-        // Create provider without file-based cache - keyring is our only source of truth
-        let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth();
+        self.providers.remove(&source);
+        Ok(())
+    }
 
-        if let Some(token) = tokens.spotify_token {
-            tracing::info!("Setting token on provider");
-            spotify_provider.set_token(token).await?;
-            tracing::info!("Token set successfully");
+    pub async fn restore_session(&mut self, source: Source) -> Result<bool, ProviderError> {
+        match source {
+            Source::Spotify => {
+                use crate::config::Config;
 
-            // Check premium status after setting token
-            match spotify_provider.check_and_update_premium_status().await {
-                Ok(_) => tracing::info!("Premium status check completed"),
-                Err(e) => tracing::warn!("Premium status check failed: {}", e),
+                tracing::info!("Starting Spotify session restoration from keyring");
+
+                let tokens = Config::load_tokens()
+                    .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+
+                if tokens.spotify_token.is_none() {
+                    tracing::info!("No Spotify token found in keyring");
+                    return Ok(false);
+                }
+
+                tracing::info!("Found Spotify token in keyring, creating provider");
+
+                let mut spotify_provider = spotify::SpotifyProvider::with_default_oauth();
+
+                if let Some(token) = tokens.spotify_token {
+                    tracing::info!("Setting token on provider");
+                    spotify_provider.set_token(token).await?;
+                    tracing::info!("Token set successfully");
+
+                    match spotify_provider.check_and_update_premium_status().await {
+                        Ok(_) => tracing::info!("Premium status check completed"),
+                        Err(e) => tracing::warn!("Premium status check failed: {}", e),
+                    }
+
+                    tracing::info!("Session restored from keyring, storing provider");
+                    self.register(spotify_provider);
+                    Ok(true)
+                } else {
+                    tracing::info!("Token was None after loading from keyring");
+                    Ok(false)
+                }
             }
+            Source::Jellyfin => {
+                use crate::config::Config;
 
-            tracing::info!("Session restored from keyring, storing provider");
-            self.spotify_provider = Some(Arc::new(tokio::sync::Mutex::new(spotify_provider)));
-            Ok(true)
-        } else {
-            tracing::info!("Token was None after loading from keyring");
-            Ok(false)
+                tracing::info!("Starting Jellyfin session restoration from keyring");
+
+                let tokens = Config::load_tokens()
+                    .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+
+                if tokens.jellyfin_api_key.is_none() || tokens.jellyfin_url.is_none() {
+                    tracing::info!("No Jellyfin credentials found in keyring");
+                    return Ok(false);
+                }
+
+                let api_key = tokens.jellyfin_api_key.unwrap();
+                let url = tokens.jellyfin_url.unwrap();
+
+                tracing::info!("Found Jellyfin credentials in keyring, authenticating");
+
+                let mut jellyfin_provider =
+                    jellyfin::JellyfinProvider::new(url.to_string(), api_key.to_string());
+                jellyfin_provider.authenticate().await?;
+
+                self.register(jellyfin_provider);
+                tracing::info!("Jellyfin session restored successfully");
+                Ok(true)
+            }
+            Source::Custom => Ok(false),
         }
     }
 }
@@ -547,7 +650,7 @@ mod tests {
         let _ = Config::clear_tokens();
 
         let mut registry = ProviderRegistry::new();
-        let result = registry.restore_spotify_session().await;
+        let result = registry.restore_session(Source::Spotify).await;
 
         // Should return Ok(false) when no cache or tokens exist
         assert!(result.is_ok());
@@ -568,7 +671,7 @@ mod tests {
         Config::save_tokens(&tokens).expect("Failed to save test tokens");
 
         let mut registry = ProviderRegistry::new();
-        let result = registry.restore_spotify_session().await;
+        let result = registry.restore_session(Source::Spotify).await;
 
         // Note: This test will likely fail because the token is fake and
         // check_and_update_premium_status will fail when it tries to make an API call.
@@ -596,7 +699,7 @@ mod tests {
         Config::save_tokens(&tokens).expect("Failed to save test tokens");
 
         let mut registry = ProviderRegistry::new();
-        let result = registry.restore_spotify_session().await;
+        let result = registry.restore_session(Source::Spotify).await;
 
         // Should fail because the token is expired
         // The set_token method now validates expiry
@@ -617,7 +720,7 @@ mod tests {
 
         // Try to restore with no available session data
         let mut registry = ProviderRegistry::new();
-        let result = registry.restore_spotify_session().await;
+        let result = registry.restore_session(Source::Spotify).await;
 
         // Should return Ok(false) rather than panicking
         assert!(result.is_ok());
@@ -630,8 +733,8 @@ mod tests {
         let registry = ProviderRegistry::new();
 
         // Verify initial state
-        assert!(registry.spotify_provider.is_none());
-        assert!(registry.jellyfin_provider.is_none());
+        assert!(registry.get(Source::Spotify).is_none());
+        assert!(registry.get(Source::Jellyfin).is_none());
     }
 
     #[tokio::test]
@@ -650,7 +753,7 @@ mod tests {
 
         // Try to restore - should return Ok(false)
         let mut registry = ProviderRegistry::new();
-        let result = registry.restore_spotify_session().await;
+        let result = registry.restore_session(Source::Spotify).await;
 
         assert!(result.is_ok());
         assert!(!result.unwrap());
@@ -663,7 +766,7 @@ mod tests {
         let _ = Config::clear_tokens();
 
         let mut registry = ProviderRegistry::new();
-        let result = registry.restore_jellyfin_session().await;
+        let result = registry.restore_session(Source::Jellyfin).await;
 
         // Should return Ok(false) when no credentials exist
         assert!(result.is_ok());
@@ -685,7 +788,7 @@ mod tests {
         Config::save_tokens(&tokens).expect("Failed to save test tokens");
 
         let mut registry = ProviderRegistry::new();
-        let result = registry.restore_jellyfin_session().await;
+        let result = registry.restore_session(Source::Jellyfin).await;
 
         // Clean up
         let _ = Config::clear_tokens();
@@ -708,7 +811,7 @@ mod tests {
         Config::save_tokens(&tokens).expect("Failed to save test tokens");
 
         let mut registry = ProviderRegistry::new();
-        let result = registry.restore_jellyfin_session().await;
+        let result = registry.restore_session(Source::Jellyfin).await;
 
         // Clean up
         let _ = Config::clear_tokens();
@@ -731,7 +834,7 @@ mod tests {
         Config::save_tokens(&tokens).expect("Failed to save test tokens");
 
         let mut registry = ProviderRegistry::new();
-        let result = registry.restore_jellyfin_session().await;
+        let result = registry.restore_session(Source::Jellyfin).await;
 
         // Clean up
         let _ = Config::clear_tokens();
@@ -749,7 +852,7 @@ mod tests {
 
         // Try to restore with no available credentials
         let mut registry = ProviderRegistry::new();
-        let result = registry.restore_jellyfin_session().await;
+        let result = registry.restore_session(Source::Jellyfin).await;
 
         // Should return Ok(false) rather than panicking
         assert!(result.is_ok());
