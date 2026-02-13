@@ -247,12 +247,12 @@ export function Settings() {
                 id="spotify-connect-btn"
                 className="btn-primary"
                 onClick={handleSpotifyConnect}
-                disabled={spotify.isLoading}
+                disabled={spotify.isLoading && !spotify.isConnected}
               >
-                {spotify.isLoading
-                  ? "Connecting..."
-                  : spotify.isConnected
-                    ? "Disconnect Spotify"
+                {spotify.isConnected
+                  ? "Disconnect Spotify"
+                  : spotify.isLoading
+                    ? "Connecting..."
                     : "Connect Spotify"}
               </button>
               <ProviderStatus
@@ -356,7 +356,7 @@ export function Settings() {
 
         <ColumnPreferencesSection />
       </div>
-      {spotify.authUrl && (
+      {spotify.authUrl && !spotify.isConnected && (
         <AuthModal authUrl={spotify.authUrl} onClose={spotify.clearAuthUrl} />
       )}
     </section>

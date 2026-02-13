@@ -26,6 +26,16 @@ export function useSpotifyAuth() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isConnected || !mountedRef.current) {
+      return;
+    }
+
+    setAuthUrl(null);
+    setIsLoading(false);
+    setError(null);
+  }, [isConnected]);
+
   const checkAuthStatus = useCallback(async () => {
     try {
       const authenticated = await tauriAPI.isSpotifyAuthenticated();
@@ -48,6 +58,12 @@ export function useSpotifyAuth() {
         } catch (err) {
           console.error("Error checking session status:", err);
           setSessionReady(false);
+        }
+
+        if (mountedRef.current) {
+          setAuthUrl(null);
+          setIsLoading(false);
+          setError(null);
         }
       } else {
         setIsPremium(null);
@@ -75,6 +91,20 @@ export function useSpotifyAuth() {
   }, [checkAuthStatus]);
 
   useEffect(() => {
+    if (!authUrl || !isLoading) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void checkAuthStatus();
+    }, 2000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [authUrl, isLoading, checkAuthStatus]);
+
+  useEffect(() => {
     const unsubscribe = backendSocket.on<SpotifyAuthStatus>(
       "spotify-auth-status",
       (status) => {
@@ -84,6 +114,10 @@ export function useSpotifyAuth() {
         setIsConnected(status.authenticated);
         setIsPremium(status.premium ?? null);
         setSessionReady(status.session_ready ?? false);
+        if (status.authenticated && mountedRef.current) {
+          setAuthUrl(null);
+          setIsLoading(false);
+        }
       },
     );
 
@@ -122,7 +156,10 @@ export function useSpotifyAuth() {
             return true;
           }
         } catch (err) {
-          console.warn("Initial auth check failed, will wait for websocket event:", err);
+          console.warn(
+            "Initial auth check failed, will wait for websocket event:",
+            err,
+          );
         }
         return false;
       };
@@ -149,47 +186,49 @@ export function useSpotifyAuth() {
             10 * 60 * 1000,
           );
 
-        unsubscribe = backendSocket.on<OAuthCodeReceived>(
-          "oauth-code-received",
-          async (payload) => {
-            if (resolved || payload?.source !== "spotify") {
-              return;
-            }
-
-            resolved = true;
-            window.clearTimeout(timeoutId);
-            // Defer unsubscription to avoid mutating the listener set during iteration.
-            window.setTimeout(() => {
-              if (unsubscribe) {
-                unsubscribe();
+          unsubscribe = backendSocket.on<OAuthCodeReceived>(
+            "oauth-code-received",
+            async (payload) => {
+              if (resolved || payload?.source !== "spotify") {
+                return;
               }
-            }, 0);
 
-            try {
-              const hasCode = await tauriAPI.checkOAuthCode();
-              if (hasCode) {
-                await new Promise((r) => setTimeout(r, AUTH_PROCESSING_DELAY_MS));
-                await checkAuthStatus();
-              } else {
+              resolved = true;
+              window.clearTimeout(timeoutId);
+              // Defer unsubscription to avoid mutating the listener set during iteration.
+              window.setTimeout(() => {
+                if (unsubscribe) {
+                  unsubscribe();
+                }
+              }, 0);
+
+              try {
+                const hasCode = await tauriAPI.checkOAuthCode();
+                if (hasCode) {
+                  await new Promise((r) =>
+                    setTimeout(r, AUTH_PROCESSING_DELAY_MS),
+                  );
+                  await checkAuthStatus();
+                } else {
+                  if (mountedRef.current) {
+                    setError("Authentication failed");
+                  }
+                }
+              } catch (err) {
+                console.error("Auth completion error:", err);
                 if (mountedRef.current) {
                   setError("Authentication failed");
                 }
+              } finally {
+                if (mountedRef.current) {
+                  setAuthUrl(null);
+                  setIsLoading(false);
+                }
+                resolve();
               }
-            } catch (err) {
-              console.error("Auth completion error:", err);
-              if (mountedRef.current) {
-                setError("Authentication failed");
-              }
-            } finally {
-              if (mountedRef.current) {
-                setAuthUrl(null);
-                setIsLoading(false);
-              }
-              resolve();
-            }
-          },
-        );
-      })
+            },
+          );
+        })
         .catch((err) => {
           console.error("Error in auth initialization:", err);
           if (!resolved && mountedRef.current) {
