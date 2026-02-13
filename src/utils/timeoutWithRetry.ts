@@ -97,13 +97,11 @@ export async function withTimeoutAndRetry<T>(
           resolve();
         }, { once: true });
       });
-    } catch (error) {
+    } catch {
       // Clear timeout on error
       if (timeoutId !== undefined) {
         window.clearTimeout(timeoutId);
       }
-
-      console.error("Error during retry attempt:", error);
 
       // If this is the last attempt or we're cancelled, return fallback
       if (attempt === maxRetries - 1 || signal?.aborted) {

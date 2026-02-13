@@ -31,7 +31,7 @@ export default function App() {
     "Loading your library...",
   );
   const [showRetryButton, setShowRetryButton] = useState(false);
-  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [showCancelButton, setShowCancelButton] = useState(false);
   const { loadPlaylists } = usePlaylists();
   const { refresh: refreshCustomPlaylists } = useCustomPlaylists();
   const mountedRef = useRef(true);
@@ -60,7 +60,7 @@ export default function App() {
         if (!mountedRef.current) return;
         setStartupMessage("Loading custom playlists...");
         setShowRetryButton(false);
-        setRetryAttempt(1); // Start at 1 to enable cancel button from the beginning
+        setShowCancelButton(false);
 
         // Create abort controller for cancellation
         abortControllerRef.current = new AbortController();
@@ -77,6 +77,7 @@ export default function App() {
 
         if (!mountedRef.current) return;
         setStartupMessage("Checking connected services...");
+        setShowCancelButton(true); // Enable cancel from the start of auth checks
 
         const [spotifyAuth, jellyfinAuth] = await Promise.all([
           withTimeoutAndRetry({
@@ -89,7 +90,8 @@ export default function App() {
             maxRetries: MAX_AUTH_RETRIES,
             onRetry: (attempt) => {
               if (!mountedRef.current) return;
-              setRetryAttempt(attempt + 1);
+              // attempt is the retry number (0 = 1st retry = 2nd attempt, 1 = 2nd retry = 3rd attempt)
+              // With maxRetries=3, we have attempts 0,1,2 total (3 attempts), retries happen at attempt 1,2
               setStartupMessage(`Retrying authentication check (attempt ${attempt + 1}/${MAX_AUTH_RETRIES})...`);
             },
             signal: abortControllerRef.current.signal,
@@ -104,12 +106,13 @@ export default function App() {
             maxRetries: MAX_AUTH_RETRIES,
             onRetry: (attempt) => {
               if (!mountedRef.current) return;
-              setRetryAttempt(attempt + 1);
               setStartupMessage(`Retrying authentication check (attempt ${attempt + 1}/${MAX_AUTH_RETRIES})...`);
             },
             signal: abortControllerRef.current.signal,
           }),
         ]);
+
+        setShowCancelButton(false); // Auth checks complete, hide cancel button
 
         // Check if operation was cancelled
         if (abortControllerRef.current.signal.aborted) {
@@ -146,6 +149,7 @@ export default function App() {
         if (mountedRef.current) {
           setStartupLoading(false);
         }
+        setShowCancelButton(false);
         abortControllerRef.current = null;
       }
     };
@@ -223,7 +227,7 @@ export default function App() {
             >
               <LoadingSpinner size="small" />
               <span>{startupMessage}</span>
-              {startupLoading && !showRetryButton && retryAttempt > 0 && abortControllerRef.current && (
+              {showCancelButton && (
                 <button
                   className="startup-banner-button startup-cancel-button"
                   onClick={handleCancel}
