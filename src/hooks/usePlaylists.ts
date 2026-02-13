@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { tauriAPI } from "../api";
 import type { Playlist, TauriSource } from "../types";
+import { withTimeout } from "../utils/timeout";
 
 const CACHE_VERSION = 1;
 const PROVIDER_CHECK_TIMEOUT_MS = 2500;
@@ -19,26 +20,6 @@ interface PlaylistCacheData {
 // they would share this cache. For production single-instance desktop apps, this is acceptable.
 let playlistCache: Playlist[] = [];
 let cacheInitialized = false;
-
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  fallbackValue: T,
-): Promise<T> {
-  let timeoutId: number | undefined;
-
-  const timeoutPromise = new Promise<T>((resolve) => {
-    timeoutId = window.setTimeout(() => resolve(fallbackValue), timeoutMs);
-  });
-
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timeoutId !== undefined) {
-      window.clearTimeout(timeoutId);
-    }
-  }
-}
 
 // Disk cache helpers using Rust backend
 async function saveToDiskCache(playlists: Playlist[]) {
@@ -152,14 +133,20 @@ export function usePlaylists() {
         const [spotifyAuth, jellyfinAuth] = await Promise.all([
           wantsSpotify
             ? withTimeout(
-                tauriAPI.isSpotifyAuthenticated().catch(() => false),
+                tauriAPI.isSpotifyAuthenticated().catch((err) => {
+                  console.error("Error checking Spotify authentication:", err);
+                  return false;
+                }),
                 PROVIDER_CHECK_TIMEOUT_MS,
                 false,
               )
             : Promise.resolve(false),
           wantsJellyfin
             ? withTimeout(
-                tauriAPI.isJellyfinAuthenticated().catch(() => false),
+                tauriAPI.isJellyfinAuthenticated().catch((err) => {
+                  console.error("Error checking Jellyfin authentication:", err);
+                  return false;
+                }),
                 PROVIDER_CHECK_TIMEOUT_MS,
                 false,
               )
@@ -169,14 +156,20 @@ export function usePlaylists() {
         const [spotifyPlaylists, jellyfinPlaylists] = await Promise.all([
           spotifyAuth
             ? withTimeout(
-                tauriAPI.getSpotifyPlaylists().catch(() => []),
+                tauriAPI.getSpotifyPlaylists().catch((err) => {
+                  console.error("Error fetching Spotify playlists:", err);
+                  return [];
+                }),
                 PLAYLIST_FETCH_TIMEOUT_MS,
                 [],
               )
             : Promise.resolve([]),
           jellyfinAuth
             ? withTimeout(
-                tauriAPI.getJellyfinPlaylists().catch(() => []),
+                tauriAPI.getJellyfinPlaylists().catch((err) => {
+                  console.error("Error fetching Jellyfin playlists:", err);
+                  return [];
+                }),
                 PLAYLIST_FETCH_TIMEOUT_MS,
                 [],
               )
