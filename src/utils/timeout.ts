@@ -8,6 +8,9 @@ export type TimeoutResult<T> = {
   timedOut: boolean;
 };
 
+// Use a unique symbol to detect which promise won the race
+const TIMEOUT_SYMBOL = Symbol("timeout");
+
 /**
  * Wraps a promise with a timeout. If the promise doesn't resolve/reject within
  * the specified timeout, returns the fallback value with a timeout indicator.
@@ -23,9 +26,6 @@ export async function withTimeout<T>(
   fallbackValue: T,
 ): Promise<TimeoutResult<T>> {
   let timeoutId: number | undefined;
-
-  // Use a unique symbol to detect which promise won the race
-  const TIMEOUT_SYMBOL = Symbol("timeout");
 
   const timeoutPromise = new Promise<T | symbol>((resolve) => {
     timeoutId = window.setTimeout(() => {
