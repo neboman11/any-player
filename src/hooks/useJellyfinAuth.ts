@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { tauriAPI } from "../api";
+import { backendSocket } from "../websocket";
 import { retryWithDelay } from "../utils/retryHelper";
+import type { JellyfinAuthStatus } from "../types";
 
 export function useJellyfinAuth() {
   const [isConnected, setIsConnected] = useState(false);
@@ -29,6 +31,20 @@ export function useJellyfinAuth() {
 
     void checkStatus();
   }, [checkAuthStatus]);
+
+  useEffect(() => {
+    const unsubscribe = backendSocket.on<JellyfinAuthStatus>(
+      "jellyfin-auth-status",
+      (status) => {
+        if (!status) {
+          return;
+        }
+        setIsConnected(status.authenticated);
+      },
+    );
+
+    return unsubscribe;
+  }, []);
 
   const connect = useCallback(
     async (url: string, apiKey: string) => {

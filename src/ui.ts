@@ -3,8 +3,10 @@
  */
 
 import { tauriAPI } from "./api";
+import { backendSocket } from "./websocket";
 import type {
   OAuthCallbackData,
+  OAuthCodeReceived,
   Playlist,
   RepeatMode,
   SearchResult,
@@ -588,57 +590,128 @@ export class UI {
   }
 
   private async waitForSpotifyAuth(): Promise<void> {
-    // Poll for authentication completion
-    let pollCount = 0;
-    const maxPolls = 600; // 10 minutes at 1 second intervals
+    const promise = new Promise<void>((resolve) => {
+      let resolved = false;
+      let unsubscribe: (() => void) | null = null;
 
-    const checkInterval = setInterval(async () => {
-      pollCount++;
-      try {
-        // First, check if there's a pending OAuth code to process
-        const codeProcessed = await tauriAPI.checkOAuthCode();
-        if (codeProcessed) {
-          console.log("OAuth code processed successfully");
-        }
+      // Immediately check if auth already completed (in case websocket missed the event)
+      const checkInitialAuth = async () => {
+        try {
+          const codeProcessed = await tauriAPI.checkOAuthCode();
+          if (codeProcessed) {
+            const isAuthenticated = await tauriAPI.isSpotifyAuthenticated();
+            if (isAuthenticated) {
+              resolved = true;
+              const fallback = document.getElementById("auth-fallback");
+              if (fallback) fallback.remove();
 
-        // Then check if authenticated
-        const isAuthenticated = await tauriAPI.isSpotifyAuthenticated();
-        console.log(`Auth check ${pollCount}: ${isAuthenticated}`);
-
-        if (isAuthenticated) {
-          clearInterval(checkInterval);
-
-          // Remove fallback modal if it exists
-          const fallback = document.getElementById("auth-fallback");
-          if (fallback) fallback.remove();
-
-          const statusEl = document.getElementById("spotify-status");
-          const btnEl = document.getElementById("spotify-connect-btn");
-          if (statusEl) {
-            statusEl.textContent = "✓ Connected";
-            statusEl.className = "status connected";
+              const statusEl = document.getElementById("spotify-status");
+              const btnEl = document.getElementById("spotify-connect-btn");
+              if (statusEl) {
+                statusEl.textContent = "✓ Connected";
+                statusEl.className = "status connected";
+              }
+              if (btnEl) btnEl.textContent = "Disconnect Spotify";
+              resolve();
+              return true;
+            }
           }
-          if (btnEl) btnEl.textContent = "Disconnect Spotify";
-
-          console.log("Spotify authentication successful!");
+        } catch (err) {
+          console.warn(
+            "Initial auth check failed, will wait for websocket event:",
+            err,
+          );
         }
-      } catch (error) {
-        console.error("Error checking auth status:", error);
-      }
+        return false;
+      };
 
-      // Stop polling after max attempts
-      if (pollCount >= maxPolls) {
-        clearInterval(checkInterval);
-        console.log("Auth polling timeout after 10 minutes");
-        const statusEl = document.getElementById("spotify-status");
-        if (
-          statusEl &&
-          statusEl.textContent === "Waiting for authentication..."
-        ) {
-          statusEl.textContent = "⏱ Auth timeout - please try again";
-        }
-      }
-    }, 1000);
+      checkInitialAuth()
+        .then((completed) => {
+          if (completed) return;
+
+          const timeoutId = window.setTimeout(
+            () => {
+              if (resolved) {
+                return;
+              }
+              resolved = true;
+              if (unsubscribe) {
+                unsubscribe();
+              }
+              console.log("Auth websocket timeout after 10 minutes");
+              const statusEl = document.getElementById("spotify-status");
+              if (
+                statusEl &&
+                statusEl.textContent === "Waiting for authentication..."
+              ) {
+                statusEl.textContent = "⏱ Auth timeout - please try again";
+              }
+              resolve();
+            },
+            10 * 60 * 1000,
+          );
+
+          unsubscribe = backendSocket.on<OAuthCodeReceived>(
+            "oauth-code-received",
+            async (payload) => {
+              if (resolved || payload?.source !== "spotify") {
+                return;
+              }
+
+              resolved = true;
+              window.clearTimeout(timeoutId);
+              // Defer unsubscription to avoid mutating the listener set during iteration.
+              window.setTimeout(() => {
+                if (unsubscribe) {
+                  unsubscribe();
+                }
+              }, 0);
+
+              try {
+                const codeProcessed = await tauriAPI.checkOAuthCode();
+                if (codeProcessed) {
+                  console.log("OAuth code processed successfully");
+                }
+
+                const isAuthenticated = await tauriAPI.isSpotifyAuthenticated();
+                if (isAuthenticated) {
+                  const fallback = document.getElementById("auth-fallback");
+                  if (fallback) fallback.remove();
+
+                  const statusEl = document.getElementById("spotify-status");
+                  const btnEl = document.getElementById("spotify-connect-btn");
+                  if (statusEl) {
+                    statusEl.textContent = "✓ Connected";
+                    statusEl.className = "status connected";
+                  }
+                  if (btnEl) btnEl.textContent = "Disconnect Spotify";
+
+                  console.log("Spotify authentication successful!");
+                } else {
+                  const statusEl = document.getElementById("spotify-status");
+                  if (statusEl) statusEl.textContent = "✗ Auth failed";
+                }
+              } catch (error) {
+                console.error("Error checking auth status:", error);
+              } finally {
+                resolve();
+              }
+            },
+          );
+        })
+        .catch((err) => {
+          console.error("Error in auth initialization:", err);
+          if (!resolved) {
+            const statusEl = document.getElementById("spotify-status");
+            if (statusEl) {
+              statusEl.textContent = "⚠ Auth initialization error";
+            }
+            resolve();
+          }
+        });
+    });
+
+    return promise;
   }
 
   private async completeSpotifyAuth(code: string): Promise<void> {

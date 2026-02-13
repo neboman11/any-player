@@ -6,6 +6,7 @@ pub mod models;
 pub mod playback;
 pub mod providers;
 pub mod state;
+pub mod websocket;
 
 pub use config::Config;
 pub use database::Database;
@@ -23,17 +24,20 @@ pub use commands::{auth, custom_playlists};
 
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
+use tokio::sync::broadcast;
 use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize logging
+    // Default log level is INFO - anything above (DEBUG, TRACE) will drastically
+    // increase log output and may impact performance. Use higher levels only for debugging.
     let filter = filter::Targets::new()
-        .with_default(filter::LevelFilter::TRACE)
-        .with_target("any_player_lib", filter::LevelFilter::TRACE)
-        .with_target("glycin", filter::LevelFilter::INFO)
-        .with_target("hyper", filter::LevelFilter::INFO)
-        .with_target("zbus", filter::LevelFilter::INFO);
+        .with_default(filter::LevelFilter::INFO)
+        .with_target("any_player_lib", filter::LevelFilter::INFO)
+        .with_target("glycin", filter::LevelFilter::WARN)
+        .with_target("hyper", filter::LevelFilter::WARN)
+        .with_target("zbus", filter::LevelFilter::WARN);
     tracing_subscriber::registry()
         .with(filter)
         .with(tracing_subscriber::fmt::layer())
@@ -67,11 +71,13 @@ pub fn run() {
     // Create application state
     let providers = Arc::new(Mutex::new(ProviderRegistry::new()));
     let oauth_code: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let (ws_sender, _) = broadcast::channel(256);
 
     let providers_clone = providers.clone();
     let oauth_code_for_server = oauth_code.clone();
     let database_clone = database.clone();
     let providers_for_state = providers.clone();
+    let ws_sender_for_state = ws_sender.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -177,10 +183,27 @@ pub fn run() {
                 providers: providers_for_state.clone(),
                 oauth_code: oauth_code_for_server.clone(),
                 database: database_clone.clone(),
+                ws_sender: ws_sender_for_state.clone(),
             };
             app.manage(app_state);
 
             let handle = app.handle().clone();
+            let handle_for_ws = handle.clone();
+
+            let ws_sender_for_server = ws_sender.clone();
+            let ws_sender_for_playback = ws_sender.clone();
+            let playback_for_ws = playback.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) =
+                    websocket::start_ws_server(handle_for_ws, ws_sender_for_server).await
+                {
+                    tracing::error!(?err, "WebSocket server failed");
+                }
+            });
+
+            tauri::async_runtime::spawn(async move {
+                websocket::start_playback_broadcast(playback_for_ws, ws_sender_for_playback).await;
+            });
 
             // Spawn a task to listen for track completion and emit events
             let playback_for_listener = playback.clone();
@@ -208,12 +231,14 @@ pub fn run() {
 
             // Start OAuth callback server in the Tauri runtime
             let oauth_code_clone = oauth_code_for_server.clone();
-            tauri::async_runtime::spawn(start_oauth_server(oauth_code_clone));
+            let ws_sender_for_oauth = ws_sender.clone();
+            tauri::async_runtime::spawn(start_oauth_server(oauth_code_clone, ws_sender_for_oauth));
 
             // Try to restore Spotify session on startup in the background
             // This allows the UI to load immediately while authentication is being restored
             let providers_for_jellyfin = providers_clone.clone();
             let playback_for_restore = playback.clone();
+            let handle_for_status = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 // Restore session without holding the lock during the entire process
                 let restored = {
@@ -271,6 +296,9 @@ pub fn run() {
                     }
                 }
 
+                let app_state = handle_for_status.state::<commands::AppState>();
+                websocket::emit_spotify_status(&app_state).await;
+
                 // Also try to restore Jellyfin session
                 {
                     let mut providers = providers_for_jellyfin.lock().await;
@@ -289,6 +317,9 @@ pub fn run() {
                         }
                     }
                 }
+
+                let app_state = handle_for_status.state::<commands::AppState>();
+                websocket::emit_jellyfin_status(&app_state).await;
 
                 // Restore playback state from disk after providers are ready
                 {
@@ -336,7 +367,10 @@ pub fn run() {
 }
 
 /// Start a simple HTTP server for OAuth callbacks
-async fn start_oauth_server(oauth_code: Arc<Mutex<Option<String>>>) {
+async fn start_oauth_server(
+    oauth_code: Arc<Mutex<Option<String>>>,
+    ws_sender: broadcast::Sender<String>,
+) {
     use std::net::SocketAddr;
 
     let addr: SocketAddr = "127.0.0.1:8989".parse().expect("Failed to parse address");
@@ -356,7 +390,12 @@ async fn start_oauth_server(oauth_code: Arc<Mutex<Option<String>>>) {
         match listener.accept().await {
             Ok((socket, _)) => {
                 let oauth_code_clone = oauth_code.clone();
-                tauri::async_runtime::spawn(handle_oauth_request(socket, oauth_code_clone));
+                let ws_sender_clone = ws_sender.clone();
+                tauri::async_runtime::spawn(handle_oauth_request(
+                    socket,
+                    oauth_code_clone,
+                    ws_sender_clone,
+                ));
             }
             Err(e) => {
                 tracing::error!("Error accepting connection: {}", e);
@@ -369,6 +408,7 @@ async fn start_oauth_server(oauth_code: Arc<Mutex<Option<String>>>) {
 async fn handle_oauth_request(
     socket: tokio::net::TcpStream,
     oauth_code: Arc<Mutex<Option<String>>>,
+    ws_sender: broadcast::Sender<String>,
 ) {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -390,6 +430,12 @@ async fn handle_oauth_request(
                             let mut code_storage = oauth_code.lock().await;
                             *code_storage = Some(code_str.clone());
                         }
+
+                        websocket::broadcast_event(
+                            &ws_sender,
+                            "oauth-code-received",
+                            serde_json::json!({ "source": "spotify" }),
+                        );
 
                         // Send a response to the browser
                         let response = b"HTTP/1.1 200 OK\r\n\
