@@ -124,6 +124,12 @@ body {
   color: #c8d8f0;
 }
 
+.startup-loading-banner.error {
+  border-color: #d32f2f;
+  background-color: rgba(211, 47, 47, 0.15);
+  color: #f48fb1;
+}
+
 .loading-inline {
   display: inline-flex;
   align-items: center;
