@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Toaster } from "react-hot-toast";
 import "./App.css";
 import {
@@ -15,30 +15,11 @@ import type { BackendInitStatus, Page } from "./types";
 import { listen } from "@tauri-apps/api/event";
 import { LoadingSpinner } from "./components/shared/LoadingSpinner";
 import { backendSocket } from "./websocket";
+import { withTimeout } from "./utils/timeout";
 
 const STARTUP_PROVIDER_CHECK_TIMEOUT_MS = 2500;
 const STARTUP_SERVICE_SYNC_TIMEOUT_MS = 8000;
 const STARTUP_CUSTOM_PLAYLIST_TIMEOUT_MS = 2500;
-
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  fallbackValue: T,
-): Promise<T> {
-  let timeoutId: number | undefined;
-
-  const timeoutPromise = new Promise<T>((resolve) => {
-    timeoutId = window.setTimeout(() => resolve(fallbackValue), timeoutMs);
-  });
-
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timeoutId !== undefined) {
-      window.clearTimeout(timeoutId);
-    }
-  }
-}
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>("now-playing");
@@ -49,6 +30,7 @@ export default function App() {
   );
   const { loadPlaylists } = usePlaylists();
   const { refresh: refreshCustomPlaylists } = useCustomPlaylists();
+  const mountedRef = useRef(true);
 
   // Listen for track completion events and auto-advance
   useEffect(() => {
@@ -66,33 +48,40 @@ export default function App() {
 
   // Warm caches on startup without blocking the UI
   useEffect(() => {
-    let cancelled = false;
+    mountedRef.current = true;
 
     const initializePlaylists = async () => {
       try {
-        if (!cancelled) {
-          setStartupMessage("Loading custom playlists...");
-        }
+        if (!mountedRef.current) return;
+        setStartupMessage("Loading custom playlists...");
 
         console.log("Warming custom playlist cache on startup...");
+        // Start custom playlist loading early but await it later to allow parallel loading
+        // with the service playlist checks. This optimizes startup time by running
+        // independent operations concurrently.
         const customPlaylistLoadPromise = withTimeout(
           refreshCustomPlaylists(),
           STARTUP_CUSTOM_PLAYLIST_TIMEOUT_MS,
           undefined,
         );
 
-        if (!cancelled) {
-          setStartupMessage("Checking connected services...");
-        }
+        if (!mountedRef.current) return;
+        setStartupMessage("Checking connected services...");
 
         const [spotifyAuth, jellyfinAuth] = await Promise.all([
           withTimeout(
-            tauriAPI.isSpotifyAuthenticated().catch(() => false),
+            tauriAPI.isSpotifyAuthenticated().catch((err) => {
+              console.error("Error checking Spotify authentication on startup:", err);
+              return false;
+            }),
             STARTUP_PROVIDER_CHECK_TIMEOUT_MS,
             false,
           ),
           withTimeout(
-            tauriAPI.isJellyfinAuthenticated().catch(() => false),
+            tauriAPI.isJellyfinAuthenticated().catch((err) => {
+              console.error("Error checking Jellyfin authentication on startup:", err);
+              return false;
+            }),
             STARTUP_PROVIDER_CHECK_TIMEOUT_MS,
             false,
           ),
@@ -103,9 +92,8 @@ export default function App() {
           console.log(
             `Background-loading service playlists on startup (Spotify: ${spotifyAuth}, Jellyfin: ${jellyfinAuth})...`,
           );
-          if (!cancelled) {
-            setStartupMessage("Syncing service playlists...");
-          }
+          if (!mountedRef.current) return;
+          setStartupMessage("Syncing service playlists...");
           await withTimeout(
             loadPlaylists("all"),
             STARTUP_SERVICE_SYNC_TIMEOUT_MS,
@@ -120,7 +108,7 @@ export default function App() {
       } catch (err) {
         console.error("Error initializing playlists:", err);
       } finally {
-        if (!cancelled) {
+        if (mountedRef.current) {
           setStartupLoading(false);
         }
       }
@@ -129,7 +117,7 @@ export default function App() {
     void initializePlaylists();
 
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
     };
   }, [loadPlaylists, refreshCustomPlaylists]);
 
