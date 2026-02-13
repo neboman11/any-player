@@ -158,13 +158,15 @@ export default function App() {
     }
   }, [currentPage]);
 
+  const shouldShowBanner = startupLoading || backendInitLoading || backendInitFailed;
+
   return (
     <div className="app">
       <Toaster position="top-right" />
       <div className="container">
         <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
         <main className="main-content">
-          {(startupLoading || backendInitLoading || backendInitFailed) && (
+          {shouldShowBanner && (
             <div
               className={`startup-loading-banner ${backendInitFailed ? "error" : ""}`}
               role="status"
