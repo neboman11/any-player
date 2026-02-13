@@ -25,6 +25,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>("now-playing");
   const [startupLoading, setStartupLoading] = useState(true);
   const [backendInitLoading, setBackendInitLoading] = useState(false);
+  const [backendInitFailed, setBackendInitFailed] = useState(false);
   const [startupMessage, setStartupMessage] = useState(
     "Loading your library...",
   );
@@ -126,7 +127,15 @@ export default function App() {
       "backend-init-status",
       (status) => {
         setStartupMessage(status.message);
-        setBackendInitLoading(!status.done);
+        if (status.done) {
+          setBackendInitLoading(false);
+          if (!status.success) {
+            setBackendInitFailed(true);
+          }
+        } else {
+          setBackendInitLoading(true);
+          setBackendInitFailed(false);
+        }
       },
     );
 
@@ -149,19 +158,21 @@ export default function App() {
     }
   }, [currentPage]);
 
+  const shouldShowBanner = startupLoading || backendInitLoading || backendInitFailed;
+
   return (
     <div className="app">
       <Toaster position="top-right" />
       <div className="container">
         <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
         <main className="main-content">
-          {(startupLoading || backendInitLoading) && (
+          {shouldShowBanner && (
             <div
-              className="startup-loading-banner"
+              className={`startup-loading-banner ${backendInitFailed ? "error" : ""}`}
               role="status"
               aria-live="polite"
             >
-              <LoadingSpinner size="small" />
+              {!backendInitFailed && <LoadingSpinner size="small" />}
               <span>{startupMessage}</span>
             </div>
           )}
