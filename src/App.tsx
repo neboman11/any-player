@@ -16,10 +16,12 @@ import { listen } from "@tauri-apps/api/event";
 import { LoadingSpinner } from "./components/shared/LoadingSpinner";
 import { backendSocket } from "./websocket";
 import { withTimeout } from "./utils/timeout";
+import { withTimeoutAndRetry } from "./utils/timeoutWithRetry";
 
 const STARTUP_PROVIDER_CHECK_TIMEOUT_MS = 2500;
 const STARTUP_SERVICE_SYNC_TIMEOUT_MS = 8000;
 const STARTUP_CUSTOM_PLAYLIST_TIMEOUT_MS = 2500;
+const MAX_AUTH_RETRIES = 3;
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>("now-playing");
@@ -28,9 +30,12 @@ export default function App() {
   const [startupMessage, setStartupMessage] = useState(
     "Loading your library...",
   );
+  const [showRetryButton, setShowRetryButton] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const { loadPlaylists } = usePlaylists();
   const { refresh: refreshCustomPlaylists } = useCustomPlaylists();
   const mountedRef = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Listen for track completion events and auto-advance
   useEffect(() => {
@@ -54,6 +59,11 @@ export default function App() {
       try {
         if (!mountedRef.current) return;
         setStartupMessage("Loading custom playlists...");
+        setShowRetryButton(false);
+        setRetryAttempt(0);
+
+        // Create abort controller for cancellation
+        abortControllerRef.current = new AbortController();
 
         console.log("Warming custom playlist cache on startup...");
         // Start custom playlist loading early but await it later to allow parallel loading
@@ -69,23 +79,43 @@ export default function App() {
         setStartupMessage("Checking connected services...");
 
         const [spotifyAuth, jellyfinAuth] = await Promise.all([
-          withTimeout(
-            tauriAPI.isSpotifyAuthenticated().catch((err) => {
+          withTimeoutAndRetry({
+            promiseFactory: () => tauriAPI.isSpotifyAuthenticated().catch((err) => {
               console.error("Error checking Spotify authentication on startup:", err);
               return false;
             }),
-            STARTUP_PROVIDER_CHECK_TIMEOUT_MS,
-            false,
-          ),
-          withTimeout(
-            tauriAPI.isJellyfinAuthenticated().catch((err) => {
+            timeoutMs: STARTUP_PROVIDER_CHECK_TIMEOUT_MS,
+            fallbackValue: false,
+            maxRetries: MAX_AUTH_RETRIES,
+            onRetry: (attempt) => {
+              if (!mountedRef.current) return;
+              setRetryAttempt(attempt);
+              setStartupMessage(`Retrying authentication check (attempt ${attempt}/${MAX_AUTH_RETRIES})...`);
+            },
+            signal: abortControllerRef.current.signal,
+          }),
+          withTimeoutAndRetry({
+            promiseFactory: () => tauriAPI.isJellyfinAuthenticated().catch((err) => {
               console.error("Error checking Jellyfin authentication on startup:", err);
               return false;
             }),
-            STARTUP_PROVIDER_CHECK_TIMEOUT_MS,
-            false,
-          ),
+            timeoutMs: STARTUP_PROVIDER_CHECK_TIMEOUT_MS,
+            fallbackValue: false,
+            maxRetries: MAX_AUTH_RETRIES,
+            onRetry: (attempt) => {
+              if (!mountedRef.current) return;
+              setRetryAttempt(attempt);
+              setStartupMessage(`Retrying authentication check (attempt ${attempt}/${MAX_AUTH_RETRIES})...`);
+            },
+            signal: abortControllerRef.current.signal,
+          }),
         ]);
+
+        // Check if operation was cancelled
+        if (abortControllerRef.current.signal.aborted) {
+          console.log("Startup initialization cancelled by user");
+          return;
+        }
 
         // If at least one service is connected, load all playlists
         if (spotifyAuth || jellyfinAuth) {
@@ -102,6 +132,11 @@ export default function App() {
           console.log("Playlists loaded and cached");
         } else {
           console.log("No authenticated services found on startup");
+          // Show retry button if all automatic retries failed
+          if (!abortControllerRef.current.signal.aborted) {
+            setShowRetryButton(true);
+            setStartupMessage("Could not connect to services. You can retry or continue without them.");
+          }
         }
 
         await customPlaylistLoadPromise;
@@ -111,6 +146,7 @@ export default function App() {
         if (mountedRef.current) {
           setStartupLoading(false);
         }
+        abortControllerRef.current = null;
       }
     };
 
@@ -118,6 +154,10 @@ export default function App() {
 
     return () => {
       mountedRef.current = false;
+      // Cancel any ongoing retries when component unmounts
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     };
   }, [loadPlaylists, refreshCustomPlaylists]);
 
@@ -132,6 +172,26 @@ export default function App() {
 
     return unsubscribe;
   }, []);
+
+  // Manual retry handler
+  const handleManualRetry = () => {
+    setStartupLoading(true);
+    setShowRetryButton(false);
+    // Trigger re-initialization by updating a dependency
+    // Since we can't directly call the effect, we'll use a state update
+    // that will cause the effect to re-run via its dependencies
+    window.location.reload();
+  };
+
+  // Cancel handler
+  const handleCancel = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setStartupMessage("Startup cancelled. Continuing without service authentication.");
+      setStartupLoading(false);
+      setShowRetryButton(false);
+    }
+  };
 
   // Memoize the page content to avoid unnecessary re-renders
   const pageContent = useMemo(() => {
@@ -163,6 +223,24 @@ export default function App() {
             >
               <LoadingSpinner size="small" />
               <span>{startupMessage}</span>
+              {startupLoading && !showRetryButton && retryAttempt > 0 && (
+                <button
+                  className="startup-banner-button startup-cancel-button"
+                  onClick={handleCancel}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              )}
+              {showRetryButton && (
+                <button
+                  className="startup-banner-button startup-retry-button"
+                  onClick={handleManualRetry}
+                  type="button"
+                >
+                  Retry
+                </button>
+              )}
             </div>
           )}
           {pageContent}
