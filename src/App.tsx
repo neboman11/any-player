@@ -11,11 +11,42 @@ import {
 } from "./components";
 import { usePlaylists, useCustomPlaylists } from "./hooks";
 import { tauriAPI } from "./api";
-import type { Page } from "./types";
+import type { BackendInitStatus, Page } from "./types";
 import { listen } from "@tauri-apps/api/event";
+import { LoadingSpinner } from "./components/shared/LoadingSpinner";
+import { backendSocket } from "./websocket";
+
+const STARTUP_PROVIDER_CHECK_TIMEOUT_MS = 2500;
+const STARTUP_SERVICE_SYNC_TIMEOUT_MS = 8000;
+const STARTUP_CUSTOM_PLAYLIST_TIMEOUT_MS = 2500;
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallbackValue: T,
+): Promise<T> {
+  let timeoutId: number | undefined;
+
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timeoutId = window.setTimeout(() => resolve(fallbackValue), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+}
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>("now-playing");
+  const [startupLoading, setStartupLoading] = useState(true);
+  const [backendInitLoading, setBackendInitLoading] = useState(false);
+  const [startupMessage, setStartupMessage] = useState(
+    "Loading your library...",
+  );
   const { loadPlaylists } = usePlaylists();
   const { refresh: refreshCustomPlaylists } = useCustomPlaylists();
 
@@ -33,57 +64,86 @@ export default function App() {
     };
   }, []);
 
-  // Auto-load playlists on startup after validating connections
+  // Warm caches on startup without blocking the UI
   useEffect(() => {
+    let cancelled = false;
+
     const initializePlaylists = async () => {
       try {
-        // Always load custom playlists (they're local)
-        console.log("Auto-loading custom playlists on app startup...");
-        await refreshCustomPlaylists();
-
-        // Wait a moment for backend session restoration to complete
-        // The backend restores sessions asynchronously on startup
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        // Check which services are authenticated
-        // Retry a few times in case backend is still initializing
-        let spotifyAuth = false;
-        let jellyfinAuth = false;
-
-        for (let i = 0; i < 3; i++) {
-          [spotifyAuth, jellyfinAuth] = await Promise.all([
-            tauriAPI.isSpotifyAuthenticated().catch(() => false),
-            tauriAPI.isJellyfinAuthenticated().catch(() => false),
-          ]);
-
-          // If we found at least one authenticated service, stop retrying
-          if (spotifyAuth || jellyfinAuth) {
-            break;
-          }
-
-          // Wait before retrying
-          if (i < 2) {
-            await new Promise((resolve) => setTimeout(resolve, 300));
-          }
+        if (!cancelled) {
+          setStartupMessage("Loading custom playlists...");
         }
+
+        console.log("Warming custom playlist cache on startup...");
+        const customPlaylistLoadPromise = withTimeout(
+          refreshCustomPlaylists(),
+          STARTUP_CUSTOM_PLAYLIST_TIMEOUT_MS,
+          undefined,
+        );
+
+        if (!cancelled) {
+          setStartupMessage("Checking connected services...");
+        }
+
+        const [spotifyAuth, jellyfinAuth] = await Promise.all([
+          withTimeout(
+            tauriAPI.isSpotifyAuthenticated().catch(() => false),
+            STARTUP_PROVIDER_CHECK_TIMEOUT_MS,
+            false,
+          ),
+          withTimeout(
+            tauriAPI.isJellyfinAuthenticated().catch(() => false),
+            STARTUP_PROVIDER_CHECK_TIMEOUT_MS,
+            false,
+          ),
+        ]);
 
         // If at least one service is connected, load all playlists
         if (spotifyAuth || jellyfinAuth) {
           console.log(
-            `Auto-loading service playlists on app startup (Spotify: ${spotifyAuth}, Jellyfin: ${jellyfinAuth})...`,
+            `Background-loading service playlists on startup (Spotify: ${spotifyAuth}, Jellyfin: ${jellyfinAuth})...`,
           );
-          await loadPlaylists("all");
+          if (!cancelled) {
+            setStartupMessage("Syncing service playlists...");
+          }
+          await withTimeout(
+            loadPlaylists("all"),
+            STARTUP_SERVICE_SYNC_TIMEOUT_MS,
+            undefined,
+          );
           console.log("Playlists loaded and cached");
         } else {
           console.log("No authenticated services found on startup");
         }
+
+        await customPlaylistLoadPromise;
       } catch (err) {
         console.error("Error initializing playlists:", err);
+      } finally {
+        if (!cancelled) {
+          setStartupLoading(false);
+        }
       }
     };
 
     void initializePlaylists();
+
+    return () => {
+      cancelled = true;
+    };
   }, [loadPlaylists, refreshCustomPlaylists]);
+
+  useEffect(() => {
+    const unsubscribe = backendSocket.on<BackendInitStatus>(
+      "backend-init-status",
+      (status) => {
+        setStartupMessage(status.message);
+        setBackendInitLoading(!status.done);
+      },
+    );
+
+    return unsubscribe;
+  }, []);
 
   // Memoize the page content to avoid unnecessary re-renders
   const pageContent = useMemo(() => {
@@ -107,6 +167,16 @@ export default function App() {
       <div className="container">
         <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
         <main className="main-content">
+          {(startupLoading || backendInitLoading) && (
+            <div
+              className="startup-loading-banner"
+              role="status"
+              aria-live="polite"
+            >
+              <LoadingSpinner size="small" />
+              <span>{startupMessage}</span>
+            </div>
+          )}
           {pageContent}
           {currentPage !== "now-playing" && <BottomPlayBar />}
         </main>

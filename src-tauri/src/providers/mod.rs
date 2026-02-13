@@ -562,11 +562,6 @@ impl ProviderRegistry {
                     spotify_provider.set_token(token).await?;
                     tracing::info!("Token set successfully");
 
-                    match spotify_provider.check_and_update_premium_status().await {
-                        Ok(_) => tracing::info!("Premium status check completed"),
-                        Err(e) => tracing::warn!("Premium status check failed: {}", e),
-                    }
-
                     tracing::info!("Session restored from keyring, storing provider");
                     self.register(spotify_provider);
                     Ok(true)

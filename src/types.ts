@@ -103,6 +103,13 @@ export interface JellyfinAuthStatus {
   authenticated: boolean;
 }
 
+export interface BackendInitStatus {
+  stage: string;
+  message: string;
+  done: boolean;
+  success: boolean;
+}
+
 export interface OAuthCodeReceived {
   source: "spotify";
 }

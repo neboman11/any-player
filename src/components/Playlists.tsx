@@ -4,6 +4,7 @@ import { usePlaylists, useCustomPlaylists } from "../hooks";
 import { PlaylistViewer } from "./PlaylistViewer";
 import { UnionPlaylistEditor } from "./UnionPlaylistEditor";
 import { tauriAPI } from "../api";
+import { LoadingSpinner } from "./shared/LoadingSpinner";
 import type { TauriSource, CustomPlaylist, Playlist } from "../types";
 
 export function Playlists() {
@@ -293,7 +294,14 @@ export function Playlists() {
         </div>
         <div className="playlists-grid" id="playlists-grid">
           {isAnyLoading && (
-            <div className="playlist-card loading">Loading playlists...</div>
+            <div
+              className="playlist-card loading"
+              role="status"
+              aria-live="polite"
+            >
+              <LoadingSpinner size="medium" />
+              <span>Loading playlists...</span>
+            </div>
           )}
           {anyError && !isAnyLoading && (
             <div className="playlist-card">{anyError}</div>

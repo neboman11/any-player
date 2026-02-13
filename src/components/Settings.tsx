@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useSpotifyAuth, useJellyfinAuth, usePlaylists } from "../hooks";
 import { ProviderStatus } from "./ProviderStatus";
 import { tauriAPI } from "../api";
+import { LoadingSpinner } from "./shared/LoadingSpinner";
 
 interface AuthModalProps {
   authUrl: string;
@@ -249,10 +250,13 @@ export function Settings() {
                 onClick={handleSpotifyConnect}
                 disabled={spotify.isLoading && !spotify.isConnected}
               >
+                {spotify.isLoading && !spotify.isConnected && (
+                  <LoadingSpinner size="small" />
+                )}
                 {spotify.isConnected
                   ? "Disconnect Spotify"
                   : spotify.isLoading
-                    ? "Connecting..."
+                    ? "Connecting to Spotify..."
                     : "Connect Spotify"}
               </button>
               <ProviderStatus
@@ -322,8 +326,11 @@ export function Settings() {
                 onClick={handleJellyfinConnect}
                 disabled={jellyfin.isLoading}
               >
+                {jellyfin.isLoading && !jellyfin.isConnected && (
+                  <LoadingSpinner size="small" />
+                )}
                 {jellyfin.isLoading
-                  ? "Connecting..."
+                  ? "Connecting to Jellyfin..."
                   : jellyfin.isConnected
                     ? "Disconnect Jellyfin"
                     : "Connect Jellyfin"}
@@ -415,7 +422,10 @@ function ColumnPreferencesSection() {
     return (
       <div className="settings-section">
         <h3>Track Table Columns</h3>
-        <p>Loading...</p>
+        <p className="loading-inline">
+          <LoadingSpinner size="small" />
+          <span>Loading preferences...</span>
+        </p>
       </div>
     );
   }

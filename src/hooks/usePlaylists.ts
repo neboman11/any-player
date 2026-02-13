@@ -3,6 +3,8 @@ import { tauriAPI } from "../api";
 import type { Playlist, TauriSource } from "../types";
 
 const CACHE_VERSION = 1;
+const PROVIDER_CHECK_TIMEOUT_MS = 2500;
+const PLAYLIST_FETCH_TIMEOUT_MS = 8000;
 
 interface PlaylistCacheData {
   version: number;
@@ -17,6 +19,26 @@ interface PlaylistCacheData {
 // they would share this cache. For production single-instance desktop apps, this is acceptable.
 let playlistCache: Playlist[] = [];
 let cacheInitialized = false;
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallbackValue: T,
+): Promise<T> {
+  let timeoutId: number | undefined;
+
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timeoutId = window.setTimeout(() => resolve(fallbackValue), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+}
 
 // Disk cache helpers using Rust backend
 async function saveToDiskCache(playlists: Playlist[]) {
@@ -46,7 +68,10 @@ async function loadFromDiskCache(): Promise<Playlist[] | null> {
       try {
         await tauriAPI.clearPlaylistsCache();
       } catch (clearErr) {
-        console.error("Failed to clear outdated cache - this may indicate a permissions issue or disk problem:", clearErr);
+        console.error(
+          "Failed to clear outdated cache - this may indicate a permissions issue or disk problem:",
+          clearErr,
+        );
       }
       return null;
     }
@@ -121,39 +146,51 @@ export function usePlaylists() {
         setIsLoading(true);
         setError(null);
         const allPlaylists: Playlist[] = [];
-        let spotifyAuth = false;
-        let jellyfinAuth = false;
+        const wantsSpotify = source === "spotify" || source === "all";
+        const wantsJellyfin = source === "jellyfin" || source === "all";
 
-        // Load Spotify playlists if authenticated
-        if (source === "spotify" || source === "all") {
-          try {
-            spotifyAuth = await tauriAPI.isSpotifyAuthenticated();
-            if (spotifyAuth) {
-              const spotifyPlaylists = await tauriAPI.getSpotifyPlaylists();
-              allPlaylists.push(...spotifyPlaylists);
-              console.log(
-                `Loaded ${spotifyPlaylists.length} Spotify playlists`,
-              );
-            }
-          } catch (err) {
-            console.error("Error loading Spotify playlists:", err);
-          }
+        const [spotifyAuth, jellyfinAuth] = await Promise.all([
+          wantsSpotify
+            ? withTimeout(
+                tauriAPI.isSpotifyAuthenticated().catch(() => false),
+                PROVIDER_CHECK_TIMEOUT_MS,
+                false,
+              )
+            : Promise.resolve(false),
+          wantsJellyfin
+            ? withTimeout(
+                tauriAPI.isJellyfinAuthenticated().catch(() => false),
+                PROVIDER_CHECK_TIMEOUT_MS,
+                false,
+              )
+            : Promise.resolve(false),
+        ]);
+
+        const [spotifyPlaylists, jellyfinPlaylists] = await Promise.all([
+          spotifyAuth
+            ? withTimeout(
+                tauriAPI.getSpotifyPlaylists().catch(() => []),
+                PLAYLIST_FETCH_TIMEOUT_MS,
+                [],
+              )
+            : Promise.resolve([]),
+          jellyfinAuth
+            ? withTimeout(
+                tauriAPI.getJellyfinPlaylists().catch(() => []),
+                PLAYLIST_FETCH_TIMEOUT_MS,
+                [],
+              )
+            : Promise.resolve([]),
+        ]);
+
+        if (spotifyPlaylists.length > 0) {
+          allPlaylists.push(...spotifyPlaylists);
+          console.log(`Loaded ${spotifyPlaylists.length} Spotify playlists`);
         }
 
-        // Load Jellyfin playlists if authenticated
-        if (source === "jellyfin" || source === "all") {
-          try {
-            jellyfinAuth = await tauriAPI.isJellyfinAuthenticated();
-            if (jellyfinAuth) {
-              const jellyfinPlaylists = await tauriAPI.getJellyfinPlaylists();
-              allPlaylists.push(...jellyfinPlaylists);
-              console.log(
-                `Loaded ${jellyfinPlaylists.length} Jellyfin playlists`,
-              );
-            }
-          } catch (err) {
-            console.error("Error loading Jellyfin playlists:", err);
-          }
+        if (jellyfinPlaylists.length > 0) {
+          allPlaylists.push(...jellyfinPlaylists);
+          console.log(`Loaded ${jellyfinPlaylists.length} Jellyfin playlists`);
         }
 
         if (allPlaylists.length === 0) {

@@ -1,3 +1,5 @@
+import { LoadingSpinner } from "./shared/LoadingSpinner";
+
 export interface ProviderStatusInfo {
   isConnected: boolean;
   isPremium?: boolean | null;
@@ -30,6 +32,15 @@ export function ProviderStatus({
         {status.isConnected ? "✓ Connected" : "✗ Not connected"}
       </p>
 
+      {status.isLoading &&
+        !status.isConnected &&
+        !status.initializingSession && (
+          <p className="loading-inline" style={{ marginTop: "8px" }}>
+            <LoadingSpinner size="small" />
+            <span>Completing {providerName} sign-in...</span>
+          </p>
+        )}
+
       {status.isConnected && (
         <div style={{ marginTop: "10px", fontSize: "0.9em" }}>
           {/* Premium/Subscription Status */}
@@ -54,11 +65,16 @@ export function ProviderStatus({
                 color: status.sessionReady ? providerColor : "#ff9800",
               }}
             >
-              {status.initializingSession
-                ? "⏳ Initializing session..."
-                : status.sessionReady
-                ? "✓ Full playback ready"
-                : "⚠ Initialize for full track playback"}
+              {status.initializingSession ? (
+                <span className="loading-inline">
+                  <LoadingSpinner size="small" />
+                  <span>Preparing {providerName} playback session...</span>
+                </span>
+              ) : status.sessionReady ? (
+                "✓ Full playback ready"
+              ) : (
+                "⚠ Initialize for full track playback"
+              )}
             </p>
           )}
 
