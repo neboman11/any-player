@@ -68,7 +68,7 @@ export default function App() {
         if (!mountedRef.current) return;
         setStartupMessage("Checking connected services...");
 
-        const [spotifyAuth, jellyfinAuth] = await Promise.all([
+        const [spotifyAuthResult, jellyfinAuthResult] = await Promise.all([
           withTimeout(
             tauriAPI.isSpotifyAuthenticated().catch((err) => {
               console.error("Error checking Spotify authentication on startup:", err);
@@ -87,6 +87,9 @@ export default function App() {
           ),
         ]);
 
+        const spotifyAuth = spotifyAuthResult.value;
+        const jellyfinAuth = jellyfinAuthResult.value;
+
         // If at least one service is connected, load all playlists
         if (spotifyAuth || jellyfinAuth) {
           console.log(
@@ -94,12 +97,16 @@ export default function App() {
           );
           if (!mountedRef.current) return;
           setStartupMessage("Syncing service playlists...");
-          await withTimeout(
+          const syncResult = await withTimeout(
             loadPlaylists("all"),
             STARTUP_SERVICE_SYNC_TIMEOUT_MS,
             undefined,
           );
-          console.log("Playlists loaded and cached");
+          if (syncResult.timedOut) {
+            console.log("Service playlist sync timed out but continuing...");
+          } else {
+            console.log("Playlists loaded and cached");
+          }
         } else {
           console.log("No authenticated services found on startup");
         }

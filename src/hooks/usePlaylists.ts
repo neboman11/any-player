@@ -130,7 +130,7 @@ export function usePlaylists() {
         const wantsSpotify = source === "spotify" || source === "all";
         const wantsJellyfin = source === "jellyfin" || source === "all";
 
-        const [spotifyAuth, jellyfinAuth] = await Promise.all([
+        const [spotifyAuthResult, jellyfinAuthResult] = await Promise.all([
           wantsSpotify
             ? withTimeout(
                 tauriAPI.isSpotifyAuthenticated().catch((err) => {
@@ -140,7 +140,7 @@ export function usePlaylists() {
                 PROVIDER_CHECK_TIMEOUT_MS,
                 false,
               )
-            : Promise.resolve(false),
+            : Promise.resolve({ value: false, timedOut: false }),
           wantsJellyfin
             ? withTimeout(
                 tauriAPI.isJellyfinAuthenticated().catch((err) => {
@@ -150,10 +150,13 @@ export function usePlaylists() {
                 PROVIDER_CHECK_TIMEOUT_MS,
                 false,
               )
-            : Promise.resolve(false),
+            : Promise.resolve({ value: false, timedOut: false }),
         ]);
 
-        const [spotifyPlaylists, jellyfinPlaylists] = await Promise.all([
+        const spotifyAuth = spotifyAuthResult.value;
+        const jellyfinAuth = jellyfinAuthResult.value;
+
+        const [spotifyPlaylistsResult, jellyfinPlaylistsResult] = await Promise.all([
           spotifyAuth
             ? withTimeout(
                 tauriAPI.getSpotifyPlaylists().catch((err) => {
@@ -163,7 +166,7 @@ export function usePlaylists() {
                 PLAYLIST_FETCH_TIMEOUT_MS,
                 [],
               )
-            : Promise.resolve([]),
+            : Promise.resolve({ value: [], timedOut: false }),
           jellyfinAuth
             ? withTimeout(
                 tauriAPI.getJellyfinPlaylists().catch((err) => {
@@ -173,8 +176,11 @@ export function usePlaylists() {
                 PLAYLIST_FETCH_TIMEOUT_MS,
                 [],
               )
-            : Promise.resolve([]),
+            : Promise.resolve({ value: [], timedOut: false }),
         ]);
+
+        const spotifyPlaylists = spotifyPlaylistsResult.value;
+        const jellyfinPlaylists = jellyfinPlaylistsResult.value;
 
         if (spotifyPlaylists.length > 0) {
           allPlaylists.push(...spotifyPlaylists);
