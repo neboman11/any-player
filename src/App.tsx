@@ -91,9 +91,9 @@ export default function App() {
             maxRetries: MAX_AUTH_RETRIES,
             onRetry: (attempt) => {
               if (!mountedRef.current) return;
-              // attempt is the retry number (0 = 1st retry = 2nd attempt, 1 = 2nd retry = 3rd attempt)
-              // With maxRetries=3, we have attempts 0,1,2 total (3 attempts), retries happen at attempt 1,2
-              setStartupMessage(`Retrying authentication check (attempt ${attempt + 1}/${MAX_AUTH_RETRIES})...`);
+              // attempt is the retry number (0 = 1st retry = 2nd total attempt, 1 = 2nd retry = 3rd total attempt)
+              // With maxRetries=3, we have 3 total attempts (initial + 2 retries)
+              setStartupMessage(`Retrying authentication check (${attempt + 1} of ${MAX_AUTH_RETRIES - 1} retries)...`);
             },
             signal: abortControllerRef.current.signal,
           }),
@@ -107,7 +107,7 @@ export default function App() {
             maxRetries: MAX_AUTH_RETRIES,
             onRetry: (attempt) => {
               if (!mountedRef.current) return;
-              setStartupMessage(`Retrying authentication check (attempt ${attempt + 1}/${MAX_AUTH_RETRIES})...`);
+              setStartupMessage(`Retrying authentication check (${attempt + 1} of ${MAX_AUTH_RETRIES - 1} retries)...`);
             },
             signal: abortControllerRef.current.signal,
           }),
