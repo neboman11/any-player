@@ -23,27 +23,24 @@ export async function withTimeout<T>(
   fallbackValue: T,
 ): Promise<TimeoutResult<T>> {
   let timeoutId: number | undefined;
-  let didTimeout = false;
 
-  const timeoutPromise = new Promise<T>((resolve) => {
+  // Use a unique symbol to detect which promise won the race
+  const TIMEOUT_SYMBOL = Symbol("timeout");
+
+  const timeoutPromise = new Promise<T | symbol>((resolve) => {
     timeoutId = window.setTimeout(() => {
-      didTimeout = true;
       console.warn(
         `Operation timed out after ${timeoutMs}ms, using fallback value`,
       );
-      resolve(fallbackValue);
+      resolve(TIMEOUT_SYMBOL);
     }, timeoutMs);
   });
 
-  // Wrap the original promise to mark when it completes successfully
-  const wrappedPromise = promise.then((value) => {
-    didTimeout = false; // Promise completed before timeout
-    return value;
-  });
-
   try {
-    const value = await Promise.race([wrappedPromise, timeoutPromise]);
-    return { value, timedOut: didTimeout };
+    const result = await Promise.race([promise, timeoutPromise]);
+    const timedOut = result === TIMEOUT_SYMBOL;
+    const value = timedOut ? fallbackValue : (result as T);
+    return { value, timedOut };
   } finally {
     // Always clear the timeout after Promise.race completes to prevent memory leaks.
     // If the promise resolves first, the timeout is cleared before it fires.
