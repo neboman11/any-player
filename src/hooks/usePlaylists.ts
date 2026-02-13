@@ -156,6 +156,13 @@ export function usePlaylists() {
         const spotifyAuth = spotifyAuthResult.value;
         const jellyfinAuth = jellyfinAuthResult.value;
 
+        if (spotifyAuthResult.timedOut) {
+          console.warn("Spotify authentication check timed out");
+        }
+        if (jellyfinAuthResult.timedOut) {
+          console.warn("Jellyfin authentication check timed out");
+        }
+
         const [spotifyPlaylistsResult, jellyfinPlaylistsResult] = await Promise.all([
           spotifyAuth
             ? withTimeout(
@@ -181,6 +188,13 @@ export function usePlaylists() {
 
         const spotifyPlaylists = spotifyPlaylistsResult.value;
         const jellyfinPlaylists = jellyfinPlaylistsResult.value;
+
+        if (spotifyPlaylistsResult.timedOut) {
+          console.warn("Spotify playlist fetch timed out, may have incomplete data");
+        }
+        if (jellyfinPlaylistsResult.timedOut) {
+          console.warn("Jellyfin playlist fetch timed out, may have incomplete data");
+        }
 
         if (spotifyPlaylists.length > 0) {
           allPlaylists.push(...spotifyPlaylists);

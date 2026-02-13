@@ -35,8 +35,14 @@ export async function withTimeout<T>(
     }, timeoutMs);
   });
 
+  // Wrap the original promise to mark when it completes successfully
+  const wrappedPromise = promise.then((value) => {
+    didTimeout = false; // Promise completed before timeout
+    return value;
+  });
+
   try {
-    const value = await Promise.race([promise, timeoutPromise]);
+    const value = await Promise.race([wrappedPromise, timeoutPromise]);
     return { value, timedOut: didTimeout };
   } finally {
     // Always clear the timeout after Promise.race completes to prevent memory leaks.
