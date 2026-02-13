@@ -60,7 +60,7 @@ export default function App() {
         if (!mountedRef.current) return;
         setStartupMessage("Loading custom playlists...");
         setShowRetryButton(false);
-        setRetryAttempt(0);
+        setRetryAttempt(1); // Start at 1 to enable cancel button from the beginning
 
         // Create abort controller for cancellation
         abortControllerRef.current = new AbortController();
@@ -89,8 +89,8 @@ export default function App() {
             maxRetries: MAX_AUTH_RETRIES,
             onRetry: (attempt) => {
               if (!mountedRef.current) return;
-              setRetryAttempt(attempt);
-              setStartupMessage(`Retrying authentication check (attempt ${attempt}/${MAX_AUTH_RETRIES})...`);
+              setRetryAttempt(attempt + 1);
+              setStartupMessage(`Retrying authentication check (attempt ${attempt + 1}/${MAX_AUTH_RETRIES})...`);
             },
             signal: abortControllerRef.current.signal,
           }),
@@ -104,8 +104,8 @@ export default function App() {
             maxRetries: MAX_AUTH_RETRIES,
             onRetry: (attempt) => {
               if (!mountedRef.current) return;
-              setRetryAttempt(attempt);
-              setStartupMessage(`Retrying authentication check (attempt ${attempt}/${MAX_AUTH_RETRIES})...`);
+              setRetryAttempt(attempt + 1);
+              setStartupMessage(`Retrying authentication check (attempt ${attempt + 1}/${MAX_AUTH_RETRIES})...`);
             },
             signal: abortControllerRef.current.signal,
           }),
@@ -131,11 +131,11 @@ export default function App() {
           );
           console.log("Playlists loaded and cached");
         } else {
-          console.log("No authenticated services found on startup");
+          console.log("Unable to authenticate with Spotify or Jellyfin after retries");
           // Show retry button if all automatic retries failed
           if (!abortControllerRef.current.signal.aborted) {
             setShowRetryButton(true);
-            setStartupMessage("Could not connect to services. You can retry or continue without them.");
+            setStartupMessage("Unable to connect to Spotify or Jellyfin. You can retry or continue without them.");
           }
         }
 
@@ -223,7 +223,7 @@ export default function App() {
             >
               <LoadingSpinner size="small" />
               <span>{startupMessage}</span>
-              {startupLoading && !showRetryButton && retryAttempt > 0 && (
+              {startupLoading && !showRetryButton && retryAttempt > 0 && abortControllerRef.current && (
                 <button
                   className="startup-banner-button startup-cancel-button"
                   onClick={handleCancel}
