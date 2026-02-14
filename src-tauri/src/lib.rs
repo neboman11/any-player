@@ -241,6 +241,9 @@ pub fn run() {
             let handle_for_status = app.handle().clone();
             let ws_sender_for_startup = ws_sender.clone();
             tauri::async_runtime::spawn(async move {
+                // Track if any critical failures occurred during initialization
+                let mut has_failures = false;
+
                 websocket::emit_backend_init_status(
                     &ws_sender_for_startup,
                     "startup",
@@ -294,10 +297,26 @@ pub fn run() {
                             }
                             Ok(Err(e)) => {
                                 tracing::warn!("Failed to auto-initialize session: {}", e);
+                                has_failures = true;
+                                websocket::emit_backend_init_status(
+                                    &ws_sender_for_startup,
+                                    "spotify-session",
+                                    &format!("Failed to initialize Spotify session: {}", e),
+                                    true,
+                                    false,
+                                );
                             }
                             Err(_) => {
                                 tracing::warn!(
                                     "Timed out while auto-initializing Spotify session on startup"
+                                );
+                                has_failures = true;
+                                websocket::emit_backend_init_status(
+                                    &ws_sender_for_startup,
+                                    "spotify-session",
+                                    "Spotify session initialization timed out",
+                                    true,
+                                    false,
                                 );
                             }
                         }
@@ -335,6 +354,14 @@ pub fn run() {
                         }
                         Err(e) => {
                             tracing::warn!("Failed to restore playback state from disk: {}", e);
+                            has_failures = true;
+                            websocket::emit_backend_init_status(
+                                &ws_sender_for_startup,
+                                "playback-restore",
+                                &format!("Failed to restore playback state: {}", e),
+                                true,
+                                false,
+                            );
                         }
                     }
 
@@ -344,12 +371,19 @@ pub fn run() {
                     tracing::info!("✓ State saver task started");
                 }
 
+                // Emit final status based on whether any failures occurred
+                let final_message = if has_failures {
+                    "Backend startup completed with some failures"
+                } else {
+                    "Backend startup complete"
+                };
+
                 websocket::emit_backend_init_status(
                     &ws_sender_for_startup,
                     "complete",
-                    "Backend startup complete",
+                    final_message,
                     true,
-                    true,
+                    !has_failures,
                 );
             });
 
