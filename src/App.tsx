@@ -211,9 +211,9 @@ export default function App() {
   const handleManualRetry = () => {
     setStartupLoading(true);
     setShowRetryButton(false);
-    // Trigger re-initialization by updating a dependency
-    // Since we can't directly call the effect, we'll use a state update
-    // that will cause the effect to re-run via its dependencies
+    // Trigger re-initialization via a full page reload to ensure a clean state
+    // This will restart the app and re-run all initialization logic from scratch
+    // instead of relying on a targeted effect re-run
     window.location.reload();
   };
 
