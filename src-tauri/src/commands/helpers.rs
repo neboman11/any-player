@@ -48,18 +48,16 @@ pub async fn enrich_queued_tracks_eager(
             indices_to_load.push(actual_index);
         }
 
-        // Gather track info that needs enrichment
+        // Gather track info that needs enrichment and mark them as being enriched atomically
         let mut tracks_info = Vec::new();
         for &track_idx in &indices_to_load {
             if track_idx < queue.tracks.len() {
-                let track = &queue.tracks[track_idx];
-                let needs_jellyfin_quality =
-                    matches!(track.source, crate::models::Source::Jellyfin)
-                        && (track.bitrate_kbps.is_none() || track.sample_rate_hz.is_none());
-
-                // Enrich when URL is missing (general case) or when Jellyfin quality metadata is missing
-                if track.url.is_none() || needs_jellyfin_quality {
+                let track = &mut queue.tracks[track_idx];
+                // Enrich tracks that haven't been enriched yet
+                if !track.enriched {
                     tracks_info.push((track_idx, track.id.clone(), track.source));
+                    // Mark as enriched immediately to prevent concurrent enrichment attempts
+                    track.enriched = true;
                 }
             }
         }
@@ -86,14 +84,18 @@ pub async fn enrich_queued_tracks_eager(
             let provider_locked = provider.lock().await;
             let enriched_track_result = provider_locked.get_track(&track_id).await;
 
-            if let Ok(enriched_track) = enriched_track_result {
+            if let Ok(mut enriched_track) = enriched_track_result {
+                // Ensure enriched flag is set (was already set during collection)
+                enriched_track.enriched = true;
                 enriched_tracks.push((track_idx, enriched_track));
                 tracing::debug!("Eagerly enriched track {} at index {}", track_id, track_idx);
             } else {
                 tracing::warn!("Failed to enrich track {} at index {}", track_id, track_idx);
+                // Track is already marked as enriched, no need to update
             }
         } else if matches!(source, crate::models::Source::Custom) {
             tracing::debug!("Skipping custom track {} at index {}", track_id, track_idx);
+            // Track is already marked as enriched, no need to update
         } else {
             tracing::warn!(
                 "Provider not found for track {} (source: {:?}) at index {}",
@@ -101,6 +103,7 @@ pub async fn enrich_queued_tracks_eager(
                 source,
                 track_idx
             );
+            // Track is already marked as enriched, no need to update
         }
 
         // Delay only for non-priority tracks to keep immediate upcoming songs enriched faster.

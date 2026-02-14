@@ -26,6 +26,7 @@ export interface Track {
   image_url?: string;
   bitrate_kbps?: number;
   sample_rate_hz?: number;
+  enriched?: boolean;
 }
 
 export interface Playlist {

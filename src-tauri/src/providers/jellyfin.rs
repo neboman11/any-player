@@ -237,6 +237,7 @@ impl JellyfinProvider {
             bitrate_kbps,
             sample_rate_hz,
             auth_headers: Some(auth_headers),
+            enriched: false,
         }
     }
 

@@ -48,6 +48,9 @@ pub struct Track {
     /// HTTP headers for authentication (e.g., API keys)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_headers: Option<Vec<(String, String)>>,
+    /// Whether enrichment has been attempted for this track
+    #[serde(default)]
+    pub enriched: bool,
 }
 
 impl fmt::Display for Track {

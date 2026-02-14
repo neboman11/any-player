@@ -259,6 +259,7 @@ mod tests {
             } else {
                 None
             },
+            enriched: false,
         }
     }
 
