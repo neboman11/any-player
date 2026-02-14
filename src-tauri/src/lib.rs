@@ -372,19 +372,26 @@ pub fn run() {
                 }
 
                 // Emit final status based on whether any failures occurred
-                let final_message = if has_failures {
-                    "Backend startup completed with some failures"
+                if has_failures {
+                    websocket::emit_backend_init_status(
+                        &ws_sender_for_startup,
+                        "complete",
+                        "Backend startup completed with some failures",
+                        true,
+                        false,
+                    );
                 } else {
-                    "Backend startup complete"
-                };
-
-                websocket::emit_backend_init_status(
-                    &ws_sender_for_startup,
-                    "complete",
-                    final_message,
-                    true,
-                    !has_failures,
-                );
+                    // For successful completion, send an empty message
+                    // The UI will hide the banner when done=true and success=true,
+                    // without displaying any success message
+                    websocket::emit_backend_init_status(
+                        &ws_sender_for_startup,
+                        "complete",
+                        "",
+                        true,
+                        true,
+                    );
+                }
             });
 
             Ok(())
