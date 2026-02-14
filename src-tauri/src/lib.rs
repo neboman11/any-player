@@ -359,7 +359,7 @@ pub fn run() {
                                 &ws_sender_for_startup,
                                 "playback-restore",
                                 &format!("Failed to restore playback state: {}", e),
-                                true,
+                                false,
                                 false,
                             );
                         }
