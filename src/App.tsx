@@ -227,7 +227,7 @@ export default function App() {
     }
   }, [currentPage]);
 
-  const shouldShowBanner = startupLoading || backendInitLoading || backendInitFailed;
+  const shouldShowBanner = startupLoading || backendInitLoading || backendInitFailed || showRetryButton;
 
   return (
     <div className="app">
