@@ -1100,7 +1100,35 @@ input[type="range"] {
   gap: 1rem;
   flex: 1;
   min-width: 0;
-  max-width: 300px;
+  max-width: 400px;
+}
+
+.bottom-bar-time {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: #999;
+  margin-left: auto;
+  min-width: 72px;
+  flex-shrink: 0;
+}
+
+.bottom-bar-time-current,
+.bottom-bar-time-total {
+  min-width: 30px;
+}
+
+.bottom-bar-time-current {
+  text-align: right;
+}
+
+.bottom-bar-time-total {
+  text-align: left;
+}
+
+.bottom-bar-time-separator {
+  color: #777;
 }
 
 .bottom-bar-album-art {
@@ -1151,6 +1179,7 @@ input[type="range"] {
   align-items: center;
   justify-content: center;
   flex: 1;
+  min-width: 0;
 }
 
 .bottom-bar-control-btn {

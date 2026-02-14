@@ -29,6 +29,23 @@ export function BottomPlayBar() {
     [playback],
   );
 
+  const formatTime = useCallback((ms: number): string => {
+    if (!ms || Number.isNaN(ms)) return "0:00";
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  }, []);
+
+  const repeatIcon = useMemo(() => {
+    const icons = {
+      off: "🔁",
+      one: "🔂",
+      all: "🔁",
+    };
+    return icons[playback.repeatMode];
+  }, [playback.repeatMode]);
+
   // Don't show the bar if there's no current track
   if (!currentTrack) {
     return null;
@@ -73,9 +90,27 @@ export function BottomPlayBar() {
             <div className="bottom-bar-title">{currentTrack.title}</div>
             <div className="bottom-bar-artist">{currentTrack.artist}</div>
           </div>
+          <div className="bottom-bar-time">
+            <span className="bottom-bar-time-current">
+              {formatTime(playback.position)}
+            </span>
+            <span className="bottom-bar-time-separator">/</span>
+            <span className="bottom-bar-time-total">
+              {formatTime(playback.duration)}
+            </span>
+          </div>
         </div>
 
         <div className="bottom-bar-controls">
+          <button
+            className="bottom-bar-control-btn"
+            title="Shuffle"
+            onClick={playback.toggleShuffle}
+            style={{ opacity: playback.shuffle ? "1" : "0.5" }}
+            disabled={playback.isLoading}
+          >
+            <span>🔀</span>
+          </button>
           <button
             className="bottom-bar-control-btn"
             title="Previous"
@@ -103,6 +138,15 @@ export function BottomPlayBar() {
             disabled={playback.isLoading}
           >
             <span>⏭</span>
+          </button>
+          <button
+            className="bottom-bar-control-btn"
+            title="Repeat"
+            onClick={playback.cycleRepeatMode}
+            style={{ opacity: playback.repeatMode !== "off" ? "1" : "0.5" }}
+            disabled={playback.isLoading}
+          >
+            <span>{repeatIcon}</span>
           </button>
         </div>
 
