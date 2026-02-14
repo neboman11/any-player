@@ -581,6 +581,7 @@ impl MusicProvider for SpotifyProvider {
                             bitrate_kbps: None,
                             sample_rate_hz: None,
                             auth_headers: None,
+                            enriched: false,
                         });
                     }
                 }
@@ -664,6 +665,7 @@ impl MusicProvider for SpotifyProvider {
                         bitrate_kbps: None,
                         sample_rate_hz: None,
                         auth_headers: None,
+                        enriched: false,
                     }
                 })
                 .collect()
@@ -757,6 +759,7 @@ impl MusicProvider for SpotifyProvider {
             bitrate_kbps: None,
             sample_rate_hz: None,
             auth_headers: None,
+            enriched: false,
         })
     }
 

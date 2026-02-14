@@ -66,6 +66,7 @@ impl PlaylistTrack {
             bitrate_kbps: None,
             sample_rate_hz: None,
             auth_headers: None,
+            enriched: false,
         }
     }
 }
@@ -765,6 +766,7 @@ mod tests {
             bitrate_kbps: None,
             sample_rate_hz: None,
             auth_headers: None,
+            enriched: false,
         };
 
         db.add_track_to_playlist(&playlist.id, &track).unwrap();
@@ -795,6 +797,7 @@ mod tests {
                 bitrate_kbps: None,
                 sample_rate_hz: None,
                 auth_headers: None,
+                enriched: false,
             };
             db.add_track_to_playlist(&playlist.id, &track).unwrap();
         }

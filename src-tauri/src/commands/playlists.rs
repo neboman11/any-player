@@ -212,6 +212,7 @@ pub async fn play_tracks_immediate(
             bitrate_kbps: track_info.bitrate_kbps,
             sample_rate_hz: track_info.sample_rate_hz,
             auth_headers,
+            enriched: false,
         });
     }
 
