@@ -31,6 +31,14 @@ pub struct JellyfinAuthStatus {
     pub authenticated: bool,
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct BackendInitStatus {
+    pub stage: String,
+    pub message: String,
+    pub done: bool,
+    pub success: bool,
+}
+
 pub fn broadcast_event<T: Serialize>(
     sender: &broadcast::Sender<String>,
     event: &'static str,
@@ -39,6 +47,25 @@ pub fn broadcast_event<T: Serialize>(
     if let Ok(text) = serde_json::to_string(&WsMessage { event, data }) {
         let _ = sender.send(text);
     }
+}
+
+pub fn emit_backend_init_status(
+    sender: &broadcast::Sender<String>,
+    stage: &str,
+    message: &str,
+    done: bool,
+    success: bool,
+) {
+    broadcast_event(
+        sender,
+        "backend-init-status",
+        BackendInitStatus {
+            stage: stage.to_string(),
+            message: message.to_string(),
+            done,
+            success,
+        },
+    );
 }
 
 pub async fn emit_spotify_status(state: &AppState) {

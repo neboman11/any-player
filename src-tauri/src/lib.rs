@@ -26,6 +26,7 @@ use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tokio::sync::broadcast;
 use tokio::sync::Mutex;
+use tokio::time::{timeout, Duration};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -234,63 +235,89 @@ pub fn run() {
             let ws_sender_for_oauth = ws_sender.clone();
             tauri::async_runtime::spawn(start_oauth_server(oauth_code_clone, ws_sender_for_oauth));
 
-            // Try to restore Spotify session on startup in the background
-            // This allows the UI to load immediately while authentication is being restored
-            let providers_for_jellyfin = providers_clone.clone();
+            // Try to restore provider sessions on startup in the background.
+            // Keep provider lock contention low so frontend auth/status checks remain responsive.
             let playback_for_restore = playback.clone();
             let handle_for_status = app.handle().clone();
+            let ws_sender_for_startup = ws_sender.clone();
             tauri::async_runtime::spawn(async move {
-                // Restore session without holding the lock during the entire process
-                let restored = {
-                    let mut providers = providers_clone.lock().await;
-                    match providers.restore_session(Source::Spotify).await {
-                        Ok(restored) => {
-                            if restored {
-                                tracing::info!("✓ Spotify session restored from cache on startup");
-                            } else {
-                                tracing::info!("No cached Spotify session found on startup");
-                            }
-                            restored
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to restore Spotify session: {}", e);
-                            false
-                        }
-                    }
-                };
+                // Track if any critical failures occurred during initialization
+                let mut has_failures = false;
+
+                websocket::emit_backend_init_status(
+                    &ws_sender_for_startup,
+                    "startup",
+                    "Restoring provider sessions...",
+                    false,
+                    true,
+                );
+
+                let restored = restore_spotify_provider_on_startup(providers_clone.clone()).await;
+                if restored {
+                    tracing::info!("✓ Spotify session restored from cache on startup");
+                } else {
+                    tracing::info!("No cached Spotify session found on startup");
+                }
 
                 // Auto-initialize session for premium users without holding the providers lock
                 if restored {
-                    let is_premium = {
+                    let (is_premium, access_token) = {
                         let providers = providers_clone.lock().await;
-                        providers.premium_status(Source::Spotify).await
+                        (
+                            providers.premium_status(Source::Spotify).await,
+                            providers.get_access_token(Source::Spotify).await,
+                        )
                     };
 
-                    if let Some(true) = is_premium {
-                        let access_token = {
-                            let providers = providers_clone.lock().await;
-                            providers.get_access_token(Source::Spotify).await
-                        };
+                    if let (Some(true), Some(access_token)) = (is_premium, access_token) {
+                        websocket::emit_backend_init_status(
+                            &ws_sender_for_startup,
+                            "spotify-session",
+                            "Initializing Spotify playback session...",
+                            false,
+                            true,
+                        );
 
-                        if let Some(access_token) = access_token {
-                            tracing::info!("Auto-initializing Spotify session for premium user");
+                        tracing::info!("Auto-initializing Spotify session for premium user");
 
+                        let init_result = timeout(Duration::from_secs(12), async {
                             let playback = playback_for_restore.lock().await;
-                            match playback.initialize_spotify_session(&access_token).await {
-                                Ok(()) => {
-                                    if playback.is_spotify_session_ready().await {
-                                        tracing::info!(
-                                            "✓ Spotify session auto-initialized and ready"
-                                        );
-                                    } else {
-                                        tracing::warn!(
-                                            "Session initialized but not verified as ready"
-                                        );
-                                    }
+                            playback.initialize_spotify_session(&access_token).await
+                        })
+                        .await;
+
+                        match init_result {
+                            Ok(Ok(())) => {
+                                let playback = playback_for_restore.lock().await;
+                                if playback.is_spotify_session_ready().await {
+                                    tracing::info!("✓ Spotify session auto-initialized and ready");
+                                } else {
+                                    tracing::warn!("Session initialized but not verified as ready");
                                 }
-                                Err(e) => {
-                                    tracing::warn!("Failed to auto-initialize session: {}", e);
-                                }
+                            }
+                            Ok(Err(e)) => {
+                                tracing::warn!("Failed to auto-initialize session: {}", e);
+                                has_failures = true;
+                                websocket::emit_backend_init_status(
+                                    &ws_sender_for_startup,
+                                    "spotify-session",
+                                    &format!("Failed to initialize Spotify session: {}", e),
+                                    false,
+                                    false,
+                                );
+                            }
+                            Err(_) => {
+                                tracing::warn!(
+                                    "Timed out while auto-initializing Spotify session on startup"
+                                );
+                                has_failures = true;
+                                websocket::emit_backend_init_status(
+                                    &ws_sender_for_startup,
+                                    "spotify-session",
+                                    "Spotify session initialization timed out",
+                                    false,
+                                    false,
+                                );
                             }
                         }
                     }
@@ -299,23 +326,20 @@ pub fn run() {
                 let app_state = handle_for_status.state::<commands::AppState>();
                 websocket::emit_spotify_status(&app_state).await;
 
-                // Also try to restore Jellyfin session
-                {
-                    let mut providers = providers_for_jellyfin.lock().await;
-                    match providers.restore_session(Source::Jellyfin).await {
-                        Ok(restored) => {
-                            if restored {
-                                tracing::info!(
-                                    "✓ Jellyfin session restored from keyring on startup"
-                                );
-                            } else {
-                                tracing::info!("No cached Jellyfin credentials found on startup");
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to restore Jellyfin session: {}", e);
-                        }
-                    }
+                websocket::emit_backend_init_status(
+                    &ws_sender_for_startup,
+                    "jellyfin-restore",
+                    "Restoring Jellyfin session...",
+                    false,
+                    true,
+                );
+
+                let jellyfin_restored =
+                    restore_jellyfin_provider_on_startup(providers_clone.clone()).await;
+                if jellyfin_restored {
+                    tracing::info!("✓ Jellyfin session restored from keyring on startup");
+                } else {
+                    tracing::info!("No cached Jellyfin credentials found on startup");
                 }
 
                 let app_state = handle_for_status.state::<commands::AppState>();
@@ -330,6 +354,14 @@ pub fn run() {
                         }
                         Err(e) => {
                             tracing::warn!("Failed to restore playback state from disk: {}", e);
+                            has_failures = true;
+                            websocket::emit_backend_init_status(
+                                &ws_sender_for_startup,
+                                "playback-restore",
+                                &format!("Failed to restore playback state: {}", e),
+                                false,
+                                false,
+                            );
                         }
                     }
 
@@ -338,6 +370,21 @@ pub fn run() {
                     playback.start_state_saver().await;
                     tracing::info!("✓ State saver task started");
                 }
+
+                // Emit final status based on whether any failures occurred
+                let final_message = if has_failures {
+                    "Backend startup completed with some failures"
+                } else {
+                    "Backend startup complete"
+                };
+
+                websocket::emit_backend_init_status(
+                    &ws_sender_for_startup,
+                    "complete",
+                    final_message,
+                    true,
+                    !has_failures,
+                );
             });
 
             Ok(())
@@ -364,6 +411,84 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+async fn restore_spotify_provider_on_startup(providers: Arc<Mutex<ProviderRegistry>>) -> bool {
+    use crate::config::Config;
+    use crate::providers::spotify::SpotifyProvider;
+
+    let tokens = match Config::load_tokens() {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to load tokens while restoring Spotify session: {}",
+                e
+            );
+            return false;
+        }
+    };
+
+    let Some(token) = tokens.spotify_token else {
+        return false;
+    };
+
+    let mut spotify_provider = SpotifyProvider::with_default_oauth();
+    let restored = timeout(Duration::from_secs(10), spotify_provider.set_token(token)).await;
+
+    match restored {
+        Ok(Ok(())) => {
+            let mut providers = providers.lock().await;
+            providers.register(spotify_provider);
+            true
+        }
+        Ok(Err(e)) => {
+            tracing::warn!("Failed to restore Spotify provider token: {}", e);
+            false
+        }
+        Err(_) => {
+            tracing::warn!("Timed out restoring Spotify provider token on startup");
+            false
+        }
+    }
+}
+
+async fn restore_jellyfin_provider_on_startup(providers: Arc<Mutex<ProviderRegistry>>) -> bool {
+    use crate::config::Config;
+    use crate::providers::jellyfin::JellyfinProvider;
+
+    let tokens = match Config::load_tokens() {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to load tokens while restoring Jellyfin session: {}",
+                e
+            );
+            return false;
+        }
+    };
+
+    let (Some(url), Some(api_key)) = (tokens.jellyfin_url, tokens.jellyfin_api_key) else {
+        return false;
+    };
+
+    let mut jellyfin_provider = JellyfinProvider::new(url, api_key);
+    let restored = timeout(Duration::from_secs(10), jellyfin_provider.authenticate()).await;
+
+    match restored {
+        Ok(Ok(())) => {
+            let mut providers = providers.lock().await;
+            providers.register(jellyfin_provider);
+            true
+        }
+        Ok(Err(e)) => {
+            tracing::warn!("Failed to restore Jellyfin provider: {}", e);
+            false
+        }
+        Err(_) => {
+            tracing::warn!("Timed out restoring Jellyfin provider on startup");
+            false
+        }
+    }
 }
 
 /// Start a simple HTTP server for OAuth callbacks

@@ -109,6 +109,71 @@ body {
   position: relative;
 }
 
+.startup-loading-banner {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #3f4b59;
+  border-radius: 6px;
+  background-color: rgba(42, 42, 42, 0.95);
+  color: #c8d8f0;
+}
+
+.startup-loading-banner.error {
+  border-color: #d32f2f;
+  background-color: rgba(211, 47, 47, 0.15);
+  color: #f48fb1;
+}
+
+.loading-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.loading-spinner {
+  display: inline-block;
+  border-style: solid;
+  border-color: #4a9eff;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: loading-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.loading-spinner-small {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-width: 2px;
+}
+
+.loading-spinner-medium {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-width: 2px;
+}
+
+.loading-spinner-large {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-width: 3px;
+}
+
+@keyframes loading-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .page {
   animation: fadeIn 0.2s ease;
 }
@@ -431,6 +496,10 @@ body {
 .playlist-card.loading {
   color: #999;
   padding: 3rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
 }
 
 /* Search */
@@ -1199,5 +1268,35 @@ input[type="range"] {
   border-radius: 4px;
   background-color: #1e1e1e;
   color: #fff;
+}
+
+/* Startup banner buttons */
+.startup-banner-button {
+  padding: 0.4rem 0.8rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+  margin-left: auto;
+}
+
+.startup-retry-button {
+  background-color: #4a9eff;
+  color: white;
+}
+
+.startup-retry-button:hover {
+  background-color: #6ab4ff;
+}
+
+.startup-cancel-button {
+  background-color: #d9534f;
+  color: white;
+}
+
+.startup-cancel-button:hover {
+  background-color: #c9302c;
 }
 

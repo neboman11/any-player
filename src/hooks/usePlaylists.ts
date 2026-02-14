@@ -1,8 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { tauriAPI } from "../api";
 import type { Playlist, TauriSource } from "../types";
+import { withTimeout } from "../utils/timeout";
 
 const CACHE_VERSION = 1;
+const PROVIDER_CHECK_TIMEOUT_MS = 2500;
+const PLAYLIST_FETCH_TIMEOUT_MS = 8000;
 
 interface PlaylistCacheData {
   version: number;
@@ -46,7 +49,10 @@ async function loadFromDiskCache(): Promise<Playlist[] | null> {
       try {
         await tauriAPI.clearPlaylistsCache();
       } catch (clearErr) {
-        console.error("Failed to clear outdated cache - this may indicate a permissions issue or disk problem:", clearErr);
+        console.error(
+          "Failed to clear outdated cache - this may indicate a permissions issue or disk problem:",
+          clearErr,
+        );
       }
       return null;
     }
@@ -121,39 +127,83 @@ export function usePlaylists() {
         setIsLoading(true);
         setError(null);
         const allPlaylists: Playlist[] = [];
-        let spotifyAuth = false;
-        let jellyfinAuth = false;
+        const wantsSpotify = source === "spotify" || source === "all";
+        const wantsJellyfin = source === "jellyfin" || source === "all";
 
-        // Load Spotify playlists if authenticated
-        if (source === "spotify" || source === "all") {
-          try {
-            spotifyAuth = await tauriAPI.isSpotifyAuthenticated();
-            if (spotifyAuth) {
-              const spotifyPlaylists = await tauriAPI.getSpotifyPlaylists();
-              allPlaylists.push(...spotifyPlaylists);
-              console.log(
-                `Loaded ${spotifyPlaylists.length} Spotify playlists`,
-              );
-            }
-          } catch (err) {
-            console.error("Error loading Spotify playlists:", err);
-          }
+        const [spotifyAuthResult, jellyfinAuthResult] = await Promise.all([
+          wantsSpotify
+            ? withTimeout(
+                tauriAPI.isSpotifyAuthenticated().catch((err) => {
+                  console.error("Error checking Spotify authentication:", err);
+                  return false;
+                }),
+                PROVIDER_CHECK_TIMEOUT_MS,
+                false,
+              )
+            : Promise.resolve({ value: false, timedOut: false }),
+          wantsJellyfin
+            ? withTimeout(
+                tauriAPI.isJellyfinAuthenticated().catch((err) => {
+                  console.error("Error checking Jellyfin authentication:", err);
+                  return false;
+                }),
+                PROVIDER_CHECK_TIMEOUT_MS,
+                false,
+              )
+            : Promise.resolve({ value: false, timedOut: false }),
+        ]);
+
+        const spotifyAuth = spotifyAuthResult.value;
+        const jellyfinAuth = jellyfinAuthResult.value;
+
+        if (spotifyAuthResult.timedOut) {
+          console.warn("Spotify authentication check timed out");
+        }
+        if (jellyfinAuthResult.timedOut) {
+          console.warn("Jellyfin authentication check timed out");
         }
 
-        // Load Jellyfin playlists if authenticated
-        if (source === "jellyfin" || source === "all") {
-          try {
-            jellyfinAuth = await tauriAPI.isJellyfinAuthenticated();
-            if (jellyfinAuth) {
-              const jellyfinPlaylists = await tauriAPI.getJellyfinPlaylists();
-              allPlaylists.push(...jellyfinPlaylists);
-              console.log(
-                `Loaded ${jellyfinPlaylists.length} Jellyfin playlists`,
-              );
-            }
-          } catch (err) {
-            console.error("Error loading Jellyfin playlists:", err);
-          }
+        const [spotifyPlaylistsResult, jellyfinPlaylistsResult] = await Promise.all([
+          spotifyAuth
+            ? withTimeout(
+                tauriAPI.getSpotifyPlaylists().catch((err) => {
+                  console.error("Error fetching Spotify playlists:", err);
+                  return [];
+                }),
+                PLAYLIST_FETCH_TIMEOUT_MS,
+                [],
+              )
+            : Promise.resolve({ value: [], timedOut: false }),
+          jellyfinAuth
+            ? withTimeout(
+                tauriAPI.getJellyfinPlaylists().catch((err) => {
+                  console.error("Error fetching Jellyfin playlists:", err);
+                  return [];
+                }),
+                PLAYLIST_FETCH_TIMEOUT_MS,
+                [],
+              )
+            : Promise.resolve({ value: [], timedOut: false }),
+        ]);
+
+        const spotifyPlaylists = spotifyPlaylistsResult.value;
+        const jellyfinPlaylists = jellyfinPlaylistsResult.value;
+
+        if (spotifyPlaylistsResult.timedOut) {
+          console.warn("Spotify playlist fetch timed out, may have incomplete data");
+        }
+        if (jellyfinPlaylistsResult.timedOut) {
+          console.warn("Jellyfin playlist fetch timed out, may have incomplete data");
+        }
+
+        if (spotifyPlaylists.length > 0) {
+          allPlaylists.push(...spotifyPlaylists);
+          console.log(`Loaded ${spotifyPlaylists.length} Spotify playlists`);
+        }
+
+        if (jellyfinPlaylists.length > 0) {
+          allPlaylists.push(...jellyfinPlaylists);
+          console.log(`Loaded ${jellyfinPlaylists.length} Jellyfin playlists`);
         }
 
         if (allPlaylists.length === 0) {
