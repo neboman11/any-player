@@ -91,11 +91,25 @@ export async function withTimeoutAndRetry<T>(
 
       // Wait before next retry (unless cancelled)
       await new Promise<void>((resolve) => {
-        const delayId = window.setTimeout(resolve, retryDelayMs);
-        signal?.addEventListener("abort", () => {
+        // Create named handler so we can remove it later
+        let abortHandler: (() => void) | null = null;
+        
+        const delayId = window.setTimeout(() => {
+          // Clean up the abort listener when delay completes normally
+          if (signal && abortHandler) {
+            signal.removeEventListener("abort", abortHandler);
+          }
+          resolve();
+        }, retryDelayMs);
+        
+        abortHandler = signal ? () => {
           window.clearTimeout(delayId);
           resolve();
-        }, { once: true });
+        } : null;
+        
+        if (signal && abortHandler) {
+          signal.addEventListener("abort", abortHandler, { once: true });
+        }
       });
     } catch {
       // Clear timeout on error
@@ -110,11 +124,25 @@ export async function withTimeoutAndRetry<T>(
 
       // Wait before next retry (unless cancelled)
       await new Promise<void>((resolve) => {
-        const delayId = window.setTimeout(resolve, retryDelayMs);
-        signal?.addEventListener("abort", () => {
+        // Create named handler so we can remove it later
+        let abortHandler: (() => void) | null = null;
+        
+        const delayId = window.setTimeout(() => {
+          // Clean up the abort listener when delay completes normally
+          if (signal && abortHandler) {
+            signal.removeEventListener("abort", abortHandler);
+          }
+          resolve();
+        }, retryDelayMs);
+        
+        abortHandler = signal ? () => {
           window.clearTimeout(delayId);
           resolve();
-        }, { once: true });
+        } : null;
+        
+        if (signal && abortHandler) {
+          signal.addEventListener("abort", abortHandler, { once: true });
+        }
       });
     }
   }
