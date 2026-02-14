@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+package-lock.json
+
+# Lock files (using pnpm)
+package-lock.json
+yarn.lock
 
 # Lock files (using pnpm)
 package-lock.json
