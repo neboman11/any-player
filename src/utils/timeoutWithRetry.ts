@@ -91,6 +91,9 @@ export async function withTimeoutAndRetry<T>(
 
       // Wait before next retry (unless cancelled)
       await new Promise<void>((resolve) => {
+        // Create named handler so we can remove it later
+        let abortHandler: (() => void) | null = null;
+        
         const delayId = window.setTimeout(() => {
           // Clean up the abort listener when delay completes normally
           if (signal && abortHandler) {
@@ -99,8 +102,7 @@ export async function withTimeoutAndRetry<T>(
           resolve();
         }, retryDelayMs);
         
-        // Create named handler so we can remove it later
-        const abortHandler = signal ? () => {
+        abortHandler = signal ? () => {
           window.clearTimeout(delayId);
           resolve();
         } : null;
@@ -122,6 +124,9 @@ export async function withTimeoutAndRetry<T>(
 
       // Wait before next retry (unless cancelled)
       await new Promise<void>((resolve) => {
+        // Create named handler so we can remove it later
+        let abortHandler: (() => void) | null = null;
+        
         const delayId = window.setTimeout(() => {
           // Clean up the abort listener when delay completes normally
           if (signal && abortHandler) {
@@ -130,8 +135,7 @@ export async function withTimeoutAndRetry<T>(
           resolve();
         }, retryDelayMs);
         
-        // Create named handler so we can remove it later
-        const abortHandler = signal ? () => {
+        abortHandler = signal ? () => {
           window.clearTimeout(delayId);
           resolve();
         } : null;
