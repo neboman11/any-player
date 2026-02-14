@@ -82,32 +82,42 @@ export default function App() {
 
         const [spotifyAuth, jellyfinAuth] = await Promise.all([
           withTimeoutAndRetry({
-            promiseFactory: () => tauriAPI.isSpotifyAuthenticated().catch((err) => {
-              console.error("Error checking Spotify authentication on startup:", err);
-              return false;
-            }),
+            promiseFactory: () =>
+              tauriAPI.isSpotifyAuthenticated().catch((err) => {
+                console.error(
+                  "Error checking Spotify authentication on startup:",
+                  err,
+                );
+                return false;
+              }),
             timeoutMs: STARTUP_PROVIDER_CHECK_TIMEOUT_MS,
             fallbackValue: false,
             maxRetries: MAX_AUTH_RETRIES,
-            onRetry: (attempt) => {
+            onRetry: (retryNumber) => {
               if (!mountedRef.current) return;
-              // attempt is 1-based (1 = 1st retry, 2 = 2nd retry, etc.)
-              // With maxRetries=3, we have up to 2 retries (initial attempt + 2 retries)
-              setStartupMessage(`Retrying authentication check (${attempt} of ${MAX_AUTH_RETRIES - 1} retries)...`);
+              setStartupMessage(
+                `Retrying authentication check (${retryNumber} of ${MAX_AUTH_RETRIES} retries)...`,
+              );
             },
             signal: abortControllerRef.current.signal,
           }),
           withTimeoutAndRetry({
-            promiseFactory: () => tauriAPI.isJellyfinAuthenticated().catch((err) => {
-              console.error("Error checking Jellyfin authentication on startup:", err);
-              return false;
-            }),
+            promiseFactory: () =>
+              tauriAPI.isJellyfinAuthenticated().catch((err) => {
+                console.error(
+                  "Error checking Jellyfin authentication on startup:",
+                  err,
+                );
+                return false;
+              }),
             timeoutMs: STARTUP_PROVIDER_CHECK_TIMEOUT_MS,
             fallbackValue: false,
             maxRetries: MAX_AUTH_RETRIES,
-            onRetry: (attempt) => {
+            onRetry: (retryNumber) => {
               if (!mountedRef.current) return;
-              setStartupMessage(`Retrying authentication check (${attempt} of ${MAX_AUTH_RETRIES - 1} retries)...`);
+              setStartupMessage(
+                `Retrying authentication check (${retryNumber} of ${MAX_AUTH_RETRIES} retries)...`,
+              );
             },
             signal: abortControllerRef.current.signal,
           }),
@@ -139,11 +149,15 @@ export default function App() {
             console.log("Playlists loaded and cached");
           }
         } else {
-          console.log("Unable to authenticate with Spotify or Jellyfin after retries");
+          console.log(
+            "Unable to authenticate with Spotify or Jellyfin after retries",
+          );
           // Show retry button if all automatic retries failed
           if (!abortControllerRef.current.signal.aborted) {
             setShowRetryButton(true);
-            setStartupMessage("Unable to connect to Spotify or Jellyfin. You can retry or continue without them.");
+            setStartupMessage(
+              "Unable to connect to Spotify or Jellyfin. You can retry or continue without them.",
+            );
           }
         }
 
@@ -207,7 +221,9 @@ export default function App() {
   const handleCancel = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      setStartupMessage("Startup cancelled. Continuing without service authentication.");
+      setStartupMessage(
+        "Startup cancelled. Continuing without service authentication.",
+      );
       setStartupLoading(false);
       setShowRetryButton(false);
     }
@@ -229,7 +245,11 @@ export default function App() {
     }
   }, [currentPage]);
 
-  const shouldShowBanner = startupLoading || backendInitLoading || backendInitFailed || showRetryButton;
+  const shouldShowBanner =
+    startupLoading ||
+    backendInitLoading ||
+    backendInitFailed ||
+    showRetryButton;
 
   return (
     <div className="app">

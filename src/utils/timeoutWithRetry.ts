@@ -8,12 +8,12 @@ export interface TimeoutRetryOptions<T> {
   timeoutMs: number;
   /** Value to return if all retries fail */
   fallbackValue: T;
-  /** Maximum number of retry attempts (default: 3) */
+  /** Maximum number of retry attempts after the initial attempt (default: 3) */
   maxRetries?: number;
   /** Delay between retry attempts in milliseconds (default: 500) */
   retryDelayMs?: number;
-  /** Callback invoked before each retry with attempt number */
-  onRetry?: (attempt: number) => void;
+  /** Callback invoked before each retry with retry number (1-indexed) */
+  onRetry?: (retryNumber: number) => void;
   /** Cancellation signal to abort retries */
   signal?: AbortSignal;
 }
@@ -21,7 +21,7 @@ export interface TimeoutRetryOptions<T> {
 /**
  * Wraps a promise factory with timeout and automatic retry logic. If the promise doesn't
  * resolve/reject within the specified timeout, it will automatically retry up to
- * maxRetries times. Returns the fallback value if all retries fail.
+ * maxRetries times after the initial attempt. Returns the fallback value if all attempts fail.
  *
  * Supports cancellation via AbortSignal - if cancelled, immediately returns fallback.
  *
@@ -46,13 +46,17 @@ export async function withTimeoutAndRetry<T>(
     return fallbackValue;
   }
 
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
+  // Total attempts = 1 initial attempt + maxRetries retry attempts
+  const totalAttempts = maxRetries + 1;
+
+  for (let attempt = 0; attempt < totalAttempts; attempt++) {
     // Check for cancellation before each attempt
     if (signal?.aborted) {
       return fallbackValue;
     }
 
     // Notify about retry attempt (only for retries, not the first attempt)
+    // Pass retry number (1-indexed: 1st retry, 2nd retry, etc.)
     if (attempt > 0 && onRetry) {
       onRetry(attempt);
     }
@@ -85,7 +89,7 @@ export async function withTimeoutAndRetry<T>(
       }
       
       // If we timed out and this is the last attempt or we're cancelled, return fallback
-      if (attempt === maxRetries - 1 || signal?.aborted) {
+      if (attempt === totalAttempts - 1 || signal?.aborted) {
         return fallbackValue;
       }
 
@@ -118,7 +122,7 @@ export async function withTimeoutAndRetry<T>(
       }
 
       // If this is the last attempt or we're cancelled, return fallback
-      if (attempt === maxRetries - 1 || signal?.aborted) {
+      if (attempt === totalAttempts - 1 || signal?.aborted) {
         return fallbackValue;
       }
 
