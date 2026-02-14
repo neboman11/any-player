@@ -51,11 +51,15 @@ struct JellyfinItem {
     #[serde(rename = "ChildCount")]
     child_count: Option<u32>,
     #[serde(rename = "Bitrate")]
+    #[serde(alias = "BitRate")]
     bitrate: Option<u32>,
     #[serde(rename = "SampleRate")]
+    #[serde(alias = "SamplingRate")]
     sample_rate: Option<u32>,
     #[serde(rename = "MediaStreams")]
     media_streams: Option<Vec<JellyfinMediaStream>>,
+    #[serde(rename = "MediaSources")]
+    media_sources: Option<Vec<JellyfinMediaSource>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,9 +67,20 @@ struct JellyfinMediaStream {
     #[serde(rename = "Type")]
     stream_type: Option<String>,
     #[serde(rename = "BitRate")]
+    #[serde(alias = "Bitrate")]
     bit_rate: Option<u32>,
     #[serde(rename = "SampleRate")]
+    #[serde(alias = "SamplingRate")]
     sample_rate: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JellyfinMediaSource {
+    #[serde(rename = "Bitrate")]
+    #[serde(alias = "BitRate")]
+    bitrate: Option<u32>,
+    #[serde(rename = "MediaStreams")]
+    media_streams: Option<Vec<JellyfinMediaStream>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -226,6 +241,28 @@ impl JellyfinProvider {
     }
 
     fn get_audio_quality(&self, item: &JellyfinItem) -> (Option<u32>, Option<u32>) {
+        if let Some(sources) = &item.media_sources {
+            if let Some(source) = sources.first() {
+                if let Some(streams) = &source.media_streams {
+                    if let Some(audio_stream) = streams.iter().find(|stream| {
+                        stream
+                            .stream_type
+                            .as_deref()
+                            .map(|value| value.eq_ignore_ascii_case("Audio"))
+                            .unwrap_or(false)
+                    }) {
+                        let bitrate_kbps = audio_stream.bit_rate.map(|value| value / 1000);
+                        let fallback_bitrate = source.bitrate.map(|value| value / 1000);
+                        return (bitrate_kbps.or(fallback_bitrate), audio_stream.sample_rate);
+                    }
+                }
+
+                if source.bitrate.is_some() {
+                    return (source.bitrate.map(|value| value / 1000), None);
+                }
+            }
+        }
+
         if let Some(streams) = &item.media_streams {
             if let Some(audio_stream) = streams.iter().find(|stream| {
                 stream
@@ -438,7 +475,7 @@ impl MusicProvider for JellyfinProvider {
             }
 
             let items_url = format!(
-                "{}/Users/{}/Items?ParentId={}&Fields=AudioInfo,ParentId&Limit={}&StartIndex={}",
+                "{}/Users/{}/Items?ParentId={}&Fields=AudioInfo,MediaSources,ParentId&Limit={}&StartIndex={}",
                 self.base_url, user_id, id, limit, start_index
             );
             let items_response = self
@@ -523,7 +560,7 @@ impl MusicProvider for JellyfinProvider {
 
         // GET /Users/{userId}/Items/{id}
         let url = format!(
-            "{}/Users/{}/Items/{}?Fields=AudioInfo",
+            "{}/Users/{}/Items/{}?Fields=AudioInfo,MediaSources",
             self.base_url, user_id, id
         );
 
@@ -562,7 +599,7 @@ impl MusicProvider for JellyfinProvider {
 
         // GET /Items with search query
         let url = format!(
-            "{}/Users/{}/Items?searchTerm={}&IncludeItemTypes=Audio&Recursive=true&Fields=AudioInfo",
+            "{}/Users/{}/Items?searchTerm={}&IncludeItemTypes=Audio&Recursive=true&Fields=AudioInfo,MediaSources",
             self.base_url, user_id, query
         );
 
@@ -778,7 +815,7 @@ impl MusicProvider for JellyfinProvider {
 
         // Get recently played items
         let url = format!(
-            "{}/Users/{}/Items?SortBy=DatePlayed&SortOrder=Descending&Limit={}&Filters=IsPlayed&IncludeItemTypes=Audio&Recursive=true&Fields=AudioInfo",
+            "{}/Users/{}/Items?SortBy=DatePlayed&SortOrder=Descending&Limit={}&Filters=IsPlayed&IncludeItemTypes=Audio&Recursive=true&Fields=AudioInfo,MediaSources",
             self.base_url, user_id, limit
         );
 

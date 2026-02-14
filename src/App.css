@@ -267,6 +267,21 @@ body {
   line-height: 1;
 }
 
+.quality-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.35rem;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid #5a5a5a;
+  color: #c5c5c5;
+  font-size: 0.63rem;
+  line-height: 1;
+  cursor: help;
+}
+
 .progress-bar {
   display: flex;
   align-items: center;
@@ -1211,6 +1226,21 @@ input[type="range"] {
   font-size: 0.66rem;
   line-height: 1;
   white-space: nowrap;
+}
+
+.bottom-bar-quality-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.28rem;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid #5a5a5a;
+  color: #bcbcbc;
+  font-size: 0.56rem;
+  line-height: 1;
+  cursor: help;
 }
 
 .bottom-bar-controls {

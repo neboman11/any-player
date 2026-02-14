@@ -3,6 +3,7 @@ import { usePlayback } from "../hooks";
 import {
   getTrackQualityLabel,
   getTrackSourceLabel,
+  isSpotifyQualityUnavailable,
 } from "../utils/trackIndicators";
 
 export function BottomPlayBar() {
@@ -99,6 +100,15 @@ export function BottomPlayBar() {
               </span>
               <span className="bottom-bar-indicator">
                 {getTrackQualityLabel(currentTrack)}
+                {isSpotifyQualityUnavailable(currentTrack) && (
+                  <span
+                    className="bottom-bar-quality-info-icon"
+                    title="Spotify does not expose per-track playback bitrate/sample-rate to this app, so exact quality values cannot be shown."
+                    aria-label="Spotify quality info"
+                  >
+                    ℹ
+                  </span>
+                )}
               </span>
             </div>
           </div>

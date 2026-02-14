@@ -33,3 +33,13 @@ export function getTrackQualityLabel(
 
   return parts.join(" • ");
 }
+
+export function isSpotifyQualityUnavailable(
+  track: Pick<Track, "source" | "bitrate_kbps" | "sample_rate_hz">,
+): boolean {
+  return (
+    track.source === "spotify" &&
+    !(typeof track.bitrate_kbps === "number" && track.bitrate_kbps > 0) &&
+    !(typeof track.sample_rate_hz === "number" && track.sample_rate_hz > 0)
+  );
+}

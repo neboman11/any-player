@@ -6,6 +6,7 @@ import { VolumeControl } from "./VolumeControl";
 import {
   getTrackQualityLabel,
   getTrackSourceLabel,
+  isSpotifyQualityUnavailable,
 } from "../utils/trackIndicators";
 
 export function NowPlaying() {
@@ -82,6 +83,15 @@ export function NowPlaying() {
                 </span>
                 <span className="track-indicator">
                   Quality: {getTrackQualityLabel(currentTrack)}
+                  {isSpotifyQualityUnavailable(currentTrack) && (
+                    <span
+                      className="quality-info-icon"
+                      title="Spotify does not expose per-track playback bitrate/sample-rate to this app, so exact quality values cannot be shown."
+                      aria-label="Spotify quality info"
+                    >
+                      ℹ
+                    </span>
+                  )}
                 </span>
               </div>
             )}
