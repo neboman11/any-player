@@ -247,6 +247,26 @@ body {
   font-size: 0.9rem !important;
 }
 
+.now-playing-indicators {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.track-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid #4a4a4a;
+  background-color: #2f2f2f;
+  color: #b9b9b9;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
 .progress-bar {
   display: flex;
   align-items: center;
@@ -1171,6 +1191,26 @@ input[type="range"] {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.bottom-bar-indicators {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.bottom-bar-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  border: 1px solid #4a4a4a;
+  background-color: #2f2f2f;
+  color: #a8a8a8;
+  font-size: 0.66rem;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .bottom-bar-controls {

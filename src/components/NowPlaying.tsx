@@ -3,6 +3,10 @@ import { usePlayback } from "../hooks";
 import { NowPlayingControls } from "./NowPlayingControls";
 import { ProgressBar } from "./ProgressBar";
 import { VolumeControl } from "./VolumeControl";
+import {
+  getTrackQualityLabel,
+  getTrackSourceLabel,
+} from "../utils/trackIndicators";
 
 export function NowPlaying() {
   const playback = usePlayback();
@@ -16,6 +20,9 @@ export function NowPlaying() {
         artist: playback.playbackStatus.current_track.artist,
         album: playback.playbackStatus.current_track.album || undefined,
         image_url: playback.playbackStatus.current_track.image_url,
+        source: playback.playbackStatus.current_track.source,
+        bitrate_kbps: playback.playbackStatus.current_track.bitrate_kbps,
+        sample_rate_hz: playback.playbackStatus.current_track.sample_rate_hz,
       };
       console.log("Current track image_url:", track.image_url);
       return track;
@@ -25,8 +32,13 @@ export function NowPlaying() {
       artist: "Select a track to play",
       album: undefined,
       image_url: undefined,
+      source: undefined,
+      bitrate_kbps: undefined,
+      sample_rate_hz: undefined,
     };
   }, [playback.playbackStatus?.current_track]);
+
+  const hasTrack = Boolean(playback.playbackStatus?.current_track);
 
   return (
     <section id="now-playing" className="page active">
@@ -63,6 +75,16 @@ export function NowPlaying() {
             <p id="track-album" className="album-name">
               {currentTrack.album || ""}
             </p>
+            {hasTrack && currentTrack.source && (
+              <div className="now-playing-indicators">
+                <span className="track-indicator">
+                  Source: {getTrackSourceLabel(currentTrack.source)}
+                </span>
+                <span className="track-indicator">
+                  Quality: {getTrackQualityLabel(currentTrack)}
+                </span>
+              </div>
+            )}
           </div>
           <ProgressBar
             position={playback.position}

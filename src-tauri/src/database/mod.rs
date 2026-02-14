@@ -63,6 +63,8 @@ impl PlaylistTrack {
             image_url: self.image_url.clone(),
             source,
             url: None,
+            bitrate_kbps: None,
+            sample_rate_hz: None,
             auth_headers: None,
         }
     }
@@ -760,6 +762,8 @@ mod tests {
             image_url: None,
             source: Source::Spotify,
             url: None,
+            bitrate_kbps: None,
+            sample_rate_hz: None,
             auth_headers: None,
         };
 
@@ -788,6 +792,8 @@ mod tests {
                 image_url: None,
                 source: Source::Spotify,
                 url: None,
+                bitrate_kbps: None,
+                sample_rate_hz: None,
                 auth_headers: None,
             };
             db.add_track_to_playlist(&playlist.id, &track).unwrap();

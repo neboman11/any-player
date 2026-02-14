@@ -1,5 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
 import { usePlayback } from "../hooks";
+import {
+  getTrackQualityLabel,
+  getTrackSourceLabel,
+} from "../utils/trackIndicators";
 
 export function BottomPlayBar() {
   const playback = usePlayback();
@@ -89,6 +93,14 @@ export function BottomPlayBar() {
           <div className="bottom-bar-text">
             <div className="bottom-bar-title">{currentTrack.title}</div>
             <div className="bottom-bar-artist">{currentTrack.artist}</div>
+            <div className="bottom-bar-indicators">
+              <span className="bottom-bar-indicator">
+                {getTrackSourceLabel(currentTrack.source)}
+              </span>
+              <span className="bottom-bar-indicator">
+                {getTrackQualityLabel(currentTrack)}
+              </span>
+            </div>
           </div>
           <div className="bottom-bar-time">
             <span className="bottom-bar-time-current">

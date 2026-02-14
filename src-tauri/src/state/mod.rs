@@ -249,6 +249,8 @@ mod tests {
             image_url: Some("https://example.com/image.jpg".to_string()),
             source: Source::Jellyfin,
             url: Some("https://example.com/track.mp3".to_string()),
+            bitrate_kbps: Some(320),
+            sample_rate_hz: Some(44100),
             auth_headers: if with_auth {
                 Some(vec![
                     ("X-Auth-Token".to_string(), "secret-token-123".to_string()),

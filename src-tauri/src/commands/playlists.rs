@@ -209,6 +209,8 @@ pub async fn play_tracks_immediate(
             image_url: track_info.image_url,
             source,
             url: track_info.url,
+            bitrate_kbps: track_info.bitrate_kbps,
+            sample_rate_hz: track_info.sample_rate_hz,
             auth_headers,
         });
     }

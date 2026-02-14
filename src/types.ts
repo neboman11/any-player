@@ -24,6 +24,8 @@ export interface Track {
   source: "spotify" | "jellyfin" | "custom";
   url?: string;
   image_url?: string;
+  bitrate_kbps?: number;
+  sample_rate_hz?: number;
 }
 
 export interface Playlist {
