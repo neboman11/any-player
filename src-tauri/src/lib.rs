@@ -302,7 +302,7 @@ pub fn run() {
                                     &ws_sender_for_startup,
                                     "spotify-session",
                                     &format!("Failed to initialize Spotify session: {}", e),
-                                    true,
+                                    false,
                                     false,
                                 );
                             }
@@ -315,7 +315,7 @@ pub fn run() {
                                     &ws_sender_for_startup,
                                     "spotify-session",
                                     "Spotify session initialization timed out",
-                                    true,
+                                    false,
                                     false,
                                 );
                             }
