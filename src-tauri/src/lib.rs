@@ -381,7 +381,9 @@ pub fn run() {
                         false,
                     );
                 } else {
-                    // Don't send a message for successful completion, just mark as done
+                    // For successful completion, send an empty message
+                    // The UI will hide the banner when done=true and success=true,
+                    // without displaying any success message
                     websocket::emit_backend_init_status(
                         &ws_sender_for_startup,
                         "complete",
