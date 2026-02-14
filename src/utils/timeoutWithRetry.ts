@@ -48,7 +48,7 @@ export async function withTimeoutAndRetry<T>(
 
   // Total attempts = 1 initial attempt + maxRetries retry attempts
   const totalAttempts = maxRetries + 1;
-  
+
   for (let attempt = 0; attempt < totalAttempts; attempt++) {
     // Check for cancellation before each attempt
     if (signal?.aborted) {
