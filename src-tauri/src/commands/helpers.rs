@@ -27,7 +27,7 @@ pub async fn enrich_queued_tracks_eager(
 
     // Gather all information we need in a single lock acquisition
     let (total_tracks, _shuffle_enabled, _shuffle_order, tracks_to_enrich) = {
-        let queue = queue_arc.lock().await;
+        let mut queue = queue_arc.lock().await;
         let total_tracks = queue.tracks.len();
         let shuffle_enabled = !queue.shuffle_order.is_empty();
         let shuffle_order = queue.shuffle_order.clone();
