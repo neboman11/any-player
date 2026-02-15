@@ -23,6 +23,20 @@ interface PlaylistViewerProps {
   onDelete?: () => Promise<void>;
 }
 
+// Helper function to get playlist by ID based on source
+function getPlaylistById(source: string, id: string): Promise<Playlist> {
+  switch (source) {
+    case "spotify":
+      return tauriAPI.getSpotifyPlaylist(id);
+    case "jellyfin":
+      return tauriAPI.getJellyfinPlaylist(id);
+    case "plex":
+      return tauriAPI.getPlexPlaylist(id);
+    default:
+      throw new Error(`Unknown source: ${source}`);
+  }
+}
+
 export function PlaylistViewer({
   playlist,
   isCustom,
@@ -54,20 +68,6 @@ export function PlaylistViewer({
   const [searchQuery, setSearchQuery] = useState("");
 
   const playback = usePlayback();
-
-  // Helper function to get playlist by ID based on source
-  const getPlaylistById = (source: string, id: string) => {
-    switch (source) {
-      case "spotify":
-        return tauriAPI.getSpotifyPlaylist(id);
-      case "jellyfin":
-        return tauriAPI.getJellyfinPlaylist(id);
-      case "plex":
-        return tauriAPI.getPlexPlaylist(id);
-      default:
-        throw new Error(`Unknown source: ${source}`);
-    }
-  };
 
   // Load tracks for regular playlists
   useEffect(() => {
