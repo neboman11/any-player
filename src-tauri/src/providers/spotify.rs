@@ -578,7 +578,10 @@ impl MusicProvider for SpotifyProvider {
                             image_url: t.album.images.first().map(|img| img.url.clone()),
                             source: Source::Spotify,
                             url,
+                            bitrate_kbps: None,
+                            sample_rate_hz: None,
                             auth_headers: None,
+                            enriched: false,
                         });
                     }
                 }
@@ -659,7 +662,10 @@ impl MusicProvider for SpotifyProvider {
                         image_url,
                         source: Source::Spotify,
                         url: track.external_urls.get("spotify").cloned(),
+                        bitrate_kbps: None,
+                        sample_rate_hz: None,
                         auth_headers: None,
+                        enriched: false,
                     }
                 })
                 .collect()
@@ -750,7 +756,10 @@ impl MusicProvider for SpotifyProvider {
             image_url: track.album.images.first().map(|img| img.url.clone()),
             source: Source::Spotify,
             url,
+            bitrate_kbps: None,
+            sample_rate_hz: None,
             auth_headers: None,
+            enriched: false,
         })
     }
 

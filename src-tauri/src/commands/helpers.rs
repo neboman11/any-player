@@ -8,6 +8,10 @@ use tokio::sync::Mutex;
 /// This prevents overwhelming external APIs with rapid consecutive requests
 const TRACK_ENRICHMENT_DELAY_MS: u64 = 50;
 
+/// Number of nearest upcoming tracks to enrich immediately without throttle delay.
+/// This helps ensure metadata is ready before those songs begin playback.
+const PRIORITY_PRELOAD_COUNT: usize = 3;
+
 /// Eagerly enrich queued tracks with full details (URLs, auth headers, etc.)
 /// Prioritizes tracks near the current playback position and loads them immediately
 pub async fn enrich_queued_tracks_eager(
@@ -23,7 +27,7 @@ pub async fn enrich_queued_tracks_eager(
 
     // Gather all information we need in a single lock acquisition
     let (total_tracks, _shuffle_enabled, _shuffle_order, tracks_to_enrich) = {
-        let queue = queue_arc.lock().await;
+        let mut queue = queue_arc.lock().await;
         let total_tracks = queue.tracks.len();
         let shuffle_enabled = !queue.shuffle_order.is_empty();
         let shuffle_order = queue.shuffle_order.clone();
@@ -44,14 +48,16 @@ pub async fn enrich_queued_tracks_eager(
             indices_to_load.push(actual_index);
         }
 
-        // Gather track info that needs enrichment
+        // Gather track info that needs enrichment and mark them as being enriched atomically
         let mut tracks_info = Vec::new();
         for &track_idx in &indices_to_load {
             if track_idx < queue.tracks.len() {
-                let track = &queue.tracks[track_idx];
-                // Skip if track already has a URL (already enriched)
-                if track.url.is_none() {
+                let track = &mut queue.tracks[track_idx];
+                // Enrich tracks that haven't been enriched yet
+                if !track.enriched {
                     tracks_info.push((track_idx, track.id.clone(), track.source));
+                    // Mark as enriched immediately to prevent concurrent enrichment attempts
+                    track.enriched = true;
                 }
             }
         }
@@ -62,7 +68,7 @@ pub async fn enrich_queued_tracks_eager(
     // Now fetch track details without holding the registry lock
     let mut enriched_tracks = Vec::new();
 
-    for (track_idx, track_id, source) in tracks_to_enrich {
+    for (position, (track_idx, track_id, source)) in tracks_to_enrich.into_iter().enumerate() {
         // Get the provider handle, then release the registry lock before fetching
         let provider_handle = {
             let providers_lock = providers.lock().await;
@@ -78,14 +84,18 @@ pub async fn enrich_queued_tracks_eager(
             let provider_locked = provider.lock().await;
             let enriched_track_result = provider_locked.get_track(&track_id).await;
 
-            if let Ok(enriched_track) = enriched_track_result {
+            if let Ok(mut enriched_track) = enriched_track_result {
+                // Ensure enriched flag is set (was already set during collection)
+                enriched_track.enriched = true;
                 enriched_tracks.push((track_idx, enriched_track));
                 tracing::debug!("Eagerly enriched track {} at index {}", track_id, track_idx);
             } else {
                 tracing::warn!("Failed to enrich track {} at index {}", track_id, track_idx);
+                // Track is already marked as enriched, no need to update
             }
         } else if matches!(source, crate::models::Source::Custom) {
             tracing::debug!("Skipping custom track {} at index {}", track_id, track_idx);
+            // Track is already marked as enriched, no need to update
         } else {
             tracing::warn!(
                 "Provider not found for track {} (source: {:?}) at index {}",
@@ -93,13 +103,16 @@ pub async fn enrich_queued_tracks_eager(
                 source,
                 track_idx
             );
+            // Track is already marked as enriched, no need to update
         }
 
-        // Small delay to avoid overwhelming the API
-        tokio::time::sleep(tokio::time::Duration::from_millis(
-            TRACK_ENRICHMENT_DELAY_MS,
-        ))
-        .await;
+        // Delay only for non-priority tracks to keep immediate upcoming songs enriched faster.
+        if position + 1 > PRIORITY_PRELOAD_COUNT {
+            tokio::time::sleep(tokio::time::Duration::from_millis(
+                TRACK_ENRICHMENT_DELAY_MS,
+            ))
+            .await;
+        }
     }
 
     // Update all enriched tracks in a single lock acquisition

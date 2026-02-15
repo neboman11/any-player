@@ -3,6 +3,11 @@ import { usePlayback } from "../hooks";
 import { NowPlayingControls } from "./NowPlayingControls";
 import { ProgressBar } from "./ProgressBar";
 import { VolumeControl } from "./VolumeControl";
+import {
+  getTrackQualityLabel,
+  getTrackSourceLabel,
+  isSpotifyQualityUnavailable,
+} from "../utils/trackIndicators";
 
 export function NowPlaying() {
   const playback = usePlayback();
@@ -11,21 +16,11 @@ export function NowPlaying() {
 
   const currentTrack = useMemo(() => {
     if (playback.playbackStatus?.current_track) {
-      const track = {
-        title: playback.playbackStatus.current_track.title,
-        artist: playback.playbackStatus.current_track.artist,
-        album: playback.playbackStatus.current_track.album || undefined,
-        image_url: playback.playbackStatus.current_track.image_url,
-      };
+      const track = playback.playbackStatus.current_track;
       console.log("Current track image_url:", track.image_url);
       return track;
     }
-    return {
-      title: "No track playing",
-      artist: "Select a track to play",
-      album: undefined,
-      image_url: undefined,
-    };
+    return null;
   }, [playback.playbackStatus?.current_track]);
 
   return (
@@ -33,7 +28,7 @@ export function NowPlaying() {
       <div className="now-playing-wrapper">
         <div className="now-playing-container">
           <div className="album-art">
-            {currentTrack.image_url && !imageLoadError ? (
+            {currentTrack?.image_url && !imageLoadError ? (
               <img
                 key={currentTrack.image_url}
                 src={currentTrack.image_url}
@@ -42,14 +37,14 @@ export function NowPlaying() {
                 onError={() => {
                   console.error(
                     "Failed to load album art:",
-                    currentTrack.image_url,
+                    currentTrack?.image_url,
                   );
                   setImageLoadError(true);
                 }}
                 onLoad={() =>
                   console.log(
                     "Album art loaded successfully:",
-                    currentTrack.image_url,
+                    currentTrack?.image_url,
                   )
                 }
               />
@@ -58,11 +53,30 @@ export function NowPlaying() {
             )}
           </div>
           <div className="track-info">
-            <h2 id="track-title">{currentTrack.title}</h2>
-            <p id="track-artist">{currentTrack.artist}</p>
+            <h2 id="track-title">{currentTrack?.title || "No track playing"}</h2>
+            <p id="track-artist">{currentTrack?.artist || "Select a track to play"}</p>
             <p id="track-album" className="album-name">
-              {currentTrack.album || ""}
+              {currentTrack?.album || ""}
             </p>
+            {currentTrack && (
+              <div className="now-playing-indicators">
+                <span className="track-indicator">
+                  Source: {getTrackSourceLabel(currentTrack.source)}
+                </span>
+                <span className="track-indicator">
+                  Quality: {getTrackQualityLabel(currentTrack)}
+                  {isSpotifyQualityUnavailable(currentTrack) && (
+                    <span
+                      className="quality-info-icon"
+                      title="Spotify does not expose per-track playback bitrate/sample-rate to this app, so exact quality values cannot be shown."
+                      aria-label="Spotify quality info"
+                    >
+                      ℹ
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
           </div>
           <ProgressBar
             position={playback.position}

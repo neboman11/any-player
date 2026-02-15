@@ -58,6 +58,8 @@ export default function App() {
 
     const initializePlaylists = async () => {
       try {
+        let authRetryOccurred = false;
+
         if (!mountedRef.current) return;
         setStartupMessage("Loading custom playlists...");
         setShowRetryButton(false);
@@ -94,6 +96,7 @@ export default function App() {
             fallbackValue: false,
             maxRetries: MAX_AUTH_RETRIES,
             onRetry: (retryNumber) => {
+              authRetryOccurred = true;
               if (!mountedRef.current) return;
               setStartupMessage(
                 `Retrying authentication check (${retryNumber} of ${MAX_AUTH_RETRIES} retries)...`,
@@ -114,6 +117,7 @@ export default function App() {
             fallbackValue: false,
             maxRetries: MAX_AUTH_RETRIES,
             onRetry: (retryNumber) => {
+              authRetryOccurred = true;
               if (!mountedRef.current) return;
               setStartupMessage(
                 `Retrying authentication check (${retryNumber} of ${MAX_AUTH_RETRIES} retries)...`,
@@ -152,12 +156,15 @@ export default function App() {
           console.log(
             "Unable to authenticate with Spotify or Jellyfin after retries",
           );
-          // Show retry button if all automatic retries failed
-          if (!abortControllerRef.current.signal.aborted) {
+          // Only show retry button when auth checks actually retried/failed.
+          // If no retries occurred, providers are likely just not connected yet.
+          if (!abortControllerRef.current.signal.aborted && authRetryOccurred) {
             setShowRetryButton(true);
             setStartupMessage(
               "Unable to connect to Spotify or Jellyfin. You can retry or continue without them.",
             );
+          } else {
+            setShowRetryButton(false);
           }
         }
 
@@ -191,13 +198,16 @@ export default function App() {
     const unsubscribe = backendSocket.on<BackendInitStatus>(
       "backend-init-status",
       (status) => {
-        setStartupMessage(status.message);
         if (status.done) {
           setBackendInitLoading(false);
           if (!status.success) {
+            setStartupMessage(status.message);
             setBackendInitFailed(true);
+          } else {
+            setBackendInitFailed(false);
           }
         } else {
+          setStartupMessage(status.message);
           setBackendInitLoading(true);
           setBackendInitFailed(false);
         }

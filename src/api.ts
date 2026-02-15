@@ -105,6 +105,8 @@ export class TauriAPI {
       source: track.source,
       url: track.url || null,
       image_url: track.image_url || null,
+      bitrate_kbps: track.bitrate_kbps ?? null,
+      sample_rate_hz: track.sample_rate_hz ?? null,
     }));
     return invoke<void>("play_tracks_immediate", { tracks: trackInfos });
   }

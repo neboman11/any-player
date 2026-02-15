@@ -247,6 +247,41 @@ body {
   font-size: 0.9rem !important;
 }
 
+.now-playing-indicators {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.track-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid #4a4a4a;
+  background-color: #2f2f2f;
+  color: #b9b9b9;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.quality-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.35rem;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid #5a5a5a;
+  color: #c5c5c5;
+  font-size: 0.63rem;
+  line-height: 1;
+  cursor: help;
+}
+
 .progress-bar {
   display: flex;
   align-items: center;
@@ -1100,7 +1135,35 @@ input[type="range"] {
   gap: 1rem;
   flex: 1;
   min-width: 0;
-  max-width: 300px;
+  max-width: 400px;
+}
+
+.bottom-bar-time {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: #999;
+  margin-left: auto;
+  min-width: 72px;
+  flex-shrink: 0;
+}
+
+.bottom-bar-time-current,
+.bottom-bar-time-total {
+  min-width: 30px;
+}
+
+.bottom-bar-time-current {
+  text-align: right;
+}
+
+.bottom-bar-time-total {
+  text-align: left;
+}
+
+.bottom-bar-time-separator {
+  color: #777;
 }
 
 .bottom-bar-album-art {
@@ -1145,12 +1208,48 @@ input[type="range"] {
   text-overflow: ellipsis;
 }
 
+.bottom-bar-indicators {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+
+.bottom-bar-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  border: 1px solid #4a4a4a;
+  background-color: #2f2f2f;
+  color: #a8a8a8;
+  font-size: 0.66rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.bottom-bar-quality-info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.28rem;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid #5a5a5a;
+  color: #bcbcbc;
+  font-size: 0.56rem;
+  line-height: 1;
+  cursor: help;
+}
+
 .bottom-bar-controls {
   display: flex;
   gap: 0.75rem;
   align-items: center;
   justify-content: center;
   flex: 1;
+  min-width: 0;
 }
 
 .bottom-bar-control-btn {

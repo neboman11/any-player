@@ -37,6 +37,8 @@ pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackS
         source: t.source.to_string(),
         url: t.url,
         image_url: t.image_url,
+        bitrate_kbps: t.bitrate_kbps,
+        sample_rate_hz: t.sample_rate_hz,
     });
 
     // Get queue tracks - only return tracks after the current index
@@ -56,6 +58,8 @@ pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackS
                 source: t.source.to_string(),
                 url: t.url.clone(),
                 image_url: t.image_url.clone(),
+                bitrate_kbps: t.bitrate_kbps,
+                sample_rate_hz: t.sample_rate_hz,
             })
             .collect()
     } else {
@@ -72,6 +76,8 @@ pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackS
                 source: t.source.to_string(),
                 url: t.url,
                 image_url: t.image_url,
+                bitrate_kbps: t.bitrate_kbps,
+                sample_rate_hz: t.sample_rate_hz,
             })
             .collect()
     };

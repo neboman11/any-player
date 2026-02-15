@@ -73,7 +73,56 @@ pub async fn get_custom_playlists(
             .collect()
     };
 
-    let providers = state.providers.lock().await;
+    // Fetch provider playlist summaries once (lightweight) and reuse them for
+    // union track-count calculation to avoid expensive full playlist track fetches.
+    let (spotify_provider, jellyfin_provider) = {
+        let providers = state.providers.lock().await;
+        (
+            providers.get(Source::Spotify),
+            providers.get(Source::Jellyfin),
+        )
+    };
+
+    let spotify_track_counts: std::collections::HashMap<String, i64> =
+        if let Some(provider) = spotify_provider {
+            let provider_locked = provider.lock().await;
+            match provider_locked.get_playlists().await {
+                Ok(playlists) => playlists
+                    .into_iter()
+                    .map(|p| (p.id, p.track_count as i64))
+                    .collect(),
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load Spotify playlist summaries for union counts: {}",
+                        e
+                    );
+                    std::collections::HashMap::new()
+                }
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
+
+    let jellyfin_track_counts: std::collections::HashMap<String, i64> =
+        if let Some(provider) = jellyfin_provider {
+            let provider_locked = provider.lock().await;
+            match provider_locked.get_playlists().await {
+                Ok(playlists) => playlists
+                    .into_iter()
+                    .map(|p| (p.id, p.track_count as i64))
+                    .collect(),
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load Jellyfin playlist summaries for union counts: {}",
+                        e
+                    );
+                    std::collections::HashMap::new()
+                }
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
+
     for playlist in &mut playlists {
         if playlist.playlist_type == "union" {
             if let Some(sources) = union_sources_map.get(&playlist.id) {
@@ -81,19 +130,17 @@ pub async fn get_custom_playlists(
                 for source in sources {
                     match source.source_type.as_str() {
                         "spotify" => {
-                            if let Ok(p) = providers
-                                .get_playlist(Source::Spotify, &source.source_playlist_id)
-                                .await
+                            if let Some(count) =
+                                spotify_track_counts.get(source.source_playlist_id.as_str())
                             {
-                                total_tracks += p.track_count as i64;
+                                total_tracks += *count;
                             }
                         }
                         "jellyfin" => {
-                            if let Ok(p) = providers
-                                .get_playlist(Source::Jellyfin, &source.source_playlist_id)
-                                .await
+                            if let Some(count) =
+                                jellyfin_track_counts.get(source.source_playlist_id.as_str())
                             {
-                                total_tracks += p.track_count as i64;
+                                total_tracks += *count;
                             }
                         }
                         "custom" => {
@@ -111,7 +158,6 @@ pub async fn get_custom_playlists(
         }
     }
 
-    drop(providers);
     Ok(playlists)
 }
 

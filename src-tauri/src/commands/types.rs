@@ -35,6 +35,10 @@ pub struct TrackInfo {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitrate_kbps: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sample_rate_hz: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

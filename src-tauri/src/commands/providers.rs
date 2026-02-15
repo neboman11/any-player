@@ -69,6 +69,8 @@ pub async fn get_spotify_playlist(
             source: "spotify".to_string(),
             url: t.url.clone(),
             image_url: t.image_url.clone(),
+            bitrate_kbps: t.bitrate_kbps,
+            sample_rate_hz: t.sample_rate_hz,
         })
         .collect();
 
@@ -113,6 +115,8 @@ pub async fn search_spotify_tracks(
             source: "spotify".to_string(),
             url: t.url,
             image_url: t.image_url,
+            bitrate_kbps: t.bitrate_kbps,
+            sample_rate_hz: t.sample_rate_hz,
         })
         .collect())
 }
@@ -183,6 +187,8 @@ pub async fn get_jellyfin_playlist(
             source: "jellyfin".to_string(),
             url: t.url.clone(),
             image_url: t.image_url.clone(),
+            bitrate_kbps: t.bitrate_kbps,
+            sample_rate_hz: t.sample_rate_hz,
         })
         .collect();
 
@@ -227,6 +233,8 @@ pub async fn search_jellyfin_tracks(
             source: "jellyfin".to_string(),
             url: t.url,
             image_url: t.image_url,
+            bitrate_kbps: t.bitrate_kbps,
+            sample_rate_hz: t.sample_rate_hz,
         })
         .collect())
 }
@@ -293,6 +301,8 @@ pub async fn get_jellyfin_recently_played(
             source: "jellyfin".to_string(),
             url: t.url,
             image_url: t.image_url,
+            bitrate_kbps: t.bitrate_kbps,
+            sample_rate_hz: t.sample_rate_hz,
         })
         .collect())
 }
