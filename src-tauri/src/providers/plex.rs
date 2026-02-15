@@ -44,6 +44,8 @@ struct PlexMetadata {
     #[serde(default)]
     #[serde(rename = "Media")]
     media: Option<Vec<PlexMedia>>,
+    #[serde(default, rename = "type")]
+    item_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -358,15 +360,41 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
+        // Plex search API returns mixed results (tracks, albums, artists, playlists, etc.).
+        // We fetch from the search endpoint and then filter to only playlist types (type "15").
+        // This is necessary because the Plex API doesn't support type filtering in search queries.
         let encoded_query: String =
             url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-        let playlists = self
-            .get_playlists_from_endpoint(&format!("search?query={}&limit=50", encoded_query))
-            .await?;
+        
+        let response = self
+            .client
+            .get(self.authed_url(&format!("search?query={}&limit=50", encoded_query)))
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| ProviderError(format!("Failed to fetch Plex playlists: {}", e)))?;
 
-        Ok(playlists
+        if !response.status().is_success() {
+            return Err(ProviderError(format!(
+                "Plex playlist request failed: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|e| ProviderError(format!("Failed to read Plex response body: {}", e)))?;
+
+        let parsed = Self::parse_json_response::<PlexResponse>(&body)?;
+
+        // Filter to only playlist types (type "15" in Plex) before converting to Playlist objects
+        Ok(parsed
+            .media_container
+            .metadata
             .into_iter()
-            .filter(|playlist| playlist.name.to_lowercase().contains(&query.to_lowercase()))
+            .filter(|item| item.item_type.as_deref() == Some("15"))
+            .filter_map(|item| self.playlist_from_metadata(item))
             .collect())
     }
 
