@@ -11,12 +11,14 @@ import {
 } from "../hooks";
 import { tauriAPI } from "../api";
 import { filterTracks } from "../utils/trackFilters";
+import { SERVICE_PROVIDERS, includesSource } from "../providerCatalog";
 import type {
   CustomPlaylist,
   Track,
   UnionPlaylistSource,
   Playlist,
   PlaylistTrack,
+  TauriSource,
 } from "../types";
 import "./CustomPlaylistEditor.css";
 
@@ -60,7 +62,8 @@ export function UnionPlaylistEditor({
   });
 
   const [showAddSource, setShowAddSource] = useState(false);
-  const [selectedSourceType, setSelectedSourceType] = useState<string>("all");
+  const [selectedSourceType, setSelectedSourceType] =
+    useState<TauriSource>("all");
   const [availablePlaylists, setAvailablePlaylists] = useState<Playlist[]>([]);
   const [showRemoveSourceConfirm, setShowRemoveSourceConfirm] = useState<
     number | null
@@ -98,27 +101,15 @@ export function UnionPlaylistEditor({
       }
 
       // Add external playlists
-      if (selectedSourceType === "all" || selectedSourceType === "spotify") {
-        const spotifyAuth = await tauriAPI.isSpotifyAuthenticated();
-        if (spotifyAuth) {
-          const spotifyPlaylists = await tauriAPI.getSpotifyPlaylists();
-          playlists.push(...spotifyPlaylists);
+      for (const provider of SERVICE_PROVIDERS) {
+        if (!includesSource(selectedSourceType, provider.id)) {
+          continue;
         }
-      }
 
-      if (selectedSourceType === "all" || selectedSourceType === "jellyfin") {
-        const jellyfinAuth = await tauriAPI.isJellyfinAuthenticated();
-        if (jellyfinAuth) {
-          const jellyfinPlaylists = await tauriAPI.getJellyfinPlaylists();
-          playlists.push(...jellyfinPlaylists);
-        }
-      }
-
-      if (selectedSourceType === "all" || selectedSourceType === "plex") {
-        const plexAuth = await tauriAPI.isPlexAuthenticated();
-        if (plexAuth) {
-          const plexPlaylists = await tauriAPI.getPlexPlaylists();
-          playlists.push(...plexPlaylists);
+        const isAuthenticated = await provider.isAuthenticated();
+        if (isAuthenticated) {
+          const providerPlaylists = await provider.getPlaylists();
+          playlists.push(...providerPlaylists);
         }
       }
 
@@ -283,12 +274,16 @@ export function UnionPlaylistEditor({
             <label>Filter by source:</label>
             <select
               value={selectedSourceType}
-              onChange={(e) => setSelectedSourceType(e.target.value)}
+              onChange={(e) =>
+                setSelectedSourceType(e.target.value as TauriSource)
+              }
             >
               <option value="all">All Sources</option>
-              <option value="spotify">Spotify</option>
-              <option value="jellyfin">Jellyfin</option>
-              <option value="plex">Plex</option>
+              {SERVICE_PROVIDERS.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
+                </option>
+              ))}
               <option value="custom">Custom</option>
             </select>
           </div>

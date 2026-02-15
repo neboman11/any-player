@@ -8,6 +8,7 @@ import {
 } from "../hooks";
 import type { SearchType, TauriSource, Track } from "../types";
 import { tauriAPI } from "../api";
+import { SERVICE_PROVIDERS } from "../providerCatalog";
 
 export function Search() {
   const [searchType, setSearchType] = useState<SearchType>("tracks");
@@ -22,6 +23,10 @@ export function Search() {
   const audio = useAudioPlayback();
 
   const RESULTS_PER_PAGE = 20;
+  const sourceTabs: TauriSource[] = [
+    "all",
+    ...SERVICE_PROVIDERS.map((provider) => provider.id),
+  ];
 
   const handleSearch = useCallback(async () => {
     const query = searchInputRef.current?.value;
@@ -148,18 +153,16 @@ export function Search() {
           ))}
         </div>
         <div className="search-source-tabs">
-          {(["all", "spotify", "jellyfin", "plex"] as TauriSource[]).map(
-            (source) => (
-              <button
-                key={source}
-                className={`tab-btn ${searchSource === source ? "active" : ""}`}
-                data-source={source}
-                onClick={() => setSearchSource(source)}
-              >
-                {source.charAt(0).toUpperCase() + source.slice(1)}
-              </button>
-            ),
-          )}
+          {sourceTabs.map((source) => (
+            <button
+              key={source}
+              className={`tab-btn ${searchSource === source ? "active" : ""}`}
+              data-source={source}
+              onClick={() => setSearchSource(source)}
+            >
+              {source.charAt(0).toUpperCase() + source.slice(1)}
+            </button>
+          ))}
         </div>
 
         {!results.length && !isLoading && !error ? (

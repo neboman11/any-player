@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
-import { tauriAPI } from "../api";
 import type { SearchResult, TauriSource, SearchType } from "../types";
+import { SERVICE_PROVIDERS, includesSource } from "../providerCatalog";
 
 export function useSearch() {
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -18,13 +18,16 @@ export function useSearch() {
         setIsLoading(true);
         setError(null);
         const searchResults: SearchResult[] = [];
+        const activeProviders = SERVICE_PROVIDERS.filter((provider) =>
+          includesSource(source, provider.id),
+        );
 
         if (searchType === "tracks") {
-          if (source === "spotify" || source === "all") {
+          for (const provider of activeProviders) {
             try {
-              const spotifyTracks = await tauriAPI.searchSpotifyTracks(query);
+              const providerTracks = await provider.searchTracks(query);
               searchResults.push(
-                ...spotifyTracks.map((track) => ({
+                ...providerTracks.map((track) => ({
                   id: track.id,
                   name: track.title,
                   artist: track.artist,
@@ -33,68 +36,20 @@ export function useSearch() {
                 })),
               );
             } catch (err) {
-              console.error("Spotify search error:", err);
-            }
-          }
-
-          if (source === "jellyfin" || source === "all") {
-            try {
-              const jellyfinTracks = await tauriAPI.searchJellyfinTracks(query);
-              searchResults.push(
-                ...jellyfinTracks.map((track) => ({
-                  id: track.id,
-                  name: track.title,
-                  artist: track.artist,
-                  type: "track" as const,
-                  source: track.source,
-                })),
-              );
-            } catch (err) {
-              console.error("Jellyfin search error:", err);
-            }
-          }
-
-          if (source === "plex" || source === "all") {
-            try {
-              const plexTracks = await tauriAPI.searchPlexTracks(query);
-              searchResults.push(
-                ...plexTracks.map((track) => ({
-                  id: track.id,
-                  name: track.title,
-                  artist: track.artist,
-                  type: "track" as const,
-                  source: track.source,
-                })),
-              );
-            } catch (err) {
-              console.error("Plex search error:", err);
+              console.error(`${provider.label} search error:`, err);
             }
           }
         } else {
           // Playlists
-          if (source === "jellyfin" || source === "all") {
-            try {
-              const jellyfinPlaylists =
-                await tauriAPI.searchJellyfinPlaylists(query);
-              searchResults.push(
-                ...jellyfinPlaylists.map((playlist) => ({
-                  id: playlist.id,
-                  name: playlist.name,
-                  owner: playlist.owner,
-                  type: "playlist" as const,
-                  source: playlist.source,
-                })),
-              );
-            } catch (err) {
-              console.error("Jellyfin search error:", err);
+          for (const provider of activeProviders) {
+            if (!provider.searchPlaylists) {
+              continue;
             }
-          }
 
-          if (source === "plex" || source === "all") {
             try {
-              const plexPlaylists = await tauriAPI.searchPlexPlaylists(query);
+              const providerPlaylists = await provider.searchPlaylists(query);
               searchResults.push(
-                ...plexPlaylists.map((playlist) => ({
+                ...providerPlaylists.map((playlist) => ({
                   id: playlist.id,
                   name: playlist.name,
                   owner: playlist.owner,
@@ -103,7 +58,7 @@ export function useSearch() {
                 })),
               );
             } catch (err) {
-              console.error("Plex search error:", err);
+              console.error(`${provider.label} search error:`, err);
             }
           }
         }

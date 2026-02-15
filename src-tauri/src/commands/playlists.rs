@@ -1,6 +1,20 @@
 /// Playlist management commands
 use crate::commands::{AppState, PlaylistInfo, TrackInfo};
+use crate::Source;
 use tauri::State;
+
+fn parse_source(source: &str) -> Result<Source, String> {
+    match source.to_lowercase().as_str() {
+        "spotify" => Ok(Source::Spotify),
+        "jellyfin" => Ok(Source::Jellyfin),
+        "plex" => Ok(Source::Plex),
+        "custom" => Ok(Source::Custom),
+        _ => Err(format!(
+            "Unknown source: '{}'. Supported sources are: spotify, jellyfin, plex, custom",
+            source
+        )),
+    }
+}
 
 /// Get list of playlists from a provider
 #[tauri::command]
@@ -25,33 +39,15 @@ pub async fn play_track(
 ) -> Result<(), String> {
     let providers = state.providers.lock().await;
 
-    // Normalize source to lowercase
-    let normalized_source = source.to_lowercase();
+    let parsed_source = parse_source(&source)?;
+    if matches!(parsed_source, Source::Custom) {
+        return Err("Playing custom tracks directly is not yet supported. Please play from a custom playlist instead.".to_string());
+    }
 
-    // Get the track from the appropriate provider
-    let track = match normalized_source.as_str() {
-        "spotify" => providers
-            .get_track(crate::models::Source::Spotify, &track_id)
-            .await
-            .map_err(|e| format!("Failed to get Spotify track: {}", e))?,
-        "jellyfin" => providers
-            .get_track(crate::models::Source::Jellyfin, &track_id)
-            .await
-            .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
-        "plex" => providers
-            .get_track(crate::models::Source::Plex, &track_id)
-            .await
-            .map_err(|e| format!("Failed to get Plex track: {}", e))?,
-        "custom" => {
-            return Err("Playing custom tracks directly is not yet supported. Please play from a custom playlist instead.".to_string());
-        }
-        _ => {
-            return Err(format!(
-                "Unknown source: '{}'. Supported sources are: spotify, jellyfin, plex",
-                source
-            ))
-        }
-    };
+    let track = providers
+        .get_track(parsed_source, &track_id)
+        .await
+        .map_err(|e| format!("Failed to get {} track: {}", parsed_source, e))?;
 
     // Clear queue, add track, and start playing
     let playback = state.playback.lock().await;
@@ -70,33 +66,15 @@ pub async fn queue_track(
 ) -> Result<(), String> {
     let providers = state.providers.lock().await;
 
-    // Normalize source to lowercase
-    let normalized_source = source.to_lowercase();
+    let parsed_source = parse_source(&source)?;
+    if matches!(parsed_source, Source::Custom) {
+        return Err("Queuing custom tracks directly is not yet supported. Please queue from a custom playlist instead.".to_string());
+    }
 
-    // Get the track from the appropriate provider
-    let track = match normalized_source.as_str() {
-        "spotify" => providers
-            .get_track(crate::models::Source::Spotify, &track_id)
-            .await
-            .map_err(|e| format!("Failed to get Spotify track: {}", e))?,
-        "jellyfin" => providers
-            .get_track(crate::models::Source::Jellyfin, &track_id)
-            .await
-            .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
-        "plex" => providers
-            .get_track(crate::models::Source::Plex, &track_id)
-            .await
-            .map_err(|e| format!("Failed to get Plex track: {}", e))?,
-        "custom" => {
-            return Err("Queuing custom tracks directly is not yet supported. Please queue from a custom playlist instead.".to_string());
-        }
-        _ => {
-            return Err(format!(
-                "Unknown source: '{}'. Supported sources are: spotify, jellyfin, plex",
-                source
-            ))
-        }
-    };
+    let track = providers
+        .get_track(parsed_source, &track_id)
+        .await
+        .map_err(|e| format!("Failed to get {} track: {}", parsed_source, e))?;
 
     // Queue the track
     let playback = state.playback.lock().await;
@@ -114,27 +92,20 @@ pub async fn play_playlist(
 ) -> Result<(), String> {
     let providers = state.providers.lock().await;
 
+    let parsed_source = parse_source(&source)?;
+
     // Get the playlist with all tracks from the appropriate provider
-    let playlist = match source.as_str() {
-        "spotify" => providers
-            .get_playlist(crate::models::Source::Spotify, &playlist_id)
+    let playlist = match parsed_source {
+        Source::Spotify | Source::Jellyfin | Source::Plex => providers
+            .get_playlist(parsed_source, &playlist_id)
             .await
-            .map_err(|e| format!("Failed to get Spotify playlist: {}", e))?,
-        "jellyfin" => providers
-            .get_playlist(crate::models::Source::Jellyfin, &playlist_id)
-            .await
-            .map_err(|e| format!("Failed to get Jellyfin playlist: {}", e))?,
-        "plex" => providers
-            .get_playlist(crate::models::Source::Plex, &playlist_id)
-            .await
-            .map_err(|e| format!("Failed to get Plex playlist: {}", e))?,
-        "custom" => {
+            .map_err(|e| format!("Failed to get {} playlist: {}", parsed_source, e))?,
+        Source::Custom => {
             // Drop providers lock before calling internal function
             drop(providers);
             return super::custom_playlists::play_custom_playlist_internal(&state, playlist_id)
                 .await;
         }
-        _ => return Err("Unknown source".to_string()),
     };
 
     if playlist.tracks.is_empty() {
@@ -204,10 +175,10 @@ pub async fn play_tracks_immediate(
     let mut internal_tracks = Vec::new();
     for track_info in tracks {
         let source = match track_info.source.to_lowercase().as_str() {
-            "spotify" => crate::models::Source::Spotify,
-            "jellyfin" => crate::models::Source::Jellyfin,
-            "plex" => crate::models::Source::Plex,
-            _ => crate::models::Source::Custom,
+            "spotify" => Source::Spotify,
+            "jellyfin" => Source::Jellyfin,
+            "plex" => Source::Plex,
+            _ => Source::Custom,
         };
 
         // Get auth headers for sources that need them (e.g., Jellyfin)
@@ -238,33 +209,25 @@ pub async fn play_tracks_immediate(
     let first_track_for_enrichment = internal_tracks[0].clone();
     let needs_enrichment = matches!(
         first_track_for_enrichment.source,
-        crate::models::Source::Spotify
-            | crate::models::Source::Jellyfin
-            | crate::models::Source::Plex
+        Source::Spotify | Source::Jellyfin | Source::Plex
     );
 
     // Enrich the first track before setting up the queue (if needed)
     let enriched_first_track = if needs_enrichment {
         match first_track_for_enrichment.source {
-            crate::models::Source::Spotify => providers
-                .get_track(
-                    crate::models::Source::Spotify,
-                    &first_track_for_enrichment.id,
-                )
+            Source::Spotify => providers
+                .get_track(Source::Spotify, &first_track_for_enrichment.id)
                 .await
                 .ok(),
-            crate::models::Source::Jellyfin => {
+            Source::Jellyfin => {
                 // Must enrich Jellyfin tracks immediately to get auth headers
                 providers
-                    .get_track(
-                        crate::models::Source::Jellyfin,
-                        &first_track_for_enrichment.id,
-                    )
+                    .get_track(Source::Jellyfin, &first_track_for_enrichment.id)
                     .await
                     .ok()
             }
-            crate::models::Source::Plex => providers
-                .get_track(crate::models::Source::Plex, &first_track_for_enrichment.id)
+            Source::Plex => providers
+                .get_track(Source::Plex, &first_track_for_enrichment.id)
                 .await
                 .ok(),
             _ => None,

@@ -6,6 +6,7 @@ import { UnionPlaylistEditor } from "./UnionPlaylistEditor";
 import { tauriAPI } from "../api";
 import { LoadingSpinner } from "./shared/LoadingSpinner";
 import type { TauriSource, CustomPlaylist, Playlist } from "../types";
+import { SERVICE_PROVIDERS } from "../providerCatalog";
 
 export function Playlists() {
   const [activeSource, setActiveSource] = useState<TauriSource>("all");
@@ -40,9 +41,7 @@ export function Playlists() {
   const sources: TauriSource[] = [
     "all",
     "custom",
-    "spotify",
-    "jellyfin",
-    "plex",
+    ...SERVICE_PROVIDERS.map((provider) => provider.id),
   ];
 
   // Load playlists from cache on mount, or reload if source changes or refresh is requested
