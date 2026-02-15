@@ -55,6 +55,20 @@ export function PlaylistViewer({
 
   const playback = usePlayback();
 
+  // Helper function to get playlist by ID based on source
+  const getPlaylistById = (source: string, id: string) => {
+    switch (source) {
+      case "spotify":
+        return tauriAPI.getSpotifyPlaylist(id);
+      case "jellyfin":
+        return tauriAPI.getJellyfinPlaylist(id);
+      case "plex":
+        return tauriAPI.getPlexPlaylist(id);
+      default:
+        throw new Error(`Unknown source: ${source}`);
+    }
+  };
+
   // Load tracks for regular playlists
   useEffect(() => {
     if (!isCustom) {
@@ -62,12 +76,10 @@ export function PlaylistViewer({
       const loadTracks = async () => {
         setLoading(true);
         try {
-          const fullPlaylist =
-            regularPlaylist.source === "spotify"
-              ? await tauriAPI.getSpotifyPlaylist(regularPlaylist.id)
-              : regularPlaylist.source === "jellyfin"
-                ? await tauriAPI.getJellyfinPlaylist(regularPlaylist.id)
-                : await tauriAPI.getPlexPlaylist(regularPlaylist.id);
+          const fullPlaylist = await getPlaylistById(
+            regularPlaylist.source,
+            regularPlaylist.id,
+          );
 
           setRegularTracks(fullPlaylist.tracks || []);
         } catch (err) {
@@ -88,12 +100,10 @@ export function PlaylistViewer({
       const regularPlaylist = playlist as Playlist;
       setLoading(true);
       try {
-        const fullPlaylist =
-          regularPlaylist.source === "spotify"
-            ? await tauriAPI.getSpotifyPlaylist(regularPlaylist.id)
-            : regularPlaylist.source === "jellyfin"
-              ? await tauriAPI.getJellyfinPlaylist(regularPlaylist.id)
-              : await tauriAPI.getPlexPlaylist(regularPlaylist.id);
+        const fullPlaylist = await getPlaylistById(
+          regularPlaylist.source,
+          regularPlaylist.id,
+        );
         setRegularTracks(fullPlaylist.tracks || []);
       } catch (err) {
         console.error("Failed to reload playlist tracks:", err);
