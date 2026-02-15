@@ -163,6 +163,7 @@ pub async fn play_playlist(
 pub async fn play_tracks_immediate(
     state: State<'_, AppState>,
     tracks: Vec<TrackInfo>,
+    preserve_first_in_shuffle: Option<bool>,
 ) -> Result<(), String> {
     if tracks.is_empty() {
         return Err("No tracks provided".to_string());
@@ -205,27 +206,59 @@ pub async fn play_tracks_immediate(
         return Err("No valid tracks to play".to_string());
     }
 
-    // Store first track for later enrichment
-    let first_track_for_enrichment = internal_tracks[0].clone();
+    drop(providers); // Release providers lock
+
+    // Set up queue and determine which track should start
+    let playback = state.playback.lock().await;
+
+    // Clear queue and add all tracks
+    playback.clear_queue().await;
+    playback.queue_tracks(internal_tracks.clone()).await;
+
+    // Check if shuffle is enabled and determine first track index
+    let info = playback.get_info().await;
+    let preserve_first = preserve_first_in_shuffle.unwrap_or(false);
+    let first_track_index = if info.shuffle {
+        let queue_arc = playback.get_queue_arc();
+        let mut queue = queue_arc.lock().await;
+        if preserve_first {
+            // For play-from-track flows, keep the supplied first track first.
+            queue.generate_shuffle_order_keep_first();
+        } else {
+            // For play-all flows, start from a random track.
+            queue.generate_shuffle_order();
+        }
+        queue.current_index = 0;
+
+        if !queue.shuffle_order.is_empty() && queue.shuffle_order[0] < queue.tracks.len() {
+            queue.shuffle_order[0]
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    drop(playback);
+
+    // Enrich the chosen first track before playback if needed (e.g., Jellyfin auth headers)
+    let first_track_for_enrichment = internal_tracks[first_track_index].clone();
     let needs_enrichment = matches!(
         first_track_for_enrichment.source,
         Source::Spotify | Source::Jellyfin | Source::Plex
     );
 
-    // Enrich the first track before setting up the queue (if needed)
     let enriched_first_track = if needs_enrichment {
+        let providers = state.providers.lock().await;
         match first_track_for_enrichment.source {
             Source::Spotify => providers
                 .get_track(Source::Spotify, &first_track_for_enrichment.id)
                 .await
                 .ok(),
-            Source::Jellyfin => {
-                // Must enrich Jellyfin tracks immediately to get auth headers
-                providers
-                    .get_track(Source::Jellyfin, &first_track_for_enrichment.id)
-                    .await
-                    .ok()
-            }
+            Source::Jellyfin => providers
+                .get_track(Source::Jellyfin, &first_track_for_enrichment.id)
+                .await
+                .ok(),
             Source::Plex => providers
                 .get_track(Source::Plex, &first_track_for_enrichment.id)
                 .await
@@ -236,49 +269,20 @@ pub async fn play_tracks_immediate(
         None
     };
 
-    drop(providers); // Release providers lock
+    // Play the track (either enriched or original)
+    let track_to_play = enriched_first_track
+        .clone()
+        .unwrap_or_else(|| internal_tracks[first_track_index].clone());
 
-    // Now set up the queue and start playback with the enriched track
+    // Ensure queue contains the enriched first track so subsequent playback uses it
     let playback = state.playback.lock().await;
-
-    // Clear queue and add all tracks
-    playback.clear_queue().await;
-    playback.queue_tracks(internal_tracks.clone()).await;
-
-    // Check if shuffle is enabled and determine first track index
-    let info = playback.get_info().await;
-    let first_track_index = if info.shuffle {
-        // Generate shuffle order that keeps the first track at position 0
-        // This ensures when a user clicks to play a specific track, that track plays first
+    if let Some(enriched) = &enriched_first_track {
         let queue_arc = playback.get_queue_arc();
         let mut queue = queue_arc.lock().await;
-        queue.generate_shuffle_order_keep_first();
-        queue.current_index = 0;
-
-        // If we enriched the first track, update it in the queue
-        if enriched_first_track.is_some() {
-            queue.tracks[0] = enriched_first_track.clone().unwrap();
+        if first_track_index < queue.tracks.len() {
+            queue.tracks[first_track_index] = enriched.clone();
         }
-        drop(queue);
-        0 // Always play the first track when shuffle keeps first
-    } else {
-        // If we enriched the first track, update it in the queue
-        if let Some(enriched) = &enriched_first_track {
-            let queue_arc = playback.get_queue_arc();
-            let mut queue = queue_arc.lock().await;
-            if !queue.tracks.is_empty() {
-                queue.tracks[0] = enriched.clone();
-            }
-        }
-        0
-    };
-
-    // Play the track (either enriched or original)
-    let track_to_play = if first_track_index == 0 {
-        enriched_first_track.unwrap_or_else(|| internal_tracks[first_track_index].clone())
-    } else {
-        internal_tracks[first_track_index].clone()
-    };
+    }
 
     playback.play_track(track_to_play).await;
     drop(playback);

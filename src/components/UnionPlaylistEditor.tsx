@@ -65,9 +65,11 @@ export function UnionPlaylistEditor({
   const [selectedSourceType, setSelectedSourceType] =
     useState<TauriSource>("all");
   const [availablePlaylists, setAvailablePlaylists] = useState<Playlist[]>([]);
-  const [showRemoveSourceConfirm, setShowRemoveSourceConfirm] = useState<
-    number | null
-  >(null);
+  const [sourceToRemove, setSourceToRemove] =
+    useState<UnionPlaylistSource | null>(null);
+  const [sourcePlaylistNames, setSourcePlaylistNames] = useState<
+    Record<string, string>
+  >({});
   const [searchQuery, setSearchQuery] = useState("");
 
   // Load playlists when needed
@@ -77,6 +79,61 @@ export function UnionPlaylistEditor({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAddSource, selectedSourceType]);
+
+  // Resolve source playlist IDs to display names for the source list.
+  // Falls back to ID when a provider is unavailable or unauthenticated.
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadSourcePlaylistNames = async () => {
+      const nextNames: Record<string, string> = {};
+
+      // Custom playlists are always available locally
+      for (const customPlaylist of customPlaylists) {
+        nextNames[`custom:${customPlaylist.id}`] = customPlaylist.name;
+      }
+
+      const providerTypes = Array.from(
+        new Set(
+          sources
+            .filter((source) => source.source_type !== "custom")
+            .map((source) => source.source_type),
+        ),
+      );
+
+      for (const sourceType of providerTypes) {
+        const provider = SERVICE_PROVIDERS.find((p) => p.id === sourceType);
+        if (!provider) {
+          continue;
+        }
+
+        try {
+          const isAuthenticated = await provider.isAuthenticated();
+          if (!isAuthenticated) {
+            continue;
+          }
+
+          const playlists = await provider.getPlaylists();
+          for (const providerPlaylist of playlists) {
+            nextNames[`${sourceType}:${providerPlaylist.id}`] =
+              providerPlaylist.name;
+          }
+        } catch (err) {
+          console.error(`Failed to load ${sourceType} playlist names:`, err);
+        }
+      }
+
+      if (!isCancelled) {
+        setSourcePlaylistNames(nextNames);
+      }
+    };
+
+    void loadSourcePlaylistNames();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [sources, customPlaylists]);
 
   const loadExternalPlaylists = async () => {
     const playlists: Playlist[] = [];
@@ -134,10 +191,11 @@ export function UnionPlaylistEditor({
     await refreshTracks(true);
   };
 
-  const handleRemoveSource = async (sourceId: number) => {
+  const handleRemoveSource = async (source: UnionPlaylistSource) => {
     try {
-      await removeSource(sourceId);
-      setShowRemoveSourceConfirm(null);
+      await removeSource(source.id);
+      await refreshTracks(true);
+      setSourceToRemove(null);
       toast.success("Playlist removed from union");
     } catch (err) {
       console.error("Failed to remove source:", err);
@@ -190,6 +248,12 @@ export function UnionPlaylistEditor({
   };
 
   const getSourcePlaylistName = (source: UnionPlaylistSource): string => {
+    const resolvedName =
+      sourcePlaylistNames[`${source.source_type}:${source.source_playlist_id}`];
+    if (resolvedName) {
+      return resolvedName;
+    }
+
     // Try to find in available playlists or custom playlists
     const allPlaylists = [...availablePlaylists];
 
@@ -204,7 +268,11 @@ export function UnionPlaylistEditor({
       });
     });
 
-    const found = allPlaylists.find((p) => p.id === source.source_playlist_id);
+    const found =
+      allPlaylists.find(
+        (p) =>
+          p.id === source.source_playlist_id && p.source === source.source_type,
+      ) || allPlaylists.find((p) => p.id === source.source_playlist_id);
     return found ? found.name : source.source_playlist_id;
   };
 
@@ -336,7 +404,7 @@ export function UnionPlaylistEditor({
                 </div>
                 <button
                   className="remove-btn"
-                  onClick={() => setShowRemoveSourceConfirm(source.id)}
+                  onClick={() => setSourceToRemove(source)}
                 >
                   Remove
                 </button>
@@ -374,17 +442,21 @@ export function UnionPlaylistEditor({
       />
 
       <DeleteConfirmModal
-        show={showRemoveSourceConfirm !== null}
+        show={sourceToRemove !== null}
         title="Remove Playlist"
-        message="Remove this playlist from the union?"
+        message={
+          sourceToRemove
+            ? `Remove "${getSourcePlaylistName(sourceToRemove)}" from this union?`
+            : "Remove this playlist from the union?"
+        }
         confirmLabel="Remove"
         onConfirm={() => {
-          if (showRemoveSourceConfirm === null) {
+          if (!sourceToRemove) {
             return;
           }
-          handleRemoveSource(showRemoveSourceConfirm);
+          void handleRemoveSource(sourceToRemove);
         }}
-        onCancel={() => setShowRemoveSourceConfirm(null)}
+        onCancel={() => setSourceToRemove(null)}
       />
     </div>
   );

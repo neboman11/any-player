@@ -94,7 +94,10 @@ export class TauriAPI {
     return invoke<void>("play_playlist", { playlistId, source });
   }
 
-  async playTracksImmediate(tracks: Track[]): Promise<void> {
+  async playTracksImmediate(
+    tracks: Track[],
+    preserveFirstInShuffle = false,
+  ): Promise<void> {
     // Convert Track objects to the format expected by the backend
     const trackInfos = tracks.map((track) => ({
       id: track.id,
@@ -108,7 +111,10 @@ export class TauriAPI {
       bitrate_kbps: track.bitrate_kbps ?? null,
       sample_rate_hz: track.sample_rate_hz ?? null,
     }));
-    return invoke<void>("play_tracks_immediate", { tracks: trackInfos });
+    return invoke<void>("play_tracks_immediate", {
+      tracks: trackInfos,
+      preserveFirstInShuffle,
+    });
   }
 
   async playPlaylistFromTrack(
@@ -145,7 +151,7 @@ export class TauriAPI {
       ...normalizedTracks.slice(0, startIndex),
     ];
 
-    return this.playTracksImmediate(reorderedTracks);
+    return this.playTracksImmediate(reorderedTracks, true);
   }
 
   // Spotify commands
