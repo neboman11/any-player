@@ -114,6 +114,14 @@ export function UnionPlaylistEditor({
         }
       }
 
+      if (selectedSourceType === "all" || selectedSourceType === "plex") {
+        const plexAuth = await tauriAPI.isPlexAuthenticated();
+        if (plexAuth) {
+          const plexPlaylists = await tauriAPI.getPlexPlaylists();
+          playlists.push(...plexPlaylists);
+        }
+      }
+
       setAvailablePlaylists(playlists);
     } catch (err) {
       console.error("Failed to load playlists:", err);
@@ -280,6 +288,7 @@ export function UnionPlaylistEditor({
               <option value="all">All Sources</option>
               <option value="spotify">Spotify</option>
               <option value="jellyfin">Jellyfin</option>
+              <option value="plex">Plex</option>
               <option value="custom">Custom</option>
             </select>
           </div>

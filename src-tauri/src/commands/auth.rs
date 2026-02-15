@@ -311,3 +311,80 @@ pub async fn restore_jellyfin_session(state: State<'_, AppState>) -> Result<bool
 
     Ok(restored)
 }
+
+/// Plex authentication and connection
+#[tauri::command]
+pub async fn authenticate_plex(
+    state: State<'_, AppState>,
+    url: String,
+    token: String,
+) -> Result<(), String> {
+    let mut providers = state.providers.lock().await;
+
+    providers
+        .complete_auth(
+            Source::Plex,
+            ProviderAuthRequest::from_pairs([("url", url.clone()), ("token", token.clone())]),
+        )
+        .await
+        .map_err(|e| format!("Failed to authenticate Plex: {}", e))?;
+    drop(providers);
+
+    crate::websocket::emit_plex_status(&state).await;
+
+    Ok(())
+}
+
+/// Check if Plex is connected and authenticated
+#[tauri::command]
+pub async fn is_plex_authenticated(state: State<'_, AppState>) -> Result<bool, String> {
+    let providers = state.providers.lock().await;
+    Ok(providers.is_authenticated(Source::Plex).await)
+}
+
+/// Disconnect and revoke Plex authentication
+#[tauri::command]
+pub async fn disconnect_plex(state: State<'_, AppState>) -> Result<(), String> {
+    let mut providers = state.providers.lock().await;
+
+    providers
+        .disconnect(Source::Plex)
+        .await
+        .map_err(|e| format!("Failed to disconnect Plex: {}", e))?;
+    drop(providers);
+
+    crate::websocket::emit_plex_status(&state).await;
+
+    Ok(())
+}
+
+/// Get stored Plex credentials
+#[tauri::command]
+pub async fn get_plex_credentials(
+    _state: State<'_, AppState>,
+) -> Result<Option<(String, String)>, String> {
+    use crate::config::Config;
+
+    let tokens = Config::load_tokens().map_err(|e| format!("Failed to load tokens: {}", e))?;
+
+    match (tokens.plex_url, tokens.plex_token) {
+        (Some(url), Some(token)) => Ok(Some((url, token))),
+        _ => Ok(None),
+    }
+}
+
+/// Restore Plex session from saved credentials
+#[tauri::command]
+pub async fn restore_plex_session(state: State<'_, AppState>) -> Result<bool, String> {
+    let mut providers = state.providers.lock().await;
+
+    let restored = providers
+        .restore_session(Source::Plex)
+        .await
+        .map_err(|e| format!("Failed to restore Plex session: {}", e))?;
+    drop(providers);
+
+    crate::websocket::emit_plex_status(&state).await;
+
+    Ok(restored)
+}

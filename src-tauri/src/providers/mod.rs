@@ -1,4 +1,5 @@
 pub mod jellyfin;
+pub mod plex;
 /// Provider trait and implementations
 pub mod spotify;
 
@@ -252,6 +253,22 @@ impl ProviderRegistry {
         )))
     }
 
+    fn build_plex_provider(
+        request: &ProviderAuthRequest,
+    ) -> Result<Box<dyn MusicProvider>, ProviderError> {
+        let url = request
+            .get("url")
+            .ok_or_else(|| ProviderError("Missing Plex url".to_string()))?;
+        let token = request
+            .get("token")
+            .ok_or_else(|| ProviderError("Missing Plex token".to_string()))?;
+
+        Ok(Box::new(plex::PlexProvider::new(
+            url.to_string(),
+            token.to_string(),
+        )))
+    }
+
     pub async fn begin_auth(
         &mut self,
         source: Source,
@@ -264,6 +281,11 @@ impl ProviderRegistry {
                 Source::Jellyfin => {
                     return Err(ProviderError(
                         "Jellyfin authentication must be completed with credentials".to_string(),
+                    ))
+                }
+                Source::Plex => {
+                    return Err(ProviderError(
+                        "Plex authentication must be completed with credentials".to_string(),
                     ))
                 }
                 Source::Custom => {
@@ -292,6 +314,7 @@ impl ProviderRegistry {
                     ))
                 }
                 Source::Jellyfin => self.register_boxed(Self::build_jellyfin_provider(&request)?),
+                Source::Plex => self.register_boxed(Self::build_plex_provider(&request)?),
                 Source::Custom => {
                     return Err(ProviderError(
                         "Custom provider does not support authentication".to_string(),
@@ -329,13 +352,22 @@ impl ProviderRegistry {
                         None
                     }
                 }
+                Source::Plex => {
+                    let url = request.get("url").map(|s| s.to_string());
+                    let token = request.get("token").map(|s| s.to_string());
+                    if url.is_some() && token.is_some() {
+                        Some((url, token, None))
+                    } else {
+                        None
+                    }
+                }
                 Source::Custom => None,
             }
         };
         // Provider lock is dropped here
 
         // Save credentials to keyring after dropping the provider lock
-        if let Some((jellyfin_url, jellyfin_api_key, spotify_token)) = credentials {
+        if let Some((provider_url, provider_secret, spotify_token)) = credentials {
             let mut tokens = crate::config::Config::load_tokens()
                 .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
 
@@ -347,11 +379,26 @@ impl ProviderRegistry {
                 tracing::warn!("Spotify authentication succeeded but no token was retrieved");
             }
 
-            if let (Some(url), Some(api_key)) = (jellyfin_url, jellyfin_api_key) {
-                tracing::info!("Retrieved Jellyfin credentials from request, saving to keyring");
-                tokens.jellyfin_url = Some(url);
-                tokens.jellyfin_api_key = Some(api_key);
-                tracing::info!("Jellyfin credentials saved to keyring successfully");
+            if let (Some(url), Some(secret)) = (provider_url, provider_secret) {
+                match source {
+                    Source::Jellyfin => {
+                        tracing::info!(
+                            "Retrieved Jellyfin credentials from request, saving to keyring"
+                        );
+                        tokens.jellyfin_url = Some(url);
+                        tokens.jellyfin_api_key = Some(secret);
+                        tracing::info!("Jellyfin credentials saved to keyring successfully");
+                    }
+                    Source::Plex => {
+                        tracing::info!(
+                            "Retrieved Plex credentials from request, saving to keyring"
+                        );
+                        tokens.plex_url = Some(url);
+                        tokens.plex_token = Some(secret);
+                        tracing::info!("Plex credentials saved to keyring successfully");
+                    }
+                    _ => {}
+                }
             }
 
             crate::config::Config::save_tokens(&tokens)
@@ -526,6 +573,14 @@ impl ProviderRegistry {
                 crate::config::Config::save_tokens(&tokens)
                     .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
             }
+            Source::Plex => {
+                let mut tokens = crate::config::Config::load_tokens()
+                    .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+                tokens.plex_token = None;
+                tokens.plex_url = None;
+                crate::config::Config::save_tokens(&tokens)
+                    .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
+            }
             Source::Custom => {}
         }
 
@@ -596,6 +651,31 @@ impl ProviderRegistry {
                 tracing::info!("Jellyfin session restored successfully");
                 Ok(true)
             }
+            Source::Plex => {
+                use crate::config::Config;
+
+                tracing::info!("Starting Plex session restoration from keyring");
+
+                let tokens = Config::load_tokens()
+                    .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+
+                if tokens.plex_token.is_none() || tokens.plex_url.is_none() {
+                    tracing::info!("No Plex credentials found in keyring");
+                    return Ok(false);
+                }
+
+                let token = tokens.plex_token.unwrap();
+                let url = tokens.plex_url.unwrap();
+
+                tracing::info!("Found Plex credentials in keyring, authenticating");
+
+                let mut plex_provider = plex::PlexProvider::new(url.to_string(), token.to_string());
+                plex_provider.authenticate().await?;
+
+                self.register(plex_provider);
+                tracing::info!("Plex session restored successfully");
+                Ok(true)
+            }
             Source::Custom => Ok(false),
         }
     }
@@ -660,6 +740,8 @@ mod tests {
             spotify_token: Some(create_valid_token()),
             jellyfin_api_key: None,
             jellyfin_url: None,
+            plex_token: None,
+            plex_url: None,
         };
 
         // Save tokens to the system keyring
@@ -688,6 +770,8 @@ mod tests {
             spotify_token: Some(create_expired_token()),
             jellyfin_api_key: None,
             jellyfin_url: None,
+            plex_token: None,
+            plex_url: None,
         };
 
         // Save tokens
@@ -730,6 +814,7 @@ mod tests {
         // Verify initial state
         assert!(registry.get(Source::Spotify).is_none());
         assert!(registry.get(Source::Jellyfin).is_none());
+        assert!(registry.get(Source::Plex).is_none());
     }
 
     #[tokio::test]
@@ -740,6 +825,8 @@ mod tests {
             spotify_token: Some(create_valid_token()),
             jellyfin_api_key: Some("test_key".to_string()),
             jellyfin_url: Some("http://localhost:8096".to_string()),
+            plex_token: None,
+            plex_url: None,
         };
         Config::save_tokens(&tokens).expect("Failed to save tokens");
 
@@ -777,6 +864,8 @@ mod tests {
             spotify_token: None,
             jellyfin_api_key: Some("test_api_key".to_string()),
             jellyfin_url: Some("http://localhost:8096".to_string()),
+            plex_token: None,
+            plex_url: None,
         };
 
         // Save tokens to the system keyring
@@ -801,6 +890,8 @@ mod tests {
             spotify_token: None,
             jellyfin_api_key: None,
             jellyfin_url: Some("http://localhost:8096".to_string()),
+            plex_token: None,
+            plex_url: None,
         };
 
         Config::save_tokens(&tokens).expect("Failed to save test tokens");
@@ -824,6 +915,8 @@ mod tests {
             spotify_token: None,
             jellyfin_api_key: Some("test_api_key".to_string()),
             jellyfin_url: None,
+            plex_token: None,
+            plex_url: None,
         };
 
         Config::save_tokens(&tokens).expect("Failed to save test tokens");

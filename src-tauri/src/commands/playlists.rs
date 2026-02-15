@@ -38,12 +38,16 @@ pub async fn play_track(
             .get_track(crate::models::Source::Jellyfin, &track_id)
             .await
             .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
+        "plex" => providers
+            .get_track(crate::models::Source::Plex, &track_id)
+            .await
+            .map_err(|e| format!("Failed to get Plex track: {}", e))?,
         "custom" => {
             return Err("Playing custom tracks directly is not yet supported. Please play from a custom playlist instead.".to_string());
         }
         _ => {
             return Err(format!(
-                "Unknown source: '{}'. Supported sources are: spotify, jellyfin",
+                "Unknown source: '{}'. Supported sources are: spotify, jellyfin, plex",
                 source
             ))
         }
@@ -79,12 +83,16 @@ pub async fn queue_track(
             .get_track(crate::models::Source::Jellyfin, &track_id)
             .await
             .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
+        "plex" => providers
+            .get_track(crate::models::Source::Plex, &track_id)
+            .await
+            .map_err(|e| format!("Failed to get Plex track: {}", e))?,
         "custom" => {
             return Err("Queuing custom tracks directly is not yet supported. Please queue from a custom playlist instead.".to_string());
         }
         _ => {
             return Err(format!(
-                "Unknown source: '{}'. Supported sources are: spotify, jellyfin",
+                "Unknown source: '{}'. Supported sources are: spotify, jellyfin, plex",
                 source
             ))
         }
@@ -116,6 +124,10 @@ pub async fn play_playlist(
             .get_playlist(crate::models::Source::Jellyfin, &playlist_id)
             .await
             .map_err(|e| format!("Failed to get Jellyfin playlist: {}", e))?,
+        "plex" => providers
+            .get_playlist(crate::models::Source::Plex, &playlist_id)
+            .await
+            .map_err(|e| format!("Failed to get Plex playlist: {}", e))?,
         "custom" => {
             // Drop providers lock before calling internal function
             drop(providers);
@@ -194,6 +206,7 @@ pub async fn play_tracks_immediate(
         let source = match track_info.source.to_lowercase().as_str() {
             "spotify" => crate::models::Source::Spotify,
             "jellyfin" => crate::models::Source::Jellyfin,
+            "plex" => crate::models::Source::Plex,
             _ => crate::models::Source::Custom,
         };
 
@@ -225,7 +238,9 @@ pub async fn play_tracks_immediate(
     let first_track_for_enrichment = internal_tracks[0].clone();
     let needs_enrichment = matches!(
         first_track_for_enrichment.source,
-        crate::models::Source::Spotify | crate::models::Source::Jellyfin
+        crate::models::Source::Spotify
+            | crate::models::Source::Jellyfin
+            | crate::models::Source::Plex
     );
 
     // Enrich the first track before setting up the queue (if needed)
@@ -248,6 +263,10 @@ pub async fn play_tracks_immediate(
                     .await
                     .ok()
             }
+            crate::models::Source::Plex => providers
+                .get_track(crate::models::Source::Plex, &first_track_for_enrichment.id)
+                .await
+                .ok(),
             _ => None,
         }
     } else {

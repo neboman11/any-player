@@ -75,11 +75,12 @@ pub async fn get_custom_playlists(
 
     // Fetch provider playlist summaries once (lightweight) and reuse them for
     // union track-count calculation to avoid expensive full playlist track fetches.
-    let (spotify_provider, jellyfin_provider) = {
+    let (spotify_provider, jellyfin_provider, plex_provider) = {
         let providers = state.providers.lock().await;
         (
             providers.get(Source::Spotify),
             providers.get(Source::Jellyfin),
+            providers.get(Source::Plex),
         )
     };
 
@@ -123,6 +124,26 @@ pub async fn get_custom_playlists(
             std::collections::HashMap::new()
         };
 
+    let plex_track_counts: std::collections::HashMap<String, i64> =
+        if let Some(provider) = plex_provider {
+            let provider_locked = provider.lock().await;
+            match provider_locked.get_playlists().await {
+                Ok(playlists) => playlists
+                    .into_iter()
+                    .map(|p| (p.id, p.track_count as i64))
+                    .collect(),
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load Plex playlist summaries for union counts: {}",
+                        e
+                    );
+                    std::collections::HashMap::new()
+                }
+            }
+        } else {
+            std::collections::HashMap::new()
+        };
+
     for playlist in &mut playlists {
         if playlist.playlist_type == "union" {
             if let Some(sources) = union_sources_map.get(&playlist.id) {
@@ -148,6 +169,13 @@ pub async fn get_custom_playlists(
                                 custom_track_counts.get(&source.source_playlist_id)
                             {
                                 total_tracks += count as i64;
+                            }
+                        }
+                        "plex" => {
+                            if let Some(count) =
+                                plex_track_counts.get(source.source_playlist_id.as_str())
+                            {
+                                total_tracks += *count;
                             }
                         }
                         _ => {}
@@ -364,6 +392,24 @@ pub async fn get_union_playlist_tracks(
                     }
                 }
             }
+            "plex" => {
+                match providers
+                    .get_playlist(Source::Plex, &source.source_playlist_id)
+                    .await
+                {
+                    Ok(playlist) => {
+                        tracing::info!(
+                            "Got {} tracks from Plex playlist {}",
+                            playlist.tracks.len(),
+                            source.source_playlist_id
+                        );
+                        all_tracks.extend(playlist.tracks);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to get Plex playlist tracks: {}", e);
+                    }
+                }
+            }
             "custom" => {
                 let tracks = db
                     .get_playlist_tracks(&source.source_playlist_id)
@@ -430,6 +476,14 @@ pub(super) async fn play_custom_playlist_internal(
                         all_tracks.extend(playlist.tracks);
                     }
                 }
+                "plex" => {
+                    if let Ok(playlist) = providers
+                        .get_playlist(Source::Plex, &source.source_playlist_id)
+                        .await
+                    {
+                        all_tracks.extend(playlist.tracks);
+                    }
+                }
                 "custom" => {
                     let db = state.database.lock().await;
                     if let Ok(tracks) = db.get_playlist_tracks(&source.source_playlist_id) {
@@ -456,6 +510,7 @@ pub(super) async fn play_custom_playlist_internal(
                 "Jellyfin" | "jellyfin" => {
                     providers.get_track(Source::Jellyfin, &pt.track_id).await
                 }
+                "Plex" | "plex" => providers.get_track(Source::Plex, &pt.track_id).await,
                 _ => Ok(pt.to_track()),
             };
 

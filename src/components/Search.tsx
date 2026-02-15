@@ -61,12 +61,14 @@ export function Search() {
   // Helper to normalize source to lowercase format
   const normalizeSource = (
     source: string,
-  ): "spotify" | "jellyfin" | "custom" => {
+  ): "spotify" | "jellyfin" | "plex" | "custom" => {
     switch (source.toLowerCase()) {
       case "spotify":
         return "spotify";
       case "jellyfin":
         return "jellyfin";
+      case "plex":
+        return "plex";
       case "custom":
         return "custom";
       default:
@@ -146,16 +148,18 @@ export function Search() {
           ))}
         </div>
         <div className="search-source-tabs">
-          {(["all", "spotify", "jellyfin"] as TauriSource[]).map((source) => (
-            <button
-              key={source}
-              className={`tab-btn ${searchSource === source ? "active" : ""}`}
-              data-source={source}
-              onClick={() => setSearchSource(source)}
-            >
-              {source.charAt(0).toUpperCase() + source.slice(1)}
-            </button>
-          ))}
+          {(["all", "spotify", "jellyfin", "plex"] as TauriSource[]).map(
+            (source) => (
+              <button
+                key={source}
+                className={`tab-btn ${searchSource === source ? "active" : ""}`}
+                data-source={source}
+                onClick={() => setSearchSource(source)}
+              >
+                {source.charAt(0).toUpperCase() + source.slice(1)}
+              </button>
+            ),
+          )}
         </div>
 
         {!results.length && !isLoading && !error ? (

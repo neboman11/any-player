@@ -1,5 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
-import { useSpotifyAuth, useJellyfinAuth, usePlaylists } from "../hooks";
+import {
+  useSpotifyAuth,
+  useJellyfinAuth,
+  usePlexAuth,
+  usePlaylists,
+} from "../hooks";
 import { ProviderStatus } from "./ProviderStatus";
 import { tauriAPI } from "../api";
 import { LoadingSpinner } from "./shared/LoadingSpinner";
@@ -139,11 +144,15 @@ function AuthModal({ authUrl, onClose }: AuthModalProps) {
 export function Settings() {
   const [jellyfinUrl, setJellyfinUrl] = useState<string>("");
   const [jellyfinApiKey, setJellyfinApiKey] = useState<string>("");
+  const [plexUrl, setPlexUrl] = useState<string>("");
+  const [plexToken, setPlexToken] = useState<string>("");
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
+  const [showPlexToken, setShowPlexToken] = useState<boolean>(false);
   const [autoplay, setAutoplay] = useState<boolean>(false);
 
   const spotify = useSpotifyAuth();
   const jellyfin = useJellyfinAuth();
+  const plex = usePlexAuth();
   const { clearCache, loadPlaylists } = usePlaylists();
 
   // Refresh authentication status when Settings page is mounted/visible
@@ -157,6 +166,11 @@ export function Settings() {
       // Refresh Jellyfin auth status
       if (jellyfin.checkAuthStatus) {
         await jellyfin.checkAuthStatus();
+      }
+
+      // Refresh Plex auth status
+      if (plex.checkAuthStatus) {
+        await plex.checkAuthStatus();
       }
     };
 
@@ -183,6 +197,26 @@ export function Settings() {
       void loadCredentials();
     }
   }, [jellyfin.isConnected]);
+
+  // Load stored Plex credentials when component mounts or connection state changes
+  useEffect(() => {
+    const loadCredentials = async () => {
+      try {
+        const credentials = await tauriAPI.getPlexCredentials();
+        if (credentials) {
+          const [url, token] = credentials;
+          setPlexUrl(url);
+          setPlexToken(token);
+        }
+      } catch (err) {
+        console.error("Failed to load Plex credentials:", err);
+      }
+    };
+
+    if (plex.isConnected) {
+      void loadCredentials();
+    }
+  }, [plex.isConnected]);
 
   const handleSpotifyConnect = useCallback(async () => {
     if (spotify.isConnected) {
@@ -234,6 +268,28 @@ export function Settings() {
       }, 1000);
     }
   }, [jellyfin, jellyfinUrl, jellyfinApiKey, clearCache, loadPlaylists]);
+
+  const handlePlexConnect = useCallback(async () => {
+    if (plex.isConnected) {
+      await plex.disconnect();
+      clearCache();
+      setPlexUrl("");
+      setPlexToken("");
+      setShowPlexToken(false);
+    } else {
+      await plex.connect(plexUrl, plexToken);
+      setTimeout(async () => {
+        try {
+          const isAuth = await tauriAPI.isPlexAuthenticated();
+          if (isAuth) {
+            await loadPlaylists("all", true);
+          }
+        } catch (err) {
+          console.error("Failed to reload playlists:", err);
+        }
+      }, 1000);
+    }
+  }, [plex, plexUrl, plexToken, clearCache, loadPlaylists]);
 
   return (
     <section id="settings" className="page">
@@ -341,6 +397,78 @@ export function Settings() {
               {jellyfin.error && (
                 <p style={{ color: "red", fontSize: "0.9em" }}>
                   Error: {jellyfin.error}
+                </p>
+              )}
+            </div>
+            <div className="provider-item">
+              <h4>Plex</h4>
+              <input
+                type="text"
+                id="plex-url"
+                placeholder="Server URL"
+                className="setting-input"
+                value={plexUrl}
+                onChange={(e) => setPlexUrl(e.target.value)}
+                disabled={plex.isConnected}
+              />
+              <div
+                style={{
+                  position: "relative",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                <input
+                  type={showPlexToken ? "text" : "password"}
+                  id="plex-token"
+                  placeholder="Token"
+                  className="setting-input"
+                  style={{ paddingRight: "40px" }}
+                  value={plexToken}
+                  onChange={(e) => setPlexToken(e.target.value)}
+                  disabled={plex.isConnected}
+                />
+                {plexToken && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPlexToken(!showPlexToken)}
+                    style={{
+                      position: "absolute",
+                      right: "8px",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "4px 8px",
+                      fontSize: "16px",
+                      color: "#666",
+                    }}
+                    aria-label={showPlexToken ? "Hide token" : "Show token"}
+                  >
+                    {showPlexToken ? "👁️" : "👁️‍🗨️"}
+                  </button>
+                )}
+              </div>
+              <button
+                id="plex-connect-btn"
+                className="btn-primary"
+                onClick={handlePlexConnect}
+                disabled={plex.isLoading}
+              >
+                {plex.isLoading && !plex.isConnected && (
+                  <LoadingSpinner size="small" />
+                )}
+                {plex.isLoading
+                  ? "Connecting to Plex..."
+                  : plex.isConnected
+                    ? "Disconnect Plex"
+                    : "Connect Plex"}
+              </button>
+              <p id="plex-status" className="status-text">
+                {plex.isConnected ? "✓ Connected" : "✗ Not connected"}
+              </p>
+              {plex.error && (
+                <p style={{ color: "red", fontSize: "0.9em" }}>
+                  Error: {plex.error}
                 </p>
               )}
             </div>

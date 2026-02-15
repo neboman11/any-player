@@ -37,7 +37,13 @@ export function Playlists() {
     refresh: refreshCustomPlaylists,
   } = useCustomPlaylists();
 
-  const sources: TauriSource[] = ["all", "custom", "spotify", "jellyfin"];
+  const sources: TauriSource[] = [
+    "all",
+    "custom",
+    "spotify",
+    "jellyfin",
+    "plex",
+  ];
 
   // Load playlists from cache on mount, or reload if source changes or refresh is requested
   useEffect(() => {

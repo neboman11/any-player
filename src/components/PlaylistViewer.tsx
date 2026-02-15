@@ -65,7 +65,9 @@ export function PlaylistViewer({
           const fullPlaylist =
             regularPlaylist.source === "spotify"
               ? await tauriAPI.getSpotifyPlaylist(regularPlaylist.id)
-              : await tauriAPI.getJellyfinPlaylist(regularPlaylist.id);
+              : regularPlaylist.source === "jellyfin"
+                ? await tauriAPI.getJellyfinPlaylist(regularPlaylist.id)
+                : await tauriAPI.getPlexPlaylist(regularPlaylist.id);
 
           setRegularTracks(fullPlaylist.tracks || []);
         } catch (err) {
@@ -89,7 +91,9 @@ export function PlaylistViewer({
         const fullPlaylist =
           regularPlaylist.source === "spotify"
             ? await tauriAPI.getSpotifyPlaylist(regularPlaylist.id)
-            : await tauriAPI.getJellyfinPlaylist(regularPlaylist.id);
+            : regularPlaylist.source === "jellyfin"
+              ? await tauriAPI.getJellyfinPlaylist(regularPlaylist.id)
+              : await tauriAPI.getPlexPlaylist(regularPlaylist.id);
         setRegularTracks(fullPlaylist.tracks || []);
       } catch (err) {
         console.error("Failed to reload playlist tracks:", err);

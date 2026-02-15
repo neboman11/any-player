@@ -21,7 +21,7 @@ export interface Track {
   artist: string;
   album?: string;
   duration_ms?: number;
-  source: "spotify" | "jellyfin" | "custom";
+  source: "spotify" | "jellyfin" | "plex" | "custom";
   url?: string;
   image_url?: string;
   bitrate_kbps?: number;
@@ -34,7 +34,7 @@ export interface Playlist {
   name: string;
   owner: string;
   track_count: number;
-  source: "spotify" | "jellyfin" | "custom";
+  source: "spotify" | "jellyfin" | "plex" | "custom";
   image_url?: string;
   tracks?: Track[];
   description?: string;
@@ -87,7 +87,7 @@ export interface SearchResult {
   artist?: string;
   owner?: string;
   type: "track" | "playlist";
-  source: "spotify" | "jellyfin" | "custom";
+  source: "spotify" | "jellyfin" | "plex" | "custom";
 }
 
 export interface OAuthCallbackData {
@@ -106,6 +106,10 @@ export interface JellyfinAuthStatus {
   authenticated: boolean;
 }
 
+export interface PlexAuthStatus {
+  authenticated: boolean;
+}
+
 export interface BackendInitStatus {
   stage: string;
   message: string;
@@ -117,6 +121,6 @@ export interface OAuthCodeReceived {
   source: "spotify";
 }
 
-export type TauriSource = "spotify" | "jellyfin" | "custom" | "all";
+export type TauriSource = "spotify" | "jellyfin" | "plex" | "custom" | "all";
 export type SearchType = "tracks" | "playlists";
 export type RepeatMode = "off" | "one" | "all";

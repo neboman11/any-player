@@ -125,7 +125,11 @@ export class TauriAPI {
           artist: track.artist,
           album: track.album || undefined,
           duration_ms: track.duration_ms || 0,
-          source: track.track_source as "spotify" | "jellyfin" | "custom",
+          source: track.track_source as
+            | "spotify"
+            | "jellyfin"
+            | "plex"
+            | "custom",
           url: track.url,
           image_url: track.image_url || undefined,
         };
@@ -247,6 +251,50 @@ export class TauriAPI {
 
   async restoreJellyfinSession(): Promise<boolean> {
     return invoke<boolean>("restore_jellyfin_session");
+  }
+
+  // Plex commands
+  async authenticatePlex(url: string, token: string): Promise<void> {
+    return invoke<void>("authenticate_plex", {
+      url,
+      token,
+    });
+  }
+
+  async isPlexAuthenticated(): Promise<boolean> {
+    return invoke<boolean>("is_plex_authenticated");
+  }
+
+  async getPlexPlaylists(): Promise<Playlist[]> {
+    return invoke<Playlist[]>("get_plex_playlists");
+  }
+
+  async getPlexPlaylist(id: string): Promise<Playlist> {
+    return invoke<Playlist>("get_plex_playlist", { id });
+  }
+
+  async searchPlexTracks(query: string): Promise<Track[]> {
+    return invoke<Track[]>("search_plex_tracks", { query });
+  }
+
+  async searchPlexPlaylists(query: string): Promise<Playlist[]> {
+    return invoke<Playlist[]>("search_plex_playlists", { query });
+  }
+
+  async getPlexRecentlyPlayed(limit: number): Promise<Track[]> {
+    return invoke<Track[]>("get_plex_recently_played", { limit });
+  }
+
+  async disconnectPlex(): Promise<void> {
+    return invoke<void>("disconnect_plex");
+  }
+
+  async getPlexCredentials(): Promise<[string, string] | null> {
+    return invoke<[string, string] | null>("get_plex_credentials");
+  }
+
+  async restorePlexSession(): Promise<boolean> {
+    return invoke<boolean>("restore_plex_session");
   }
 
   async getAudioFile(url: string): Promise<string> {

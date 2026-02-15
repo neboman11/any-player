@@ -53,6 +53,23 @@ export function useSearch() {
               console.error("Jellyfin search error:", err);
             }
           }
+
+          if (source === "plex" || source === "all") {
+            try {
+              const plexTracks = await tauriAPI.searchPlexTracks(query);
+              searchResults.push(
+                ...plexTracks.map((track) => ({
+                  id: track.id,
+                  name: track.title,
+                  artist: track.artist,
+                  type: "track" as const,
+                  source: track.source,
+                })),
+              );
+            } catch (err) {
+              console.error("Plex search error:", err);
+            }
+          }
         } else {
           // Playlists
           if (source === "jellyfin" || source === "all") {
@@ -70,6 +87,23 @@ export function useSearch() {
               );
             } catch (err) {
               console.error("Jellyfin search error:", err);
+            }
+          }
+
+          if (source === "plex" || source === "all") {
+            try {
+              const plexPlaylists = await tauriAPI.searchPlexPlaylists(query);
+              searchResults.push(
+                ...plexPlaylists.map((playlist) => ({
+                  id: playlist.id,
+                  name: playlist.name,
+                  owner: playlist.owner,
+                  type: "playlist" as const,
+                  source: playlist.source,
+                })),
+              );
+            } catch (err) {
+              console.error("Plex search error:", err);
             }
           }
         }

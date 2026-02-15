@@ -32,6 +32,11 @@ pub struct JellyfinAuthStatus {
 }
 
 #[derive(Debug, Serialize, Clone)]
+pub struct PlexAuthStatus {
+    pub authenticated: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
 pub struct BackendInitStatus {
     pub stage: String,
     pub message: String,
@@ -102,6 +107,18 @@ pub async fn emit_jellyfin_status(state: &AppState) {
         &state.ws_sender,
         "jellyfin-auth-status",
         JellyfinAuthStatus { authenticated },
+    );
+}
+
+pub async fn emit_plex_status(state: &AppState) {
+    let providers = state.providers.lock().await;
+    let authenticated = providers.is_authenticated(crate::Source::Plex).await;
+    drop(providers);
+
+    broadcast_event(
+        &state.ws_sender,
+        "plex-auth-status",
+        PlexAuthStatus { authenticated },
     );
 }
 
@@ -250,6 +267,7 @@ async fn send_initial_state(
     let playback_status = build_playback_status(&state.playback).await;
     let spotify_status = build_spotify_status(&state).await;
     let jellyfin_status = build_jellyfin_status(&state).await;
+    let plex_status = build_plex_status(&state).await;
 
     let playback_message = match serde_json::to_string(&WsMessage {
         event: "playback-status",
@@ -293,6 +311,20 @@ async fn send_initial_state(
         }
     };
 
+    let plex_message = match serde_json::to_string(&WsMessage {
+        event: "plex-auth-status",
+        data: plex_status,
+    }) {
+        Ok(msg) => Some(msg),
+        Err(e) => {
+            tracing::error!(
+                "Failed to serialize plex-auth-status WebSocket message: {}",
+                e
+            );
+            None
+        }
+    };
+
     if let Some(playback_message) = playback_message {
         ws_write
             .send(Message::Text(playback_message.into()))
@@ -305,6 +337,9 @@ async fn send_initial_state(
         ws_write
             .send(Message::Text(jellyfin_message.into()))
             .await?;
+    }
+    if let Some(plex_message) = plex_message {
+        ws_write.send(Message::Text(plex_message.into())).await?;
     }
 
     Ok(())
@@ -337,6 +372,14 @@ async fn build_jellyfin_status(state: &AppState) -> JellyfinAuthStatus {
     drop(providers);
 
     JellyfinAuthStatus { authenticated }
+}
+
+async fn build_plex_status(state: &AppState) -> PlexAuthStatus {
+    let providers = state.providers.lock().await;
+    let authenticated = providers.is_authenticated(crate::Source::Plex).await;
+    drop(providers);
+
+    PlexAuthStatus { authenticated }
 }
 
 async fn build_playback_status(playback: &Arc<Mutex<PlaybackManager>>) -> PlaybackStatus {
