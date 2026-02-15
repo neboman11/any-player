@@ -214,6 +214,8 @@ impl PlexProvider {
             .collect())
     }
 
+    /// Fetches playlists from a Plex API endpoint without type filtering.
+    /// For type-filtered requests, use `get_playlists_from_endpoint_with_filter`.
     async fn get_playlists_from_endpoint(
         &self,
         endpoint: &str,
@@ -221,6 +223,8 @@ impl PlexProvider {
         self.get_playlists_from_endpoint_with_filter(endpoint, None).await
     }
 
+    /// Fetches playlists from a Plex API endpoint with optional type filtering.
+    /// Used when the endpoint returns mixed item types and filtering is needed.
     async fn get_playlists_from_endpoint_with_filter(
         &self,
         endpoint: &str,
