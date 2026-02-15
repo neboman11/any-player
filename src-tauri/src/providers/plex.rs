@@ -4,6 +4,9 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
 
+// Plex item type constants
+const PLEX_TYPE_PLAYLIST: &str = "15";
+
 pub struct PlexProvider {
     base_url: String,
     token: String,
@@ -215,6 +218,15 @@ impl PlexProvider {
         &self,
         endpoint: &str,
     ) -> Result<Vec<Playlist>, ProviderError> {
+        self.get_playlists_from_endpoint_with_filter(endpoint, None)
+            .await
+    }
+
+    async fn get_playlists_from_endpoint_with_filter(
+        &self,
+        endpoint: &str,
+        type_filter: Option<&str>,
+    ) -> Result<Vec<Playlist>, ProviderError> {
         let response = self
             .client
             .get(self.authed_url(endpoint))
@@ -241,6 +253,12 @@ impl PlexProvider {
             .media_container
             .metadata
             .into_iter()
+            .filter(|item| {
+                // Apply type filter if provided
+                type_filter.map_or(true, |filter_type| {
+                    item.item_type.as_deref() == Some(filter_type)
+                })
+            })
             .filter_map(|item| self.playlist_from_metadata(item))
             .collect())
     }
@@ -361,41 +379,16 @@ impl MusicProvider for PlexProvider {
         }
 
         // Plex search API returns mixed results (tracks, albums, artists, playlists, etc.).
-        // We fetch from the search endpoint and then filter to only playlist types (type "15").
+        // We filter to only playlist types using type "15" (PLEX_TYPE_PLAYLIST).
         // This is necessary because the Plex API doesn't support type filtering in search queries.
         let encoded_query: String =
             url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-        
-        let response = self
-            .client
-            .get(self.authed_url(&format!("search?query={}&limit=50", encoded_query)))
-            .header("Accept", "application/json")
-            .send()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to fetch Plex playlists: {}", e)))?;
 
-        if !response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Plex playlist request failed: HTTP {}",
-                response.status()
-            )));
-        }
-
-        let body = response
-            .text()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to read Plex response body: {}", e)))?;
-
-        let parsed = Self::parse_json_response::<PlexResponse>(&body)?;
-
-        // Filter to only playlist types (type "15" in Plex) before converting to Playlist objects
-        Ok(parsed
-            .media_container
-            .metadata
-            .into_iter()
-            .filter(|item| item.item_type.as_deref() == Some("15"))
-            .filter_map(|item| self.playlist_from_metadata(item))
-            .collect())
+        self.get_playlists_from_endpoint_with_filter(
+            &format!("search?query={}&limit=50", encoded_query),
+            Some(PLEX_TYPE_PLAYLIST),
+        )
+        .await
     }
 
     async fn get_stream_url(&self, track_id: &str) -> Result<String, ProviderError> {
