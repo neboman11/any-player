@@ -33,6 +33,11 @@ function getPlaylistById(source: ServiceSource, id: string): Promise<Playlist> {
       return tauriAPI.getJellyfinPlaylist(id);
     case "plex":
       return tauriAPI.getPlexPlaylist(id);
+    default: {
+      // Exhaustiveness check - this should never happen
+      const _exhaustiveCheck: never = source;
+      throw new Error(`Unknown source: ${_exhaustiveCheck}`);
+    }
   }
 }
 
