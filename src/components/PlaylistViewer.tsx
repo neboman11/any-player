@@ -9,6 +9,7 @@ import {
 import { tauriAPI } from "../api";
 import { filterTracks } from "../utils/trackFilters";
 import type { CustomPlaylist, PlaylistTrack, Playlist, Track } from "../types";
+import type { ServiceSource } from "../providerCatalog";
 import "./CustomPlaylistEditor.css";
 
 interface PlaylistViewerProps {
@@ -24,7 +25,7 @@ interface PlaylistViewerProps {
 }
 
 // Helper function to get playlist by ID based on source
-function getPlaylistById(source: string, id: string): Promise<Playlist> {
+function getPlaylistById(source: ServiceSource, id: string): Promise<Playlist> {
   switch (source) {
     case "spotify":
       return tauriAPI.getSpotifyPlaylist(id);
@@ -32,8 +33,6 @@ function getPlaylistById(source: string, id: string): Promise<Playlist> {
       return tauriAPI.getJellyfinPlaylist(id);
     case "plex":
       return tauriAPI.getPlexPlaylist(id);
-    default:
-      throw new Error(`Unknown source: ${source}`);
   }
 }
 
@@ -77,7 +76,7 @@ export function PlaylistViewer({
         setLoading(true);
         try {
           const fullPlaylist = await getPlaylistById(
-            regularPlaylist.source,
+            regularPlaylist.source as ServiceSource,
             regularPlaylist.id,
           );
 
@@ -101,7 +100,7 @@ export function PlaylistViewer({
       setLoading(true);
       try {
         const fullPlaylist = await getPlaylistById(
-          regularPlaylist.source,
+          regularPlaylist.source as ServiceSource,
           regularPlaylist.id,
         );
         setRegularTracks(fullPlaylist.tracks || []);
