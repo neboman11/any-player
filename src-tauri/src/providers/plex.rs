@@ -4,6 +4,9 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
 
+// Plex item type constants
+const PLEX_TYPE_PLAYLIST: &str = "15";
+
 pub struct PlexProvider {
     base_url: String,
     token: String,
@@ -44,6 +47,8 @@ struct PlexMetadata {
     #[serde(default)]
     #[serde(rename = "Media")]
     media: Option<Vec<PlexMedia>>,
+    #[serde(default, rename = "type")]
+    item_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -209,9 +214,21 @@ impl PlexProvider {
             .collect())
     }
 
+    /// Fetches playlists from a Plex API endpoint without type filtering.
+    /// For type-filtered requests, use `get_playlists_from_endpoint_with_filter`.
     async fn get_playlists_from_endpoint(
         &self,
         endpoint: &str,
+    ) -> Result<Vec<Playlist>, ProviderError> {
+        self.get_playlists_from_endpoint_with_filter(endpoint, None).await
+    }
+
+    /// Fetches playlists from a Plex API endpoint with optional type filtering.
+    /// Used when the endpoint returns mixed item types and filtering is needed.
+    async fn get_playlists_from_endpoint_with_filter(
+        &self,
+        endpoint: &str,
+        type_filter: Option<&str>,
     ) -> Result<Vec<Playlist>, ProviderError> {
         let response = self
             .client
@@ -239,6 +256,12 @@ impl PlexProvider {
             .media_container
             .metadata
             .into_iter()
+            .filter(|item| {
+                // Apply type filter if provided
+                type_filter.map_or(true, |filter_type| {
+                    item.item_type.as_deref() == Some(filter_type)
+                })
+            })
             .filter_map(|item| self.playlist_from_metadata(item))
             .collect())
     }
@@ -358,16 +381,16 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
+        // Plex search API returns mixed results (tracks, albums, artists, playlists, etc.).
+        // We filter to only playlist types using type "15" (PLEX_TYPE_PLAYLIST).
+        // This is necessary because the Plex API doesn't support type filtering in search queries.
         let encoded_query: String =
             url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-        let playlists = self
-            .get_playlists_from_endpoint(&format!("search?query={}&limit=50", encoded_query))
-            .await?;
 
-        Ok(playlists
-            .into_iter()
-            .filter(|playlist| playlist.name.to_lowercase().contains(&query.to_lowercase()))
-            .collect())
+        self.get_playlists_from_endpoint_with_filter(
+            &format!("search?query={}&limit=50", encoded_query),
+            Some(PLEX_TYPE_PLAYLIST),
+        ).await
     }
 
     async fn get_stream_url(&self, track_id: &str) -> Result<String, ProviderError> {
