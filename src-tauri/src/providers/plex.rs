@@ -220,7 +220,8 @@ impl PlexProvider {
         &self,
         endpoint: &str,
     ) -> Result<Vec<Playlist>, ProviderError> {
-        self.get_playlists_from_endpoint_with_filter(endpoint, None).await
+        self.get_playlists_from_endpoint_with_filter(endpoint, None)
+            .await
     }
 
     /// Fetches playlists from a Plex API endpoint with optional type filtering.
@@ -390,7 +391,8 @@ impl MusicProvider for PlexProvider {
         self.get_playlists_from_endpoint_with_filter(
             &format!("search?query={}&limit=50", encoded_query),
             Some(PLEX_TYPE_PLAYLIST),
-        ).await
+        )
+        .await
     }
 
     async fn get_stream_url(&self, track_id: &str) -> Result<String, ProviderError> {
