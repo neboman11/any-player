@@ -259,9 +259,7 @@ impl PlexProvider {
             .into_iter()
             .filter(|item| {
                 // Apply type filter if provided
-                type_filter.map_or(true, |filter_type| {
-                    item.item_type.as_deref() == Some(filter_type)
-                })
+                type_filter.is_none_or(|filter_type| item.item_type.as_deref() == Some(filter_type))
             })
             .filter_map(|item| self.playlist_from_metadata(item))
             .collect())
