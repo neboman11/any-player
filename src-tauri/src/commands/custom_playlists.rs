@@ -3,7 +3,42 @@ use crate::commands::AppState;
 use crate::database::{ColumnPreferences, CustomPlaylist, PlaylistTrack, UnionPlaylistSource};
 use crate::models::Track;
 use crate::Source;
+use std::collections::HashMap;
 use tauri::State;
+
+fn provider_source_from_str(source_type: &str) -> Option<Source> {
+    match source_type.to_lowercase().as_str() {
+        "spotify" => Some(Source::Spotify),
+        "jellyfin" => Some(Source::Jellyfin),
+        "plex" => Some(Source::Plex),
+        _ => None,
+    }
+}
+
+async fn playlist_track_counts_from_provider(
+    provider: Option<crate::providers::ProviderHandle>,
+    source: Source,
+) -> HashMap<String, i64> {
+    if let Some(provider) = provider {
+        let provider_locked = provider.lock().await;
+        match provider_locked.get_playlists().await {
+            Ok(playlists) => playlists
+                .into_iter()
+                .map(|playlist| (playlist.id, playlist.track_count as i64))
+                .collect(),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to load {} playlist summaries for union counts: {}",
+                    source,
+                    e
+                );
+                HashMap::new()
+            }
+        }
+    } else {
+        HashMap::new()
+    }
+}
 
 #[tauri::command]
 pub async fn create_custom_playlist(
@@ -61,7 +96,7 @@ pub async fn get_custom_playlists(
         }
     }
 
-    let custom_track_counts: std::collections::HashMap<String, usize> = {
+    let custom_track_counts: HashMap<String, usize> = {
         let db = state.database.lock().await;
         custom_playlist_ids
             .into_iter()
@@ -75,82 +110,47 @@ pub async fn get_custom_playlists(
 
     // Fetch provider playlist summaries once (lightweight) and reuse them for
     // union track-count calculation to avoid expensive full playlist track fetches.
-    let (spotify_provider, jellyfin_provider) = {
+    let (spotify_provider, jellyfin_provider, plex_provider) = {
         let providers = state.providers.lock().await;
         (
             providers.get(Source::Spotify),
             providers.get(Source::Jellyfin),
+            providers.get(Source::Plex),
         )
     };
 
-    let spotify_track_counts: std::collections::HashMap<String, i64> =
-        if let Some(provider) = spotify_provider {
-            let provider_locked = provider.lock().await;
-            match provider_locked.get_playlists().await {
-                Ok(playlists) => playlists
-                    .into_iter()
-                    .map(|p| (p.id, p.track_count as i64))
-                    .collect(),
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to load Spotify playlist summaries for union counts: {}",
-                        e
-                    );
-                    std::collections::HashMap::new()
-                }
-            }
-        } else {
-            std::collections::HashMap::new()
-        };
+    let spotify_track_counts =
+        playlist_track_counts_from_provider(spotify_provider, Source::Spotify).await;
+    let jellyfin_track_counts =
+        playlist_track_counts_from_provider(jellyfin_provider, Source::Jellyfin).await;
+    let plex_track_counts = playlist_track_counts_from_provider(plex_provider, Source::Plex).await;
 
-    let jellyfin_track_counts: std::collections::HashMap<String, i64> =
-        if let Some(provider) = jellyfin_provider {
-            let provider_locked = provider.lock().await;
-            match provider_locked.get_playlists().await {
-                Ok(playlists) => playlists
-                    .into_iter()
-                    .map(|p| (p.id, p.track_count as i64))
-                    .collect(),
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to load Jellyfin playlist summaries for union counts: {}",
-                        e
-                    );
-                    std::collections::HashMap::new()
-                }
-            }
-        } else {
-            std::collections::HashMap::new()
-        };
+    let provider_track_counts: HashMap<Source, HashMap<String, i64>> = HashMap::from([
+        (Source::Spotify, spotify_track_counts),
+        (Source::Jellyfin, jellyfin_track_counts),
+        (Source::Plex, plex_track_counts),
+    ]);
 
     for playlist in &mut playlists {
         if playlist.playlist_type == "union" {
             if let Some(sources) = union_sources_map.get(&playlist.id) {
                 let mut total_tracks: i64 = 0;
                 for source in sources {
-                    match source.source_type.as_str() {
-                        "spotify" => {
+                    if source.source_type.eq_ignore_ascii_case("custom") {
+                        if let Some(&count) = custom_track_counts.get(&source.source_playlist_id) {
+                            total_tracks += count as i64;
+                        }
+                        continue;
+                    }
+
+                    if let Some(provider_source) = provider_source_from_str(&source.source_type) {
+                        if let Some(source_counts) = provider_track_counts.get(&provider_source) {
                             if let Some(count) =
-                                spotify_track_counts.get(source.source_playlist_id.as_str())
+                                source_counts.get(source.source_playlist_id.as_str())
                             {
                                 total_tracks += *count;
                             }
                         }
-                        "jellyfin" => {
-                            if let Some(count) =
-                                jellyfin_track_counts.get(source.source_playlist_id.as_str())
-                            {
-                                total_tracks += *count;
-                            }
-                        }
-                        "custom" => {
-                            if let Some(&count) =
-                                custom_track_counts.get(&source.source_playlist_id)
-                            {
-                                total_tracks += count as i64;
-                            }
-                        }
-                        _ => {}
                     }
                 }
                 playlist.track_count = total_tracks;
@@ -327,57 +327,39 @@ pub async fn get_union_playlist_tracks(
             source.source_playlist_id
         );
 
-        match source.source_type.as_str() {
-            "spotify" => {
-                match providers
-                    .get_playlist(Source::Spotify, &source.source_playlist_id)
-                    .await
-                {
-                    Ok(playlist) => {
-                        tracing::info!(
-                            "Got {} tracks from Spotify playlist {}",
-                            playlist.tracks.len(),
-                            source.source_playlist_id
-                        );
-                        all_tracks.extend(playlist.tracks);
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to get Spotify playlist tracks: {}", e);
-                    }
+        if source.source_type.eq_ignore_ascii_case("custom") {
+            let tracks = db
+                .get_playlist_tracks(&source.source_playlist_id)
+                .map_err(|e| format!("Failed to get custom playlist tracks: {}", e))?;
+            tracing::info!(
+                "Got {} tracks from custom playlist {}",
+                tracks.len(),
+                source.source_playlist_id
+            );
+            all_tracks.extend(tracks.into_iter().map(|t| t.to_track()));
+            continue;
+        }
+
+        if let Some(provider_source) = provider_source_from_str(&source.source_type) {
+            match providers
+                .get_playlist(provider_source, &source.source_playlist_id)
+                .await
+            {
+                Ok(playlist) => {
+                    tracing::info!(
+                        "Got {} tracks from {} playlist {}",
+                        playlist.tracks.len(),
+                        provider_source,
+                        source.source_playlist_id
+                    );
+                    all_tracks.extend(playlist.tracks);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to get {} playlist tracks: {}", provider_source, e);
                 }
             }
-            "jellyfin" => {
-                match providers
-                    .get_playlist(Source::Jellyfin, &source.source_playlist_id)
-                    .await
-                {
-                    Ok(playlist) => {
-                        tracing::info!(
-                            "Got {} tracks from Jellyfin playlist {}",
-                            playlist.tracks.len(),
-                            source.source_playlist_id
-                        );
-                        all_tracks.extend(playlist.tracks);
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to get Jellyfin playlist tracks: {}", e);
-                    }
-                }
-            }
-            "custom" => {
-                let tracks = db
-                    .get_playlist_tracks(&source.source_playlist_id)
-                    .map_err(|e| format!("Failed to get custom playlist tracks: {}", e))?;
-                tracing::info!(
-                    "Got {} tracks from custom playlist {}",
-                    tracks.len(),
-                    source.source_playlist_id
-                );
-                all_tracks.extend(tracks.into_iter().map(|t| t.to_track()));
-            }
-            _ => {
-                tracing::warn!("Unknown source type: {}", source.source_type);
-            }
+        } else {
+            tracing::warn!("Unknown source type: {}", source.source_type);
         }
     }
 
@@ -413,31 +395,22 @@ pub(super) async fn play_custom_playlist_internal(
         let mut all_tracks = Vec::new();
 
         for source in sources {
-            match source.source_type.as_str() {
-                "spotify" => {
-                    if let Ok(playlist) = providers
-                        .get_playlist(Source::Spotify, &source.source_playlist_id)
-                        .await
-                    {
-                        all_tracks.extend(playlist.tracks);
-                    }
+            if source.source_type.eq_ignore_ascii_case("custom") {
+                let db = state.database.lock().await;
+                if let Ok(tracks) = db.get_playlist_tracks(&source.source_playlist_id) {
+                    all_tracks.extend(tracks.into_iter().map(|t| t.to_track()));
                 }
-                "jellyfin" => {
-                    if let Ok(playlist) = providers
-                        .get_playlist(Source::Jellyfin, &source.source_playlist_id)
-                        .await
-                    {
-                        all_tracks.extend(playlist.tracks);
-                    }
+                drop(db);
+                continue;
+            }
+
+            if let Some(provider_source) = provider_source_from_str(&source.source_type) {
+                if let Ok(playlist) = providers
+                    .get_playlist(provider_source, &source.source_playlist_id)
+                    .await
+                {
+                    all_tracks.extend(playlist.tracks);
                 }
-                "custom" => {
-                    let db = state.database.lock().await;
-                    if let Ok(tracks) = db.get_playlist_tracks(&source.source_playlist_id) {
-                        all_tracks.extend(tracks.into_iter().map(|t| t.to_track()));
-                    }
-                    drop(db);
-                }
-                _ => {}
             }
         }
 
@@ -451,13 +424,12 @@ pub(super) async fn play_custom_playlist_internal(
 
         let mut tracks = Vec::new();
         for pt in playlist_tracks {
-            let track_result = match pt.track_source.as_str() {
-                "Spotify" | "spotify" => providers.get_track(Source::Spotify, &pt.track_id).await,
-                "Jellyfin" | "jellyfin" => {
-                    providers.get_track(Source::Jellyfin, &pt.track_id).await
-                }
-                _ => Ok(pt.to_track()),
-            };
+            let track_result =
+                if let Some(provider_source) = provider_source_from_str(&pt.track_source) {
+                    providers.get_track(provider_source, &pt.track_id).await
+                } else {
+                    Ok(pt.to_track())
+                };
 
             match track_result {
                 Ok(track) => tracks.push(track),

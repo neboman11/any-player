@@ -3,6 +3,70 @@ use crate::commands::{AppState, PlaylistInfo, PlaylistResponse, TrackInfo};
 use crate::Source;
 use tauri::State;
 
+fn source_key(source: Source) -> &'static str {
+    match source {
+        Source::Spotify => "spotify",
+        Source::Jellyfin => "jellyfin",
+        Source::Plex => "plex",
+        Source::Custom => "custom",
+    }
+}
+
+async fn get_provider_handle(
+    state: &State<'_, AppState>,
+    source: Source,
+) -> Result<crate::providers::ProviderHandle, String> {
+    let providers = state.providers.lock().await;
+    providers
+        .get(source)
+        .ok_or_else(|| format!("{} provider not initialized", source))
+}
+
+fn to_track_info(track: crate::Track, source: &str) -> TrackInfo {
+    TrackInfo {
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        duration: track.duration_ms,
+        source: source.to_string(),
+        url: track.url,
+        image_url: track.image_url,
+        bitrate_kbps: track.bitrate_kbps,
+        sample_rate_hz: track.sample_rate_hz,
+    }
+}
+
+fn to_playlist_info(playlist: crate::Playlist, source: &str, track_count: usize) -> PlaylistInfo {
+    PlaylistInfo {
+        id: playlist.id,
+        name: playlist.name,
+        description: playlist.description,
+        track_count,
+        owner: playlist.owner,
+        source: source.to_string(),
+    }
+}
+
+fn to_playlist_response(playlist: crate::Playlist, source: &str) -> PlaylistResponse {
+    let track_count = playlist.tracks.len();
+    let tracks = playlist
+        .tracks
+        .into_iter()
+        .map(|track| to_track_info(track, source))
+        .collect();
+
+    PlaylistResponse {
+        id: playlist.id,
+        name: playlist.name,
+        description: playlist.description,
+        track_count,
+        owner: playlist.owner,
+        source: source.to_string(),
+        tracks,
+    }
+}
+
 // ============================================================================
 // Spotify Commands
 // ============================================================================
@@ -12,12 +76,7 @@ use tauri::State;
 pub async fn get_spotify_playlists(
     state: State<'_, AppState>,
 ) -> Result<Vec<PlaylistInfo>, String> {
-    let provider = {
-        let providers = state.providers.lock().await;
-        providers
-            .get(Source::Spotify)
-            .ok_or_else(|| "Spotify provider not initialized".to_string())?
-    };
+    let provider = get_provider_handle(&state, Source::Spotify).await?;
 
     let provider_locked = provider.lock().await;
     let playlists = provider_locked
@@ -27,13 +86,12 @@ pub async fn get_spotify_playlists(
 
     Ok(playlists
         .into_iter()
-        .map(|p| PlaylistInfo {
-            id: p.id,
-            name: p.name,
-            description: p.description,
-            track_count: p.track_count,
-            owner: p.owner,
-            source: "spotify".to_string(),
+        .map(|playlist| {
+            to_playlist_info(
+                playlist.clone(),
+                source_key(Source::Spotify),
+                playlist.track_count,
+            )
         })
         .collect())
 }
@@ -44,12 +102,7 @@ pub async fn get_spotify_playlist(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<PlaylistResponse, String> {
-    let provider = {
-        let providers = state.providers.lock().await;
-        providers
-            .get(Source::Spotify)
-            .ok_or_else(|| "Spotify provider not initialized".to_string())?
-    };
+    let provider = get_provider_handle(&state, Source::Spotify).await?;
 
     let provider_locked = provider.lock().await;
     let playlist = provider_locked
@@ -57,32 +110,7 @@ pub async fn get_spotify_playlist(
         .await
         .map_err(|e| format!("Failed to get Spotify playlist: {}", e))?;
 
-    let tracks = playlist
-        .tracks
-        .iter()
-        .map(|t| TrackInfo {
-            id: t.id.clone(),
-            title: t.title.clone(),
-            artist: t.artist.clone(),
-            album: t.album.clone(),
-            duration: t.duration_ms,
-            source: "spotify".to_string(),
-            url: t.url.clone(),
-            image_url: t.image_url.clone(),
-            bitrate_kbps: t.bitrate_kbps,
-            sample_rate_hz: t.sample_rate_hz,
-        })
-        .collect();
-
-    Ok(PlaylistResponse {
-        id: playlist.id,
-        name: playlist.name,
-        description: playlist.description,
-        track_count: playlist.tracks.len(),
-        owner: playlist.owner,
-        source: "spotify".to_string(),
-        tracks,
-    })
+    Ok(to_playlist_response(playlist, source_key(Source::Spotify)))
 }
 
 /// Search tracks on Spotify
@@ -91,12 +119,7 @@ pub async fn search_spotify_tracks(
     state: State<'_, AppState>,
     query: String,
 ) -> Result<Vec<TrackInfo>, String> {
-    let provider = {
-        let providers = state.providers.lock().await;
-        providers
-            .get(Source::Spotify)
-            .ok_or_else(|| "Spotify provider not initialized".to_string())?
-    };
+    let provider = get_provider_handle(&state, Source::Spotify).await?;
 
     let provider_locked = provider.lock().await;
     let tracks = provider_locked
@@ -106,18 +129,7 @@ pub async fn search_spotify_tracks(
 
     Ok(tracks
         .into_iter()
-        .map(|t| TrackInfo {
-            id: t.id,
-            title: t.title,
-            artist: t.artist,
-            album: t.album,
-            duration: t.duration_ms,
-            source: "spotify".to_string(),
-            url: t.url,
-            image_url: t.image_url,
-            bitrate_kbps: t.bitrate_kbps,
-            sample_rate_hz: t.sample_rate_hz,
-        })
+        .map(|track| to_track_info(track, source_key(Source::Spotify)))
         .collect())
 }
 
@@ -130,12 +142,7 @@ pub async fn search_spotify_tracks(
 pub async fn get_jellyfin_playlists(
     state: State<'_, AppState>,
 ) -> Result<Vec<PlaylistInfo>, String> {
-    let provider = {
-        let providers = state.providers.lock().await;
-        providers
-            .get(Source::Jellyfin)
-            .ok_or_else(|| "Jellyfin provider not initialized".to_string())?
-    };
+    let provider = get_provider_handle(&state, Source::Jellyfin).await?;
 
     let provider_locked = provider.lock().await;
     let playlists = provider_locked
@@ -145,13 +152,12 @@ pub async fn get_jellyfin_playlists(
 
     Ok(playlists
         .into_iter()
-        .map(|p| PlaylistInfo {
-            id: p.id,
-            name: p.name,
-            description: p.description,
-            track_count: p.track_count,
-            owner: p.owner,
-            source: "jellyfin".to_string(),
+        .map(|playlist| {
+            to_playlist_info(
+                playlist.clone(),
+                source_key(Source::Jellyfin),
+                playlist.track_count,
+            )
         })
         .collect())
 }
@@ -162,12 +168,7 @@ pub async fn get_jellyfin_playlist(
     state: State<'_, AppState>,
     id: String,
 ) -> Result<PlaylistResponse, String> {
-    let provider = {
-        let providers = state.providers.lock().await;
-        providers
-            .get(Source::Jellyfin)
-            .ok_or_else(|| "Jellyfin provider not initialized".to_string())?
-    };
+    let provider = get_provider_handle(&state, Source::Jellyfin).await?;
 
     let provider_locked = provider.lock().await;
     let playlist = provider_locked
@@ -175,32 +176,7 @@ pub async fn get_jellyfin_playlist(
         .await
         .map_err(|e| format!("Failed to get Jellyfin playlist: {}", e))?;
 
-    let tracks = playlist
-        .tracks
-        .iter()
-        .map(|t| TrackInfo {
-            id: t.id.clone(),
-            title: t.title.clone(),
-            artist: t.artist.clone(),
-            album: t.album.clone(),
-            duration: t.duration_ms,
-            source: "jellyfin".to_string(),
-            url: t.url.clone(),
-            image_url: t.image_url.clone(),
-            bitrate_kbps: t.bitrate_kbps,
-            sample_rate_hz: t.sample_rate_hz,
-        })
-        .collect();
-
-    Ok(PlaylistResponse {
-        id: playlist.id,
-        name: playlist.name,
-        description: playlist.description,
-        track_count: playlist.tracks.len(),
-        owner: playlist.owner,
-        source: "jellyfin".to_string(),
-        tracks,
-    })
+    Ok(to_playlist_response(playlist, source_key(Source::Jellyfin)))
 }
 
 /// Search tracks on Jellyfin
@@ -209,12 +185,7 @@ pub async fn search_jellyfin_tracks(
     state: State<'_, AppState>,
     query: String,
 ) -> Result<Vec<TrackInfo>, String> {
-    let provider = {
-        let providers = state.providers.lock().await;
-        providers
-            .get(Source::Jellyfin)
-            .ok_or_else(|| "Jellyfin provider not initialized".to_string())?
-    };
+    let provider = get_provider_handle(&state, Source::Jellyfin).await?;
 
     let provider_locked = provider.lock().await;
     let tracks = provider_locked
@@ -224,18 +195,7 @@ pub async fn search_jellyfin_tracks(
 
     Ok(tracks
         .into_iter()
-        .map(|t| TrackInfo {
-            id: t.id,
-            title: t.title,
-            artist: t.artist,
-            album: t.album,
-            duration: t.duration_ms,
-            source: "jellyfin".to_string(),
-            url: t.url,
-            image_url: t.image_url,
-            bitrate_kbps: t.bitrate_kbps,
-            sample_rate_hz: t.sample_rate_hz,
-        })
+        .map(|track| to_track_info(track, source_key(Source::Jellyfin)))
         .collect())
 }
 
@@ -245,12 +205,7 @@ pub async fn search_jellyfin_playlists(
     state: State<'_, AppState>,
     query: String,
 ) -> Result<Vec<PlaylistInfo>, String> {
-    let provider = {
-        let providers = state.providers.lock().await;
-        providers
-            .get(Source::Jellyfin)
-            .ok_or_else(|| "Jellyfin provider not initialized".to_string())?
-    };
+    let provider = get_provider_handle(&state, Source::Jellyfin).await?;
 
     let provider_locked = provider.lock().await;
     let playlists = provider_locked
@@ -260,13 +215,9 @@ pub async fn search_jellyfin_playlists(
 
     Ok(playlists
         .into_iter()
-        .map(|p| PlaylistInfo {
-            id: p.id,
-            name: p.name,
-            description: p.description,
-            track_count: p.tracks.len(),
-            owner: p.owner,
-            source: "jellyfin".to_string(),
+        .map(|playlist| {
+            let track_count = playlist.tracks.len();
+            to_playlist_info(playlist, source_key(Source::Jellyfin), track_count)
         })
         .collect())
 }
@@ -277,12 +228,7 @@ pub async fn get_jellyfin_recently_played(
     state: State<'_, AppState>,
     limit: usize,
 ) -> Result<Vec<TrackInfo>, String> {
-    let provider = {
-        let providers = state.providers.lock().await;
-        providers
-            .get(Source::Jellyfin)
-            .ok_or_else(|| "Jellyfin provider not initialized".to_string())?
-    };
+    let provider = get_provider_handle(&state, Source::Jellyfin).await?;
 
     let provider_locked = provider.lock().await;
     let tracks = provider_locked
@@ -292,17 +238,113 @@ pub async fn get_jellyfin_recently_played(
 
     Ok(tracks
         .into_iter()
-        .map(|t| TrackInfo {
-            id: t.id,
-            title: t.title,
-            artist: t.artist,
-            album: t.album,
-            duration: t.duration_ms,
-            source: "jellyfin".to_string(),
-            url: t.url,
-            image_url: t.image_url,
-            bitrate_kbps: t.bitrate_kbps,
-            sample_rate_hz: t.sample_rate_hz,
+        .map(|track| to_track_info(track, source_key(Source::Jellyfin)))
+        .collect())
+}
+
+// ============================================================================
+// Plex Commands
+// ============================================================================
+
+/// Get Plex playlists
+#[tauri::command]
+pub async fn get_plex_playlists(state: State<'_, AppState>) -> Result<Vec<PlaylistInfo>, String> {
+    let provider = get_provider_handle(&state, Source::Plex).await?;
+
+    let provider_locked = provider.lock().await;
+    let playlists = provider_locked
+        .get_playlists()
+        .await
+        .map_err(|e| format!("Failed to get Plex playlists: {}", e))?;
+
+    Ok(playlists
+        .into_iter()
+        .map(|playlist| {
+            to_playlist_info(
+                playlist.clone(),
+                source_key(Source::Plex),
+                playlist.track_count,
+            )
         })
+        .collect())
+}
+
+/// Get a specific Plex playlist with tracks
+#[tauri::command]
+pub async fn get_plex_playlist(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<PlaylistResponse, String> {
+    let provider = get_provider_handle(&state, Source::Plex).await?;
+
+    let provider_locked = provider.lock().await;
+    let playlist = provider_locked
+        .get_playlist(&id)
+        .await
+        .map_err(|e| format!("Failed to get Plex playlist: {}", e))?;
+
+    Ok(to_playlist_response(playlist, source_key(Source::Plex)))
+}
+
+/// Search tracks on Plex
+#[tauri::command]
+pub async fn search_plex_tracks(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<Vec<TrackInfo>, String> {
+    let provider = get_provider_handle(&state, Source::Plex).await?;
+
+    let provider_locked = provider.lock().await;
+    let tracks = provider_locked
+        .search_tracks(&query)
+        .await
+        .map_err(|e| format!("Failed to search Plex tracks: {}", e))?;
+
+    Ok(tracks
+        .into_iter()
+        .map(|track| to_track_info(track, source_key(Source::Plex)))
+        .collect())
+}
+
+/// Search playlists on Plex
+#[tauri::command]
+pub async fn search_plex_playlists(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<Vec<PlaylistInfo>, String> {
+    let provider = get_provider_handle(&state, Source::Plex).await?;
+
+    let provider_locked = provider.lock().await;
+    let playlists = provider_locked
+        .search_playlists(&query)
+        .await
+        .map_err(|e| format!("Failed to search Plex playlists: {}", e))?;
+
+    Ok(playlists
+        .into_iter()
+        .map(|playlist| {
+            let track_count = playlist.tracks.len();
+            to_playlist_info(playlist, source_key(Source::Plex), track_count)
+        })
+        .collect())
+}
+
+/// Get recently played tracks from Plex
+#[tauri::command]
+pub async fn get_plex_recently_played(
+    state: State<'_, AppState>,
+    limit: usize,
+) -> Result<Vec<TrackInfo>, String> {
+    let provider = get_provider_handle(&state, Source::Plex).await?;
+
+    let provider_locked = provider.lock().await;
+    let tracks = provider_locked
+        .get_recently_played(limit)
+        .await
+        .map_err(|e| format!("Failed to get recently played: {}", e))?;
+
+    Ok(tracks
+        .into_iter()
+        .map(|track| to_track_info(track, source_key(Source::Plex)))
         .collect())
 }

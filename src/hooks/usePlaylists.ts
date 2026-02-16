@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { tauriAPI } from "../api";
 import type { Playlist, TauriSource } from "../types";
 import { withTimeout } from "../utils/timeout";
+import { SERVICE_PROVIDERS, includesSource } from "../providerCatalog";
 
 const CACHE_VERSION = 1;
 const PROVIDER_CHECK_TIMEOUT_MS = 2500;
@@ -127,89 +128,93 @@ export function usePlaylists() {
         setIsLoading(true);
         setError(null);
         const allPlaylists: Playlist[] = [];
-        const wantsSpotify = source === "spotify" || source === "all";
-        const wantsJellyfin = source === "jellyfin" || source === "all";
+        const authResults = await Promise.all(
+          SERVICE_PROVIDERS.map(async (provider) => {
+            if (!includesSource(source, provider.id)) {
+              return {
+                provider,
+                authenticated: false,
+                timedOut: false,
+              };
+            }
 
-        const [spotifyAuthResult, jellyfinAuthResult] = await Promise.all([
-          wantsSpotify
-            ? withTimeout(
-                tauriAPI.isSpotifyAuthenticated().catch((err) => {
-                  console.error("Error checking Spotify authentication:", err);
-                  return false;
-                }),
-                PROVIDER_CHECK_TIMEOUT_MS,
-                false,
-              )
-            : Promise.resolve({ value: false, timedOut: false }),
-          wantsJellyfin
-            ? withTimeout(
-                tauriAPI.isJellyfinAuthenticated().catch((err) => {
-                  console.error("Error checking Jellyfin authentication:", err);
-                  return false;
-                }),
-                PROVIDER_CHECK_TIMEOUT_MS,
-                false,
-              )
-            : Promise.resolve({ value: false, timedOut: false }),
-        ]);
+            const authResult = await withTimeout(
+              provider.isAuthenticated().catch((err) => {
+                console.error(
+                  `Error checking ${provider.label} authentication:`,
+                  err,
+                );
+                return false;
+              }),
+              PROVIDER_CHECK_TIMEOUT_MS,
+              false,
+            );
 
-        const spotifyAuth = spotifyAuthResult.value;
-        const jellyfinAuth = jellyfinAuthResult.value;
+            if (authResult.timedOut) {
+              console.warn(`${provider.label} authentication check timed out`);
+            }
 
-        if (spotifyAuthResult.timedOut) {
-          console.warn("Spotify authentication check timed out");
-        }
-        if (jellyfinAuthResult.timedOut) {
-          console.warn("Jellyfin authentication check timed out");
-        }
+            return {
+              provider,
+              authenticated: authResult.value,
+              timedOut: authResult.timedOut,
+            };
+          }),
+        );
 
-        const [spotifyPlaylistsResult, jellyfinPlaylistsResult] = await Promise.all([
-          spotifyAuth
-            ? withTimeout(
-                tauriAPI.getSpotifyPlaylists().catch((err) => {
-                  console.error("Error fetching Spotify playlists:", err);
-                  return [];
-                }),
-                PLAYLIST_FETCH_TIMEOUT_MS,
-                [],
-              )
-            : Promise.resolve({ value: [], timedOut: false }),
-          jellyfinAuth
-            ? withTimeout(
-                tauriAPI.getJellyfinPlaylists().catch((err) => {
-                  console.error("Error fetching Jellyfin playlists:", err);
-                  return [];
-                }),
-                PLAYLIST_FETCH_TIMEOUT_MS,
-                [],
-              )
-            : Promise.resolve({ value: [], timedOut: false }),
-        ]);
+        const playlistResults = await Promise.all(
+          authResults.map(async ({ provider, authenticated }) => {
+            if (!authenticated) {
+              return {
+                provider,
+                playlists: [] as Playlist[],
+                timedOut: false,
+              };
+            }
 
-        const spotifyPlaylists = spotifyPlaylistsResult.value;
-        const jellyfinPlaylists = jellyfinPlaylistsResult.value;
+            const playlistsResult = await withTimeout(
+              provider.getPlaylists().catch((err) => {
+                console.error(
+                  `Error fetching ${provider.label} playlists:`,
+                  err,
+                );
+                return [];
+              }),
+              PLAYLIST_FETCH_TIMEOUT_MS,
+              [] as Playlist[],
+            );
 
-        if (spotifyPlaylistsResult.timedOut) {
-          console.warn("Spotify playlist fetch timed out, may have incomplete data");
-        }
-        if (jellyfinPlaylistsResult.timedOut) {
-          console.warn("Jellyfin playlist fetch timed out, may have incomplete data");
-        }
+            if (playlistsResult.timedOut) {
+              console.warn(
+                `${provider.label} playlist fetch timed out, may have incomplete data`,
+              );
+            }
 
-        if (spotifyPlaylists.length > 0) {
-          allPlaylists.push(...spotifyPlaylists);
-          console.log(`Loaded ${spotifyPlaylists.length} Spotify playlists`);
-        }
+            return {
+              provider,
+              playlists: playlistsResult.value,
+              timedOut: playlistsResult.timedOut,
+            };
+          }),
+        );
 
-        if (jellyfinPlaylists.length > 0) {
-          allPlaylists.push(...jellyfinPlaylists);
-          console.log(`Loaded ${jellyfinPlaylists.length} Jellyfin playlists`);
-        }
+        playlistResults.forEach(({ provider, playlists }) => {
+          if (playlists.length > 0) {
+            allPlaylists.push(...playlists);
+            console.log(
+              `Loaded ${playlists.length} ${provider.label} playlists`,
+            );
+          }
+        });
 
         if (allPlaylists.length === 0) {
-          if (!spotifyAuth && !jellyfinAuth) {
+          const hasAnyConnectedService = authResults.some(
+            ({ authenticated }) => authenticated,
+          );
+
+          if (!hasAnyConnectedService) {
             setError(
-              "No services connected. Connect Spotify or Jellyfin in Settings.",
+              "No services connected. Connect Spotify, Jellyfin, or Plex in Settings.",
             );
           } else {
             setError(

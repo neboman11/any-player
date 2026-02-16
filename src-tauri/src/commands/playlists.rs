@@ -1,6 +1,20 @@
 /// Playlist management commands
 use crate::commands::{AppState, PlaylistInfo, TrackInfo};
+use crate::Source;
 use tauri::State;
+
+fn parse_source(source: &str) -> Result<Source, String> {
+    match source.to_lowercase().as_str() {
+        "spotify" => Ok(Source::Spotify),
+        "jellyfin" => Ok(Source::Jellyfin),
+        "plex" => Ok(Source::Plex),
+        "custom" => Ok(Source::Custom),
+        _ => Err(format!(
+            "Unknown source: '{}'. Supported sources are: spotify, jellyfin, plex, custom",
+            source
+        )),
+    }
+}
 
 /// Get list of playlists from a provider
 #[tauri::command]
@@ -25,29 +39,15 @@ pub async fn play_track(
 ) -> Result<(), String> {
     let providers = state.providers.lock().await;
 
-    // Normalize source to lowercase
-    let normalized_source = source.to_lowercase();
+    let parsed_source = parse_source(&source)?;
+    if matches!(parsed_source, Source::Custom) {
+        return Err("Playing custom tracks directly is not yet supported. Please play from a custom playlist instead.".to_string());
+    }
 
-    // Get the track from the appropriate provider
-    let track = match normalized_source.as_str() {
-        "spotify" => providers
-            .get_track(crate::models::Source::Spotify, &track_id)
-            .await
-            .map_err(|e| format!("Failed to get Spotify track: {}", e))?,
-        "jellyfin" => providers
-            .get_track(crate::models::Source::Jellyfin, &track_id)
-            .await
-            .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
-        "custom" => {
-            return Err("Playing custom tracks directly is not yet supported. Please play from a custom playlist instead.".to_string());
-        }
-        _ => {
-            return Err(format!(
-                "Unknown source: '{}'. Supported sources are: spotify, jellyfin",
-                source
-            ))
-        }
-    };
+    let track = providers
+        .get_track(parsed_source, &track_id)
+        .await
+        .map_err(|e| format!("Failed to get {} track: {}", parsed_source, e))?;
 
     // Clear queue, add track, and start playing
     let playback = state.playback.lock().await;
@@ -66,29 +66,15 @@ pub async fn queue_track(
 ) -> Result<(), String> {
     let providers = state.providers.lock().await;
 
-    // Normalize source to lowercase
-    let normalized_source = source.to_lowercase();
+    let parsed_source = parse_source(&source)?;
+    if matches!(parsed_source, Source::Custom) {
+        return Err("Queuing custom tracks directly is not yet supported. Please queue from a custom playlist instead.".to_string());
+    }
 
-    // Get the track from the appropriate provider
-    let track = match normalized_source.as_str() {
-        "spotify" => providers
-            .get_track(crate::models::Source::Spotify, &track_id)
-            .await
-            .map_err(|e| format!("Failed to get Spotify track: {}", e))?,
-        "jellyfin" => providers
-            .get_track(crate::models::Source::Jellyfin, &track_id)
-            .await
-            .map_err(|e| format!("Failed to get Jellyfin track: {}", e))?,
-        "custom" => {
-            return Err("Queuing custom tracks directly is not yet supported. Please queue from a custom playlist instead.".to_string());
-        }
-        _ => {
-            return Err(format!(
-                "Unknown source: '{}'. Supported sources are: spotify, jellyfin",
-                source
-            ))
-        }
-    };
+    let track = providers
+        .get_track(parsed_source, &track_id)
+        .await
+        .map_err(|e| format!("Failed to get {} track: {}", parsed_source, e))?;
 
     // Queue the track
     let playback = state.playback.lock().await;
@@ -106,23 +92,20 @@ pub async fn play_playlist(
 ) -> Result<(), String> {
     let providers = state.providers.lock().await;
 
+    let parsed_source = parse_source(&source)?;
+
     // Get the playlist with all tracks from the appropriate provider
-    let playlist = match source.as_str() {
-        "spotify" => providers
-            .get_playlist(crate::models::Source::Spotify, &playlist_id)
+    let playlist = match parsed_source {
+        Source::Spotify | Source::Jellyfin | Source::Plex => providers
+            .get_playlist(parsed_source, &playlist_id)
             .await
-            .map_err(|e| format!("Failed to get Spotify playlist: {}", e))?,
-        "jellyfin" => providers
-            .get_playlist(crate::models::Source::Jellyfin, &playlist_id)
-            .await
-            .map_err(|e| format!("Failed to get Jellyfin playlist: {}", e))?,
-        "custom" => {
+            .map_err(|e| format!("Failed to get {} playlist: {}", parsed_source, e))?,
+        Source::Custom => {
             // Drop providers lock before calling internal function
             drop(providers);
             return super::custom_playlists::play_custom_playlist_internal(&state, playlist_id)
                 .await;
         }
-        _ => return Err("Unknown source".to_string()),
     };
 
     if playlist.tracks.is_empty() {
@@ -180,6 +163,7 @@ pub async fn play_playlist(
 pub async fn play_tracks_immediate(
     state: State<'_, AppState>,
     tracks: Vec<TrackInfo>,
+    preserve_first_in_shuffle: Option<bool>,
 ) -> Result<(), String> {
     if tracks.is_empty() {
         return Err("No tracks provided".to_string());
@@ -192,9 +176,10 @@ pub async fn play_tracks_immediate(
     let mut internal_tracks = Vec::new();
     for track_info in tracks {
         let source = match track_info.source.to_lowercase().as_str() {
-            "spotify" => crate::models::Source::Spotify,
-            "jellyfin" => crate::models::Source::Jellyfin,
-            _ => crate::models::Source::Custom,
+            "spotify" => Source::Spotify,
+            "jellyfin" => Source::Jellyfin,
+            "plex" => Source::Plex,
+            _ => Source::Custom,
         };
 
         // Get auth headers for sources that need them (e.g., Jellyfin)
@@ -221,42 +206,9 @@ pub async fn play_tracks_immediate(
         return Err("No valid tracks to play".to_string());
     }
 
-    // Store first track for later enrichment
-    let first_track_for_enrichment = internal_tracks[0].clone();
-    let needs_enrichment = matches!(
-        first_track_for_enrichment.source,
-        crate::models::Source::Spotify | crate::models::Source::Jellyfin
-    );
-
-    // Enrich the first track before setting up the queue (if needed)
-    let enriched_first_track = if needs_enrichment {
-        match first_track_for_enrichment.source {
-            crate::models::Source::Spotify => providers
-                .get_track(
-                    crate::models::Source::Spotify,
-                    &first_track_for_enrichment.id,
-                )
-                .await
-                .ok(),
-            crate::models::Source::Jellyfin => {
-                // Must enrich Jellyfin tracks immediately to get auth headers
-                providers
-                    .get_track(
-                        crate::models::Source::Jellyfin,
-                        &first_track_for_enrichment.id,
-                    )
-                    .await
-                    .ok()
-            }
-            _ => None,
-        }
-    } else {
-        None
-    };
-
     drop(providers); // Release providers lock
 
-    // Now set up the queue and start playback with the enriched track
+    // Set up queue and determine which track should start
     let playback = state.playback.lock().await;
 
     // Clear queue and add all tracks
@@ -265,38 +217,72 @@ pub async fn play_tracks_immediate(
 
     // Check if shuffle is enabled and determine first track index
     let info = playback.get_info().await;
+    let preserve_first = preserve_first_in_shuffle.unwrap_or(false);
     let first_track_index = if info.shuffle {
-        // Generate shuffle order that keeps the first track at position 0
-        // This ensures when a user clicks to play a specific track, that track plays first
         let queue_arc = playback.get_queue_arc();
         let mut queue = queue_arc.lock().await;
-        queue.generate_shuffle_order_keep_first();
+        if preserve_first {
+            // For play-from-track flows, keep the supplied first track first.
+            queue.generate_shuffle_order_keep_first();
+        } else {
+            // For play-all flows, start from a random track.
+            queue.generate_shuffle_order();
+        }
         queue.current_index = 0;
 
-        // If we enriched the first track, update it in the queue
-        if enriched_first_track.is_some() {
-            queue.tracks[0] = enriched_first_track.clone().unwrap();
+        if !queue.shuffle_order.is_empty() && queue.shuffle_order[0] < queue.tracks.len() {
+            queue.shuffle_order[0]
+        } else {
+            0
         }
-        drop(queue);
-        0 // Always play the first track when shuffle keeps first
     } else {
-        // If we enriched the first track, update it in the queue
-        if let Some(enriched) = &enriched_first_track {
-            let queue_arc = playback.get_queue_arc();
-            let mut queue = queue_arc.lock().await;
-            if !queue.tracks.is_empty() {
-                queue.tracks[0] = enriched.clone();
-            }
-        }
         0
     };
 
-    // Play the track (either enriched or original)
-    let track_to_play = if first_track_index == 0 {
-        enriched_first_track.unwrap_or_else(|| internal_tracks[first_track_index].clone())
+    drop(playback);
+
+    // Enrich the chosen first track before playback if needed (e.g., Jellyfin auth headers)
+    let first_track_for_enrichment = internal_tracks[first_track_index].clone();
+    let needs_enrichment = matches!(
+        first_track_for_enrichment.source,
+        Source::Spotify | Source::Jellyfin | Source::Plex
+    );
+
+    let enriched_first_track = if needs_enrichment {
+        let providers = state.providers.lock().await;
+        match first_track_for_enrichment.source {
+            Source::Spotify => providers
+                .get_track(Source::Spotify, &first_track_for_enrichment.id)
+                .await
+                .ok(),
+            Source::Jellyfin => providers
+                .get_track(Source::Jellyfin, &first_track_for_enrichment.id)
+                .await
+                .ok(),
+            Source::Plex => providers
+                .get_track(Source::Plex, &first_track_for_enrichment.id)
+                .await
+                .ok(),
+            _ => None,
+        }
     } else {
-        internal_tracks[first_track_index].clone()
+        None
     };
+
+    // Play the track (either enriched or original)
+    let track_to_play = enriched_first_track
+        .clone()
+        .unwrap_or_else(|| internal_tracks[first_track_index].clone());
+
+    // Ensure queue contains the enriched first track so subsequent playback uses it
+    let playback = state.playback.lock().await;
+    if let Some(enriched) = &enriched_first_track {
+        let queue_arc = playback.get_queue_arc();
+        let mut queue = queue_arc.lock().await;
+        if first_track_index < queue.tracks.len() {
+            queue.tracks[first_track_index] = enriched.clone();
+        }
+    }
 
     playback.play_track(track_to_play).await;
     drop(playback);

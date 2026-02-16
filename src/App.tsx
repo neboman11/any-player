@@ -82,7 +82,7 @@ export default function App() {
         setStartupMessage("Checking connected services...");
         setShowCancelButton(true); // Enable cancel from the start of auth checks
 
-        const [spotifyAuth, jellyfinAuth] = await Promise.all([
+        const [spotifyAuth, jellyfinAuth, plexAuth] = await Promise.all([
           withTimeoutAndRetry({
             promiseFactory: () =>
               tauriAPI.isSpotifyAuthenticated().catch((err) => {
@@ -125,6 +125,27 @@ export default function App() {
             },
             signal: abortControllerRef.current.signal,
           }),
+          withTimeoutAndRetry({
+            promiseFactory: () =>
+              tauriAPI.isPlexAuthenticated().catch((err) => {
+                console.error(
+                  "Error checking Plex authentication on startup:",
+                  err,
+                );
+                return false;
+              }),
+            timeoutMs: STARTUP_PROVIDER_CHECK_TIMEOUT_MS,
+            fallbackValue: false,
+            maxRetries: MAX_AUTH_RETRIES,
+            onRetry: (retryNumber) => {
+              authRetryOccurred = true;
+              if (!mountedRef.current) return;
+              setStartupMessage(
+                `Retrying authentication check (${retryNumber} of ${MAX_AUTH_RETRIES} retries)...`,
+              );
+            },
+            signal: abortControllerRef.current.signal,
+          }),
         ]);
 
         setShowCancelButton(false); // Auth checks complete, hide cancel button
@@ -136,9 +157,9 @@ export default function App() {
         }
 
         // If at least one service is connected, load all playlists
-        if (spotifyAuth || jellyfinAuth) {
+        if (spotifyAuth || jellyfinAuth || plexAuth) {
           console.log(
-            `Background-loading service playlists on startup (Spotify: ${spotifyAuth}, Jellyfin: ${jellyfinAuth})...`,
+            `Background-loading service playlists on startup (Spotify: ${spotifyAuth}, Jellyfin: ${jellyfinAuth}, Plex: ${plexAuth})...`,
           );
           if (!mountedRef.current) return;
           setStartupMessage("Syncing service playlists...");
@@ -154,14 +175,14 @@ export default function App() {
           }
         } else {
           console.log(
-            "Unable to authenticate with Spotify or Jellyfin after retries",
+            "Unable to authenticate with Spotify, Jellyfin, or Plex after retries",
           );
           // Only show retry button when auth checks actually retried/failed.
           // If no retries occurred, providers are likely just not connected yet.
           if (!abortControllerRef.current.signal.aborted && authRetryOccurred) {
             setShowRetryButton(true);
             setStartupMessage(
-              "Unable to connect to Spotify or Jellyfin. You can retry or continue without them.",
+              "Unable to connect to Spotify, Jellyfin, or Plex. You can retry or continue without them.",
             );
           } else {
             setShowRetryButton(false);

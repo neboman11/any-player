@@ -73,9 +73,9 @@ pub async fn enrich_queued_tracks_eager(
         let provider_handle = {
             let providers_lock = providers.lock().await;
             match source {
-                crate::models::Source::Spotify | crate::models::Source::Jellyfin => {
-                    providers_lock.get(source)
-                }
+                crate::models::Source::Spotify
+                | crate::models::Source::Jellyfin
+                | crate::models::Source::Plex => providers_lock.get(source),
                 _ => None,
             }
         };

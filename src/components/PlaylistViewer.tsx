@@ -9,6 +9,7 @@ import {
 import { tauriAPI } from "../api";
 import { filterTracks } from "../utils/trackFilters";
 import type { CustomPlaylist, PlaylistTrack, Playlist, Track } from "../types";
+import type { ServiceSource } from "../providerCatalog";
 import "./CustomPlaylistEditor.css";
 
 interface PlaylistViewerProps {
@@ -21,6 +22,23 @@ interface PlaylistViewerProps {
     imageUrl: string | null,
   ) => Promise<void>;
   onDelete?: () => Promise<void>;
+}
+
+// Helper function to get playlist by ID based on source
+function getPlaylistById(source: ServiceSource, id: string): Promise<Playlist> {
+  switch (source) {
+    case "spotify":
+      return tauriAPI.getSpotifyPlaylist(id);
+    case "jellyfin":
+      return tauriAPI.getJellyfinPlaylist(id);
+    case "plex":
+      return tauriAPI.getPlexPlaylist(id);
+    default: {
+      // Exhaustiveness check - this should never happen
+      const _exhaustiveCheck: never = source;
+      throw new Error(`Unknown source: ${_exhaustiveCheck}`);
+    }
+  }
 }
 
 export function PlaylistViewer({
@@ -62,10 +80,10 @@ export function PlaylistViewer({
       const loadTracks = async () => {
         setLoading(true);
         try {
-          const fullPlaylist =
-            regularPlaylist.source === "spotify"
-              ? await tauriAPI.getSpotifyPlaylist(regularPlaylist.id)
-              : await tauriAPI.getJellyfinPlaylist(regularPlaylist.id);
+          const fullPlaylist = await getPlaylistById(
+            regularPlaylist.source as ServiceSource,
+            regularPlaylist.id,
+          );
 
           setRegularTracks(fullPlaylist.tracks || []);
         } catch (err) {
@@ -86,10 +104,10 @@ export function PlaylistViewer({
       const regularPlaylist = playlist as Playlist;
       setLoading(true);
       try {
-        const fullPlaylist =
-          regularPlaylist.source === "spotify"
-            ? await tauriAPI.getSpotifyPlaylist(regularPlaylist.id)
-            : await tauriAPI.getJellyfinPlaylist(regularPlaylist.id);
+        const fullPlaylist = await getPlaylistById(
+          regularPlaylist.source as ServiceSource,
+          regularPlaylist.id,
+        );
         setRegularTracks(fullPlaylist.tracks || []);
       } catch (err) {
         console.error("Failed to reload playlist tracks:", err);

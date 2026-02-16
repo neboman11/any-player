@@ -128,6 +128,17 @@ pub fn run() {
             commands::disconnect_jellyfin,
             commands::get_jellyfin_credentials,
             commands::restore_jellyfin_session,
+            // Plex commands
+            commands::authenticate_plex,
+            commands::is_plex_authenticated,
+            commands::get_plex_playlists,
+            commands::get_plex_playlist,
+            commands::search_plex_tracks,
+            commands::search_plex_playlists,
+            commands::get_plex_recently_played,
+            commands::disconnect_plex,
+            commands::get_plex_credentials,
+            commands::restore_plex_session,
             // Search commands
             commands::search_spotify_tracks,
             // Audio commands
@@ -345,6 +356,24 @@ pub fn run() {
                 let app_state = handle_for_status.state::<commands::AppState>();
                 websocket::emit_jellyfin_status(&app_state).await;
 
+                websocket::emit_backend_init_status(
+                    &ws_sender_for_startup,
+                    "plex-restore",
+                    "Restoring Plex session...",
+                    false,
+                    true,
+                );
+
+                let plex_restored = restore_plex_provider_on_startup(providers_clone.clone()).await;
+                if plex_restored {
+                    tracing::info!("✓ Plex session restored from keyring on startup");
+                } else {
+                    tracing::info!("No cached Plex credentials found on startup");
+                }
+
+                let app_state = handle_for_status.state::<commands::AppState>();
+                websocket::emit_plex_status(&app_state).await;
+
                 // Restore playback state from disk after providers are ready
                 {
                     let playback = playback_for_restore.lock().await;
@@ -493,6 +522,42 @@ async fn restore_jellyfin_provider_on_startup(providers: Arc<Mutex<ProviderRegis
         }
         Err(_) => {
             tracing::warn!("Timed out restoring Jellyfin provider on startup");
+            false
+        }
+    }
+}
+
+async fn restore_plex_provider_on_startup(providers: Arc<Mutex<ProviderRegistry>>) -> bool {
+    use crate::config::Config;
+    use crate::providers::plex::PlexProvider;
+
+    let tokens = match Config::load_tokens() {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            tracing::warn!("Failed to load tokens while restoring Plex session: {}", e);
+            return false;
+        }
+    };
+
+    let (Some(url), Some(token)) = (tokens.plex_url, tokens.plex_token) else {
+        return false;
+    };
+
+    let mut plex_provider = PlexProvider::new(url, token);
+    let restored = timeout(Duration::from_secs(10), plex_provider.authenticate()).await;
+
+    match restored {
+        Ok(Ok(())) => {
+            let mut providers = providers.lock().await;
+            providers.register(plex_provider);
+            true
+        }
+        Ok(Err(e)) => {
+            tracing::warn!("Failed to restore Plex provider: {}", e);
+            false
+        }
+        Err(_) => {
+            tracing::warn!("Timed out restoring Plex provider on startup");
             false
         }
     }

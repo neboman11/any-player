@@ -50,6 +50,7 @@ impl PlaylistTrack {
         let source = match self.track_source.as_str() {
             "spotify" => Source::Spotify,
             "jellyfin" => Source::Jellyfin,
+            "plex" => Source::Plex,
             "custom" => Source::Custom,
             _ => Source::Spotify, // Default fallback
         };
@@ -360,6 +361,7 @@ impl Database {
         let source_str = match track.source {
             Source::Spotify => "spotify",
             Source::Jellyfin => "jellyfin",
+            Source::Plex => "plex",
             Source::Custom => "custom",
         };
 

@@ -3,6 +3,7 @@ import type { Track } from "../types";
 const SOURCE_LABELS: Record<Track["source"], string> = {
   spotify: "Spotify",
   jellyfin: "Jellyfin",
+  plex: "Plex",
   custom: "Custom",
 };
 

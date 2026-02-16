@@ -10,6 +10,7 @@ pub struct Config {
     pub general: GeneralConfig,
     pub spotify: Option<SpotifyConfig>,
     pub jellyfin: Option<JellyfinConfig>,
+    pub plex: Option<PlexConfig>,
 }
 
 /// General application settings
@@ -53,6 +54,15 @@ pub struct JellyfinConfig {
     pub user_id: Option<String>,
 }
 
+/// Plex-specific configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlexConfig {
+    /// Plex server URL (e.g., http://192.168.1.100:32400)
+    pub server_url: String,
+    /// Plex API token
+    pub token: String,
+}
+
 /// Token storage using platform-specific secure storage
 ///
 /// Uses the keyring crate which provides cross-platform secure storage:
@@ -69,6 +79,10 @@ pub struct TokenStorage {
     pub jellyfin_api_key: Option<String>,
     /// Jellyfin server URL
     pub jellyfin_url: Option<String>,
+    /// Plex API token
+    pub plex_token: Option<String>,
+    /// Plex server URL
+    pub plex_url: Option<String>,
 }
 
 impl Default for Config {
@@ -83,6 +97,7 @@ impl Default for Config {
             },
             spotify: None,
             jellyfin: None,
+            plex: None,
         }
     }
 }
@@ -168,6 +183,8 @@ impl Config {
         let spotify_entry = Entry::new("any-player", "spotify-token")?;
         let jellyfin_entry = Entry::new("any-player", "jellyfin-api-key")?;
         let jellyfin_url_entry = Entry::new("any-player", "jellyfin-url")?;
+        let plex_entry = Entry::new("any-player", "plex-token")?;
+        let plex_url_entry = Entry::new("any-player", "plex-url")?;
 
         let spotify_token = match spotify_entry.get_password() {
             Ok(json) => {
@@ -211,11 +228,35 @@ impl Config {
             }
         };
 
+        let plex_token = match plex_entry.get_password() {
+            Ok(token) => {
+                tracing::debug!("Found Plex token in keyring");
+                Some(token)
+            }
+            Err(e) => {
+                tracing::debug!("No Plex token in keyring: {}", e);
+                None
+            }
+        };
+
+        let plex_url = match plex_url_entry.get_password() {
+            Ok(url) => {
+                tracing::debug!("Found Plex URL in keyring");
+                Some(url)
+            }
+            Err(e) => {
+                tracing::debug!("No Plex URL in keyring: {}", e);
+                None
+            }
+        };
+
         // Return tokens (even if all are None)
         Ok(TokenStorage {
             spotify_token,
             jellyfin_api_key,
             jellyfin_url,
+            plex_token,
+            plex_url,
         })
     }
 
@@ -241,6 +282,8 @@ impl Config {
         let spotify_entry = Entry::new("any-player", "spotify-token")?;
         let jellyfin_entry = Entry::new("any-player", "jellyfin-api-key")?;
         let jellyfin_url_entry = Entry::new("any-player", "jellyfin-url")?;
+        let plex_entry = Entry::new("any-player", "plex-token")?;
+        let plex_url_entry = Entry::new("any-player", "plex-url")?;
 
         // Save Spotify token if present
         if let Some(ref token) = tokens.spotify_token {
@@ -273,6 +316,22 @@ impl Config {
             tracing::debug!("Deleted jellyfin URL from keyring");
         }
 
+        if let Some(ref token) = tokens.plex_token {
+            plex_entry.set_password(token)?;
+            tracing::debug!("Successfully saved Plex token to keyring");
+        } else {
+            let _ = plex_entry.delete_credential();
+            tracing::debug!("Deleted Plex token from keyring");
+        }
+
+        if let Some(ref url) = tokens.plex_url {
+            plex_url_entry.set_password(url)?;
+            tracing::debug!("Successfully saved Plex URL to keyring");
+        } else {
+            let _ = plex_url_entry.delete_credential();
+            tracing::debug!("Deleted Plex URL from keyring");
+        }
+
         Ok(())
     }
 
@@ -283,11 +342,15 @@ impl Config {
         let spotify_entry = Entry::new("any-player", "spotify-token")?;
         let jellyfin_entry = Entry::new("any-player", "jellyfin-api-key")?;
         let jellyfin_url_entry = Entry::new("any-player", "jellyfin-url")?;
+        let plex_entry = Entry::new("any-player", "plex-token")?;
+        let plex_url_entry = Entry::new("any-player", "plex-url")?;
 
         // Attempt to delete all entries (ignore errors if they don't exist)
         let _ = spotify_entry.delete_credential();
         let _ = jellyfin_entry.delete_credential();
         let _ = jellyfin_url_entry.delete_credential();
+        let _ = plex_entry.delete_credential();
+        let _ = plex_url_entry.delete_credential();
 
         Ok(())
     }
@@ -310,6 +373,8 @@ mod tests {
         assert!(storage.spotify_token.is_none());
         assert!(storage.jellyfin_api_key.is_none());
         assert!(storage.jellyfin_url.is_none());
+        assert!(storage.plex_token.is_none());
+        assert!(storage.plex_url.is_none());
     }
 
     #[test]
@@ -318,6 +383,8 @@ mod tests {
             spotify_token: None,
             jellyfin_api_key: Some("test_key".to_string()),
             jellyfin_url: Some("http://localhost:8096".to_string()),
+            plex_token: Some("test_plex_token".to_string()),
+            plex_url: Some("http://localhost:32400".to_string()),
         };
 
         // Test that we can serialize to JSON
@@ -344,6 +411,8 @@ mod tests {
             spotify_token: None,
             jellyfin_api_key: Some("test_api_key".to_string()),
             jellyfin_url: Some("http://localhost:8096".to_string()),
+            plex_token: None,
+            plex_url: None,
         };
 
         // Save tokens using keyring
@@ -378,6 +447,8 @@ mod tests {
             spotify_token: None,
             jellyfin_api_key: Some("secure_test_key_123".to_string()),
             jellyfin_url: Some("http://localhost:8096".to_string()),
+            plex_token: None,
+            plex_url: None,
         };
 
         // Save to keyring

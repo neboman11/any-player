@@ -8,6 +8,7 @@ import {
 } from "../hooks";
 import type { SearchType, TauriSource, Track } from "../types";
 import { tauriAPI } from "../api";
+import { SERVICE_PROVIDERS } from "../providerCatalog";
 
 export function Search() {
   const [searchType, setSearchType] = useState<SearchType>("tracks");
@@ -22,6 +23,10 @@ export function Search() {
   const audio = useAudioPlayback();
 
   const RESULTS_PER_PAGE = 20;
+  const sourceTabs: TauriSource[] = [
+    "all",
+    ...SERVICE_PROVIDERS.map((provider) => provider.id),
+  ];
 
   const handleSearch = useCallback(async () => {
     const query = searchInputRef.current?.value;
@@ -61,12 +66,14 @@ export function Search() {
   // Helper to normalize source to lowercase format
   const normalizeSource = (
     source: string,
-  ): "spotify" | "jellyfin" | "custom" => {
+  ): "spotify" | "jellyfin" | "plex" | "custom" => {
     switch (source.toLowerCase()) {
       case "spotify":
         return "spotify";
       case "jellyfin":
         return "jellyfin";
+      case "plex":
+        return "plex";
       case "custom":
         return "custom";
       default:
@@ -146,7 +153,7 @@ export function Search() {
           ))}
         </div>
         <div className="search-source-tabs">
-          {(["all", "spotify", "jellyfin"] as TauriSource[]).map((source) => (
+          {sourceTabs.map((source) => (
             <button
               key={source}
               className={`tab-btn ${searchSource === source ? "active" : ""}`}
