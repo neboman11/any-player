@@ -63,6 +63,8 @@ url = "2.4"
 http = "1.0"
 rand = "0.8"
 tokio-tungstenite = "0.28"
+any_player_spotify_engine = { path = "../../any-player-shared-rust/crates/any_player_spotify_engine" }
+any_player_core = { path = "../../any-player-shared-rust/crates/any_player_core" }
 
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }
