@@ -5,6 +5,7 @@ import {
   usePlexAuth,
   usePlaylists,
 } from "../hooks";
+import { save } from "@tauri-apps/plugin-dialog";
 import { ProviderStatus } from "./ProviderStatus";
 import { tauriAPI } from "../api";
 import { LoadingSpinner } from "./shared/LoadingSpinner";
@@ -149,6 +150,9 @@ export function Settings() {
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [showPlexToken, setShowPlexToken] = useState<boolean>(false);
   const [autoplay, setAutoplay] = useState<boolean>(false);
+  const [isExportingConfig, setIsExportingConfig] = useState<boolean>(false);
+  const [exportError, setExportError] = useState<string>("");
+  const [exportSuccessPath, setExportSuccessPath] = useState<string>("");
 
   const spotify = useSpotifyAuth();
   const jellyfin = useJellyfinAuth();
@@ -290,6 +294,38 @@ export function Settings() {
       }, 1000);
     }
   }, [plex, plexUrl, plexToken, clearCache, loadPlaylists]);
+
+  const handleExportConfig = useCallback(async () => {
+    setIsExportingConfig(true);
+    setExportError("");
+    setExportSuccessPath("");
+
+    try {
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const selectedPath = await save({
+        title: "Export Config",
+        defaultPath: `any-player-config-${timestamp}.json`,
+        filters: [
+          {
+            name: "JSON",
+            extensions: ["json"],
+          },
+        ],
+      });
+
+      if (!selectedPath) {
+        return;
+      }
+
+      const outputPath = await tauriAPI.exportAppConfigToPath(selectedPath);
+      setExportSuccessPath(outputPath);
+    } catch (err) {
+      console.error("Failed to export app config:", err);
+      setExportError("Failed to export config");
+    } finally {
+      setIsExportingConfig(false);
+    }
+  }, []);
 
   return (
     <section id="settings" className="page">
@@ -487,6 +523,34 @@ export function Settings() {
               Enable Autoplay
             </label>
           </div>
+        </div>
+
+        <div className="settings-section">
+          <h3>Configuration</h3>
+          <p className="section-description">
+            Export custom playlists and non-secret provider settings
+          </p>
+          <button
+            className="btn-primary"
+            onClick={handleExportConfig}
+            disabled={isExportingConfig}
+          >
+            {isExportingConfig ? "Exporting..." : "Export Config"}
+          </button>
+          {exportSuccessPath && (
+            <p
+              style={{
+                color: "green",
+                marginTop: "8px",
+                wordBreak: "break-all",
+              }}
+            >
+              Saved to: {exportSuccessPath}
+            </p>
+          )}
+          {exportError && (
+            <p style={{ color: "red", marginTop: "8px" }}>{exportError}</p>
+          )}
         </div>
 
         <ColumnPreferencesSection />

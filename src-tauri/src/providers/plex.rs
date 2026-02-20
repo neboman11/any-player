@@ -81,6 +81,67 @@ impl PlexProvider {
         url.trim_end_matches('/').to_string()
     }
 
+    fn validate_base_url(url: &str) -> Result<(), ProviderError> {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            return Err(ProviderError(
+                "Invalid Plex URL. Include http:// or https:// (for example: http://127.0.0.1:32400)"
+                    .to_string(),
+            ));
+        }
+
+        url::Url::parse(url).map_err(|_| {
+            ProviderError(
+                "Invalid Plex URL format. Check the server URL and try again.".to_string(),
+            )
+        })?;
+
+        Ok(())
+    }
+
+    fn map_connect_error(error: &reqwest::Error) -> String {
+        let raw = error.to_string();
+        let message = raw.to_lowercase();
+
+        if error.is_timeout() || message.contains("timed out") {
+            return "Timed out connecting to Plex. Check that the server URL is reachable and the server is online.".to_string();
+        }
+
+        if error.is_connect()
+            && (message.contains("dns")
+                || message.contains("name or service not known")
+                || message.contains("failed to lookup address information")
+                || message.contains("no such host"))
+        {
+            return "Could not resolve the Plex server host. Verify the URL hostname/IP and try again."
+                .to_string();
+        }
+
+        if error.is_connect() && message.contains("connection refused") {
+            return "Plex server refused the connection. Confirm the host/port and that Plex is running."
+                .to_string();
+        }
+
+        if error.is_connect() {
+            return "Could not connect to the Plex server. Check the server URL, network, and firewall settings."
+                .to_string();
+        }
+
+        format!("Failed to connect to Plex: {}", raw)
+    }
+
+    fn map_auth_status(status: reqwest::StatusCode) -> String {
+        match status.as_u16() {
+            401 | 403 => {
+                "Plex rejected the token (unauthorized). Verify your Plex token and try again."
+                    .to_string()
+            }
+            404 => {
+                "Plex server endpoint was not found. Verify the server URL and port.".to_string()
+            }
+            _ => format!("Plex authentication failed (HTTP {}).", status),
+        }
+    }
+
     fn apply_auth_request(&mut self, request: &ProviderAuthRequest) -> Result<(), ProviderError> {
         let url = request
             .get("url")
@@ -89,7 +150,10 @@ impl PlexProvider {
             .get("token")
             .ok_or_else(|| ProviderError("Missing Plex token".to_string()))?;
 
-        self.base_url = Self::normalize_base_url(url);
+        let normalized_url = Self::normalize_base_url(url);
+        Self::validate_base_url(&normalized_url)?;
+
+        self.base_url = normalized_url;
         self.token = token.to_string();
         Ok(())
     }
@@ -301,13 +365,10 @@ impl MusicProvider for PlexProvider {
             .header("Accept", "application/json")
             .send()
             .await
-            .map_err(|e| ProviderError(format!("Failed to connect to Plex: {}", e)))?;
+            .map_err(|e| ProviderError(Self::map_connect_error(&e)))?;
 
         if !response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Plex authentication failed: HTTP {}",
-                response.status()
-            )));
+            return Err(ProviderError(Self::map_auth_status(response.status())));
         }
 
         self.authenticated = true;

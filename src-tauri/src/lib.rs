@@ -81,6 +81,7 @@ pub fn run() {
     let ws_sender_for_state = ws_sender.clone();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             // Playback commands
@@ -162,6 +163,9 @@ pub fn run() {
             commands::remove_source_from_union_playlist,
             commands::reorder_union_playlist_sources,
             commands::get_union_playlist_tracks,
+            commands::export_app_config,
+            commands::export_app_config_to_file,
+            commands::export_app_config_to_path,
             // Cache commands
             commands::write_playlists_cache,
             commands::read_playlists_cache,

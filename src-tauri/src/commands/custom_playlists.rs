@@ -3,8 +3,42 @@ use crate::commands::AppState;
 use crate::database::{ColumnPreferences, CustomPlaylist, PlaylistTrack, UnionPlaylistSource};
 use crate::models::Track;
 use crate::Source;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use tauri::State;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportConfigPayload {
+    pub export_version: u32,
+    pub provider_configs: ExportProviderConfigs,
+    pub custom_playlists: Vec<ExportCustomPlaylist>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportProviderConfigs {
+    pub spotify: ExportSpotifyConfig,
+    pub jellyfin: ExportServerConfig,
+    pub plex: ExportServerConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportSpotifyConfig {
+    pub client_id: Option<String>,
+    pub redirect_uri: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportServerConfig {
+    pub base_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportCustomPlaylist {
+    pub playlist: CustomPlaylist,
+    pub tracks: Vec<PlaylistTrack>,
+    pub union_sources: Vec<UnionPlaylistSource>,
+}
 
 fn provider_source_from_str(source_type: &str) -> Option<Source> {
     match source_type.to_lowercase().as_str() {
@@ -169,6 +203,121 @@ pub async fn get_custom_playlist(
     let db = state.database.lock().await;
     db.get_playlist(&playlist_id)
         .map_err(|e| format!("Failed to get playlist: {}", e))
+}
+
+#[tauri::command]
+pub async fn export_app_config(state: State<'_, AppState>) -> Result<ExportConfigPayload, String> {
+    let config =
+        crate::config::Config::load().map_err(|e| format!("Failed to load config: {}", e))?;
+    let tokens = crate::config::Config::load_tokens()
+        .map_err(|e| format!("Failed to load provider tokens: {}", e))?;
+
+    let provider_configs = ExportProviderConfigs {
+        spotify: ExportSpotifyConfig {
+            client_id: config
+                .spotify
+                .as_ref()
+                .and_then(|spotify| spotify.client_id.clone()),
+            redirect_uri: config
+                .spotify
+                .as_ref()
+                .and_then(|spotify| spotify.redirect_uri.clone()),
+        },
+        jellyfin: ExportServerConfig {
+            base_url: tokens.jellyfin_url,
+        },
+        plex: ExportServerConfig {
+            base_url: tokens.plex_url,
+        },
+    };
+
+    let custom_playlists = {
+        let db = state.database.lock().await;
+        let playlists = db
+            .get_all_playlists()
+            .map_err(|e| format!("Failed to get playlists for export: {}", e))?;
+
+        let mut exported = Vec::with_capacity(playlists.len());
+        for playlist in playlists {
+            let tracks = db
+                .get_playlist_tracks(&playlist.id)
+                .map_err(|e| format!("Failed to get playlist tracks for export: {}", e))?;
+            let union_sources = if playlist.playlist_type == "union" {
+                db.get_union_playlist_sources(&playlist.id).map_err(|e| {
+                    format!("Failed to get union playlist sources for export: {}", e)
+                })?
+            } else {
+                Vec::new()
+            };
+
+            exported.push(ExportCustomPlaylist {
+                playlist,
+                tracks,
+                union_sources,
+            });
+        }
+
+        exported
+    };
+
+    Ok(ExportConfigPayload {
+        export_version: 1,
+        provider_configs,
+        custom_playlists,
+    })
+}
+
+#[tauri::command]
+pub async fn export_app_config_to_file(state: State<'_, AppState>) -> Result<String, String> {
+    let payload = export_app_config(state).await?;
+    let content = serde_json::to_string_pretty(&payload)
+        .map_err(|e| format!("Failed to serialize export payload: {}", e))?;
+
+    let export_dir = dirs::download_dir()
+        .or_else(dirs::document_dir)
+        .or_else(|| std::env::current_dir().ok())
+        .ok_or_else(|| "Unable to resolve export directory".to_string())?;
+
+    let date = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let base_name = format!("any-player-config-{}.json", date);
+    let mut export_path = export_dir.join(&base_name);
+
+    let mut suffix = 1;
+    while export_path.exists() {
+        export_path = export_dir.join(format!("any-player-config-{}-{}.json", date, suffix));
+        suffix += 1;
+    }
+
+    std::fs::write(&export_path, content)
+        .map_err(|e| format!("Failed to write export file: {}", e))?;
+
+    Ok(export_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn export_app_config_to_path(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<String, String> {
+    let trimmed_path = path.trim();
+    if trimmed_path.is_empty() {
+        return Err("Export path cannot be empty".to_string());
+    }
+
+    let payload = export_app_config(state).await?;
+    let content = serde_json::to_string_pretty(&payload)
+        .map_err(|e| format!("Failed to serialize export payload: {}", e))?;
+
+    let export_path = PathBuf::from(trimmed_path);
+    if let Some(parent) = export_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to prepare export directory: {}", e))?;
+    }
+
+    std::fs::write(&export_path, content)
+        .map_err(|e| format!("Failed to write export file: {}", e))?;
+
+    Ok(export_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]

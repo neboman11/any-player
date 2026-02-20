@@ -11,6 +11,7 @@ import type {
   PlaylistTrack,
   ColumnPreferences,
   UnionPlaylistSource,
+  ExportConfigPayload,
 } from "./types";
 
 declare global {
@@ -498,6 +499,18 @@ export class TauriAPI {
 
   async restorePlaybackState(): Promise<void> {
     return invoke("restore_playback_state");
+  }
+
+  async exportAppConfig(): Promise<ExportConfigPayload> {
+    return invoke("export_app_config");
+  }
+
+  async exportAppConfigToFile(): Promise<string> {
+    return invoke("export_app_config_to_file");
+  }
+
+  async exportAppConfigToPath(path: string): Promise<string> {
+    return invoke("export_app_config_to_path", { path });
   }
 }
 

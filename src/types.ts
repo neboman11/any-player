@@ -81,6 +81,33 @@ export interface ColumnPreferences {
   column_widths: Record<string, number>;
 }
 
+export interface ExportServerConfig {
+  base_url: string | null;
+}
+
+export interface ExportSpotifyConfig {
+  client_id: string | null;
+  redirect_uri: string | null;
+}
+
+export interface ExportProviderConfigs {
+  spotify: ExportSpotifyConfig;
+  jellyfin: ExportServerConfig;
+  plex: ExportServerConfig;
+}
+
+export interface ExportCustomPlaylist {
+  playlist: CustomPlaylist;
+  tracks: PlaylistTrack[];
+  union_sources: UnionPlaylistSource[];
+}
+
+export interface ExportConfigPayload {
+  export_version: number;
+  provider_configs: ExportProviderConfigs;
+  custom_playlists: ExportCustomPlaylist[];
+}
+
 export interface SearchResult {
   id: string;
   name: string;

@@ -19,6 +19,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2.10", default-features = true, features = ["rustls-tls"] }
+tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -29,10 +30,19 @@ tokio = { version = "1", features = ["full"] }
 
 # Spotify integration - rspotify for Web API, librespot for full song streaming
 rspotify = "0.12"
-librespot-core = "0.8"
-librespot-playback = { version = "0.8.0", features = ["native-tls"] }
-librespot-connect = "0.8"
-librespot-oauth = "0.8"
+librespot-core = { version = "0.8", default-features = false, features = [
+    "rustls-tls-webpki-roots",
+] }
+librespot-playback = { version = "0.8.0", default-features = false, features = [
+    "rodio-backend",
+    "rustls-tls-webpki-roots",
+] }
+librespot-connect = { version = "0.8", default-features = false, features = [
+    "rustls-tls-webpki-roots",
+] }
+librespot-oauth = { version = "0.8", default-features = false, features = [
+    "rustls-tls-webpki-roots",
+] }
 
 # HTTP and async
 reqwest = { version = "0.11", features = ["json", "blocking"] }
