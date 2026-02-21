@@ -1,267 +1,107 @@
 # Contributing to Any Player
 
-We welcome contributions! This guide will help you understand our development workflow, coding standards, and testing practices.
+Thanks for helping improve Any Player. This guide covers the current development workflow, quality checks, and contribution expectations for this repo.
 
-## Getting Started
+## Before you start
 
-Before contributing:
+1. Read [README.md](README.md) for setup and app overview.
+2. Read [copilot-instructions.md](.github/copilot/copilot-instructions.md) for repository-specific coding rules.
+3. Install Tauri prerequisites for your OS: https://tauri.app/start/prerequisites/
 
-1. **Read the Documentation** - Familiarize yourself with [copilot-instructions.md](.github/copilot/copilot-instructions.md)
-2. **Set up your development environment** - Follow the installation steps in the README
-
-## Development Workflow
-
-### Version Control
-
-- Follow Semantic Versioning (currently 0.1.0)
-- Versions synchronized between `package.json` and `Cargo.toml`
-- Use Git for version control
-
-### Branching Strategy
-
-- Development happens on feature branches
-- Main branch contains stable code
-- Follow conventional commit messages
-
-### Making Changes
-
-1. Create a feature branch from main
-2. Make changes following coding standards
-3. Test thoroughly (unit tests + manual testing)
-4. Submit pull request for review
-5. Merge after approval
-
-## Coding Standards
-
-### Rust (Backend)
-
-#### Naming Conventions
-
-- `snake_case` for functions, variables, modules
-- `PascalCase` for types and traits
-- `SCREAMING_SNAKE_CASE` for constants
-
-#### Code Organization
-
-- Keep functions focused on single responsibilities
-- Use the `MusicProvider` trait for all provider implementations
-- Place business logic in separate modules (models, providers, playback)
-- Expose public APIs through `mod.rs` files
-
-#### Error Handling
-
-- Use `Result<T, E>` for all fallible operations
-- Use `anyhow::Result` in command handlers
-- Create custom error types (e.g., `ProviderError`) for domain errors
-- Use `?` operator for error propagation
-
-#### State Management
-
-- Use `Arc<Mutex<T>>` for shared mutable state
-- Keep lock duration minimal to avoid deadlocks
-- Use `tokio::sync::Mutex` for async code
-
-#### Logging
-
-- Use `tracing` crate with appropriate levels
-- Include context in log messages
-- Log security-relevant events
-
-#### Documentation
-
-- Use `///` comments for public items
-- Document module purpose at the top of each file
-- Include examples for complex public APIs
-- Document error conditions and panics
-- Follow the documentation style in [config/mod.rs](src-tauri/src/config/mod.rs) and [models/mod.rs](src-tauri/src/models/mod.rs)
-
-### TypeScript/React (Frontend)
-
-#### Naming Conventions
-
-- `camelCase` for variables and functions
-- `PascalCase` for types, interfaces, and React components
-- Prefix custom hooks with `use` (e.g., `usePlayback`)
-
-#### Component Structure
-
-- Use functional components exclusively
-- Use hooks for state management
-- Memoize expensive computations with `useMemo`
-- Memoize callbacks with `useCallback`
-- Keep components focused and single-purpose
-
-#### Type Safety
-
-- Define all types in [types.ts](src/types.ts)
-- Match Rust backend types exactly
-- Use `interface` for object shapes
-- Use `type` for unions and complex types
-
-#### API Communication
-
-- Use `TauriAPI` class from [api.ts](src/api.ts)
-- All backend calls through `invoke` from `@tauri-apps/api/core`
-- Handle errors with try-catch and log to console
-
-#### Documentation
-
-- Use JSDoc comments (`/** */`) for exported functions and classes
-- Document function parameters and return types
-- Include examples for complex APIs
-- Follow the documentation style in [api.ts](src/api.ts)
-
-## Testing
-
-### Unit Testing (Rust)
-
-Tests are placed in `#[cfg(test)]` modules at the end of each source file.
-
-#### Naming Convention
-
-```rust
-test_<function_name>_<scenario>
-```
-
-#### Test Types
-
-- `#[test]` for synchronous tests
-- `#[tokio::test]` for async tests
-
-#### Best Practices
-
-- Test both success and error paths
-- Mock external dependencies
-- Use descriptive test names
-- Test error handling explicitly
-
-#### Example
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_restore_spotify_session_no_cache_or_tokens() {
-        // Test implementation
-    }
-}
-```
-
-### Integration Testing
-
-- Test complete command flows from frontend to backend
-- Verify state management across components
-- Test provider integrations with mock servers
-
-### Running Tests
+## Development setup
 
 ```bash
-# Run Rust tests
-cd src-tauri
-cargo test
-
-# Run TypeScript tests (if configured)
-pnpm test
+pnpm install
 ```
 
-## Architecture Guidelines
+Run the desktop app:
 
-### Maintain Separation of Concerns
+```bash
+pnpm tauri dev
+```
 
-- Backend handles all business logic, authentication, and audio playback
-- Frontend handles UI and user interaction
-- All communication through Tauri commands
+Frontend-only mode (optional):
 
-### Provider Implementation
+```bash
+pnpm dev
+```
 
-- New providers must implement the `MusicProvider` trait
-- Register providers with ProviderRegistry
-- Store provider-specific state in the provider implementation
-- Use `async_trait` for async trait methods
-- Return `ProviderError` for domain-specific errors
+## Recommended contributor workflow
 
-### State Management
+1. Create a feature branch.
+2. Keep changes scoped to one purpose per PR.
+3. Run the checks below before opening a PR.
+4. Update docs when user-visible behavior or developer workflow changes.
+5. Open a PR with a clear description, validation steps, and screenshots/GIFs for UI changes.
 
-- **Backend**: Use `Arc<Mutex<T>>` for shared state across async tasks
-- **Frontend**: Use React hooks (useState, useEffect) for component state
-- Custom hooks should encapsulate related state and logic
+## Quality checks
 
-## Security Guidelines
+Run these before submitting:
 
-- **Never** store credentials in plaintext
-- Use keyring crate for secure token storage
-- Validate all user inputs in Tauri commands
-- Use parameterized queries for any database operations
-- Follow OAuth 2.0 best practices for authentication flows
-- Log security-relevant events using tracing crate
+```bash
+pnpm lint
+cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
+cd src-tauri && cargo test
+```
 
-## Version Compatibility
+Notes:
+- There is currently no standard `pnpm test` script in this repo.
+- Manual validation is expected for UI, provider auth flows, and playback behavior.
 
-When contributing, respect the exact versions of languages, frameworks, and libraries:
+## Project architecture (current)
 
-### Language Versions
+- Frontend (`src/`): React pages/components, hooks, and typed Tauri API wrappers.
+- Backend (`src-tauri/src/`): Tauri commands, provider integrations, playback engine, cache/state, and SQLite persistence.
+- App communication: frontend uses typed invokes in `src/api.ts`; backend exposes commands under `src-tauri/src/commands/`.
 
-- **Rust**: Edition 2021 (never use features beyond edition 2021)
-- **TypeScript**: ~5.6.2 (never use features beyond TypeScript 5.6.2)
-- **ECMAScript**: ES2020 target (never use features beyond ES2020)
+## Coding guidelines
 
-### Framework Versions
+### Rust
+- Use `snake_case` for functions/modules/variables and `PascalCase` for types.
+- Prefer focused modules (`commands`, `providers`, `playback`, `database`, `state`).
+- Return explicit errors; propagate with `?` and include context in messages.
+- Keep async lock scopes tight (`Arc<Mutex<T>>`) to reduce contention.
+- Use `tracing` for operationally useful logs.
 
-- **Tauri**: Version 2
-- **React**: ^18.3.1
-- **Vite**: ^6.0.3
-- **Tokio**: Version 1 with full features
+### TypeScript/React
+- Use `camelCase` for variables/functions and `PascalCase` for components/types.
+- Keep components functional and hook-based.
+- Put shared contracts in `src/types.ts` and keep them aligned with backend payloads.
+- Route backend calls through `src/api.ts` (avoid ad hoc `invoke` usage in components).
+- Favor small, composable hooks for auth/playback/playlist/search logic.
 
-### Key Libraries
+### General
+- Match existing patterns before introducing new abstractions.
+- Avoid unrelated refactors in feature/fix PRs.
+- Keep naming and folder placement consistent with nearby code.
 
-Respect version constraints when generating code:
+## Security & data handling
 
-**Rust Backend:**
-- rspotify: 0.12
-- librespot-\*: 0.8.0
-- rodio: 0.17
-- symphonia: 0.5
-- reqwest: 0.11
-- serde/serde_json: 1.x
-- tokio: 1.x
-- tracing/tracing-subscriber: 0.1/0.3
-- anyhow: 1.0
-- keyring: 3.6
+- Never commit secrets or provider tokens.
+- Do not store credentials in plaintext; preserve existing secure storage patterns.
+- Validate and sanitize user-provided values in command handlers.
+- Preserve safe handling of exported configuration/state payloads.
 
-**TypeScript Frontend:**
-- @tauri-apps/api: ^2
-- @tauri-apps/plugin-opener: ^2
-- @vitejs/plugin-react: ^4.3.4
+## Documentation expectations
 
-## Code Consistency
+Update relevant docs when behavior changes:
+- [README.md](README.md) for user/developer workflows and feature scope.
+- [docs/android-companion-implementation-spec.md](docs/android-companion-implementation-spec.md) for Android companion scope/contracts (when applicable).
+- Inline doc comments for non-obvious logic in Rust/TypeScript modules.
 
-When contributing:
+## Pull request checklist
 
-1. **Always** scan for similar existing code first
-2. **Match** the patterns, style, and conventions of existing code
-3. **Prioritize** consistency with this codebase over general best practices
-4. **Never** introduce new patterns without finding precedent in the existing code
-5. **Respect** the established architecture and boundaries
-6. **Use** only language and framework features available in the detected versions
+- [ ] Changes are scoped and follow existing architecture.
+- [ ] `pnpm lint` passes.
+- [ ] `cargo clippy --all-targets --all-features -- -D warnings` passes.
+- [ ] Relevant `cargo test` checks pass.
+- [ ] Manual verification completed for affected flows.
+- [ ] Docs updated if behavior/workflow changed.
 
-## Pull Request Process
+## Questions
 
-1. Ensure your code follows all coding standards
-2. Add or update tests as needed
-3. Update documentation if you're changing functionality
-4. Ensure all tests pass (`cargo test` and `pnpm test`)
-5. Write a clear PR description explaining your changes
-6. Reference any related issues
-7. Wait for code review and address feedback
+- Open an issue for discussion.
+- Reference existing patterns in the codebase and docs.
+- Ask maintainers in the PR thread when design tradeoffs are unclear.
 
-## Questions?
-
-If you have questions about contributing, please:
-
-- Review the [copilot-instructions.md](.github/copilot/copilot-instructions.md) for detailed guidance
-- Open an issue for discussion
-- Reach out to maintainers
-
-Thank you for contributing to Any Player!
+Thanks again for contributing.
