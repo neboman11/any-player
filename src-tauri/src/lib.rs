@@ -269,12 +269,12 @@ pub fn run() {
 
                 let restored = restore_spotify_provider_on_startup(providers_clone.clone()).await;
                 if restored {
-                    tracing::info!("✓ Spotify session restored from cache on startup");
+                    tracing::info!("✓ Spotify provider auth restored from cache on startup");
                 } else {
-                    tracing::info!("No cached Spotify session found on startup");
+                    tracing::info!("No cached Spotify provider auth found on startup");
                 }
 
-                // Auto-initialize session for premium users without holding the providers lock
+                // Warm up Spotify playback state for premium users without holding the providers lock
                 if restored {
                     let (is_premium, access_token) = {
                         let providers = providers_clone.lock().await;
@@ -288,12 +288,12 @@ pub fn run() {
                         websocket::emit_backend_init_status(
                             &ws_sender_for_startup,
                             "spotify-session",
-                            "Initializing Spotify playback session...",
+                            "Initializing Spotify playback warm-up state...",
                             false,
                             true,
                         );
 
-                        tracing::info!("Auto-initializing Spotify session for premium user");
+                        tracing::info!("Auto-initializing Spotify playback warm-up for premium user");
 
                         let init_result = timeout(Duration::from_secs(12), async {
                             let playback = playback_for_restore.lock().await;
@@ -305,31 +305,31 @@ pub fn run() {
                             Ok(Ok(())) => {
                                 let playback = playback_for_restore.lock().await;
                                 if playback.is_spotify_session_ready().await {
-                                    tracing::info!("✓ Spotify session auto-initialized and ready");
+                                    tracing::info!("✓ Spotify playback warm-up initialized and ready");
                                 } else {
-                                    tracing::warn!("Session initialized but not verified as ready");
+                                    tracing::warn!("Spotify warm-up initialized but not verified as ready");
                                 }
                             }
                             Ok(Err(e)) => {
-                                tracing::warn!("Failed to auto-initialize session: {}", e);
+                                tracing::warn!("Failed to auto-initialize Spotify warm-up state: {}", e);
                                 has_failures = true;
                                 websocket::emit_backend_init_status(
                                     &ws_sender_for_startup,
                                     "spotify-session",
-                                    &format!("Failed to initialize Spotify session: {}", e),
+                                    &format!("Failed to initialize Spotify playback warm-up: {}", e),
                                     false,
                                     false,
                                 );
                             }
                             Err(_) => {
                                 tracing::warn!(
-                                    "Timed out while auto-initializing Spotify session on startup"
+                                    "Timed out while auto-initializing Spotify playback warm-up on startup"
                                 );
                                 has_failures = true;
                                 websocket::emit_backend_init_status(
                                     &ws_sender_for_startup,
                                     "spotify-session",
-                                    "Spotify session initialization timed out",
+                                    "Spotify playback warm-up initialization timed out",
                                     false,
                                     false,
                                 );

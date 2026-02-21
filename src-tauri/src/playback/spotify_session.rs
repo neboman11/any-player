@@ -1,4 +1,4 @@
-/// Spotify librespot session management.
+/// Spotify playback warm-up session management.
 use std::sync::Arc;
 
 use any_player_spotify_engine::{
@@ -10,6 +10,32 @@ use librespot_core::authentication::Credentials;
 use librespot_core::cache::Cache;
 use librespot_core::config::SessionConfig;
 use librespot_core::session::Session;
+
+pub(crate) async fn connect_librespot_session(
+    access_token: &str,
+    reconnect_credentials: bool,
+) -> Result<Session, SpotifyEngineError> {
+    let session_config = SessionConfig::default();
+    let credentials = Credentials::with_access_token(access_token.to_string());
+    let cache = Cache::new::<&std::path::Path>(None, None, None, None).map_err(|error| {
+        SpotifyEngineError::new(
+            "spotify_cache_create_failed",
+            format!("Failed to create librespot cache: {}", error),
+        )
+    })?;
+    let session = Session::new(session_config, Some(cache));
+
+    Session::connect(&session, credentials, reconnect_credentials)
+        .await
+        .map_err(|error| {
+            SpotifyEngineError::new(
+                "spotify_session_connect_failed",
+                format!("Failed to initialize librespot session: {:?}", error),
+            )
+        })?;
+
+    Ok(session)
+}
 
 #[derive(Clone, Default)]
 struct DesktopLibrespotBackend;
@@ -28,26 +54,7 @@ impl SpotifySessionBackend for DesktopLibrespotBackend {
             config.client_id.len()
         );
 
-        let session_config = SessionConfig::default();
-        let credentials = Credentials::with_access_token(access_token.to_string());
-        let cache = Cache::new::<&std::path::Path>(None, None, None, None).map_err(|error| {
-            SpotifyEngineError::new(
-                "spotify_cache_create_failed",
-                format!("Failed to create librespot cache: {}", error),
-            )
-        })?;
-        let session = Session::new(session_config, Some(cache));
-
-        Session::connect(&session, credentials, true)
-            .await
-            .map_err(|error| {
-                SpotifyEngineError::new(
-                    "spotify_session_connect_failed",
-                    format!("Failed to initialize librespot session: {:?}", error),
-                )
-            })?;
-
-        Ok(session)
+        connect_librespot_session(access_token, true).await
     }
 
     async fn disconnect(&self, session: &Self::SessionHandle) -> Result<(), SpotifyEngineError> {
@@ -70,12 +77,12 @@ impl SpotifySessionManager {
         }
     }
 
-    /// Check if session is initialized.
+    /// Check if warm-up state is initialized.
     pub async fn is_initialized(&self) -> bool {
         self.engine.is_ready().await
     }
 
-    /// Initialize session with OAuth access token.
+    /// Initialize warm-up state with OAuth access token.
     pub async fn initialize_with_oauth_token(&self, access_token: &str) -> Result<(), String> {
         tracing::info!("SpotifySessionManager: Starting session initialization with OAuth token");
         self.engine
@@ -89,12 +96,12 @@ impl SpotifySessionManager {
         self.engine.access_token().await
     }
 
-    /// Retrieve a clone of the connected librespot session, if available.
+    /// Retrieve a clone of the connected session handle, if available.
     pub async fn get_session(&self) -> Option<Session> {
         self.engine.session_handle().await
     }
 
-    /// Close and cleanup the session.
+    /// Close and cleanup warm-up session state.
     pub async fn close_session(&self) -> Result<(), String> {
         self.engine.close().await.map_err(|error| error.to_string())
     }

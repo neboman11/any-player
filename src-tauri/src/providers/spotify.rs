@@ -374,7 +374,7 @@ impl SpotifyProvider {
     /// Get the current access token for Spotify API
     ///
     /// Returns a placeholder access token if authenticated.
-    /// This token can be used to initialize the librespot session for premium users.
+    /// This token can be used to initialize Spotify playback warm-up state and shared-engine playback.
     /// Note: In a production implementation, we'd need to extract the actual token from rspotify's internal state.
     pub async fn get_access_token(&self) -> Option<String> {
         // Return cached token if we stored it during authentication
@@ -432,7 +432,7 @@ impl SpotifyProvider {
     /// Refresh the OAuth token if needed
     ///
     /// In a production implementation, this would refresh the token with Spotify's API
-    /// and notify the playback manager to reinitialize the session if needed.
+    /// and notify the playback manager to refresh playback warm-up state if needed.
     /// For now, this is a placeholder that logs the intention.
     pub async fn refresh_token(&mut self) -> Result<(), ProviderError> {
         // TODO: Implement actual token refresh when rspotify provides refresh capability
@@ -440,7 +440,7 @@ impl SpotifyProvider {
         // 1. Check if token is expired
         // 2. Request new token from Spotify
         // 3. Update internal client with new token
-        // 4. Return new token for session reinitialization
+        // 4. Return new token for playback warm-up refresh
 
         tracing::debug!("Spotify token refresh called (placeholder)");
         Ok(())

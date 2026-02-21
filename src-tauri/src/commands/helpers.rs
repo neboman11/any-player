@@ -131,8 +131,8 @@ pub async fn enrich_queued_tracks_eager(
     );
 }
 
-/// Helper function to initialize Spotify session for premium users
-/// Consolidates the duplicated logic from authenticate_spotify and check_oauth_code
+/// Helper function to warm up Spotify playback state when available.
+/// Consolidates shared post-auth logic used by multiple command entrypoints.
 pub async fn initialize_premium_session_if_needed(state: &AppState) -> Result<(), String> {
     let providers = state.providers.lock().await;
 
@@ -141,7 +141,7 @@ pub async fn initialize_premium_session_if_needed(state: &AppState) -> Result<()
         .await
     {
         Some(true) => {
-            tracing::info!("User is Spotify Premium - initializing session");
+            tracing::info!("User is Spotify Premium - warming Spotify playback state");
 
             if let Some(access_token) = providers
                 .get_access_token(crate::models::Source::Spotify)
@@ -155,20 +155,18 @@ pub async fn initialize_premium_session_if_needed(state: &AppState) -> Result<()
 
                 let playback = state.playback.lock().await;
 
-                tracing::info!("Initializing Spotify session with token");
+                tracing::info!("Initializing Spotify playback warm-up state with token");
                 playback.initialize_spotify_session(&access_token).await?;
 
                 if playback.is_spotify_session_ready().await {
-                    tracing::info!("✓ Spotify session successfully initialized for premium user");
+                    tracing::info!("✓ Spotify playback warm-up state initialized");
                 } else {
-                    tracing::warn!("Session initialization completed but not verified as ready");
+                    tracing::warn!("Warm-up call completed but readiness check did not pass");
                 }
 
                 Ok(())
             } else {
-                tracing::error!(
-                    "Could not retrieve Spotify access token for session initialization"
-                );
+                tracing::error!("Could not retrieve Spotify access token for playback warm-up");
                 Err("Failed to retrieve access token".to_string())
             }
         }

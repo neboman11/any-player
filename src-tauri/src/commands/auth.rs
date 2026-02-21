@@ -38,7 +38,7 @@ pub async fn authenticate_spotify(state: State<'_, AppState>, code: String) -> R
 
     tracing::info!("Spotify authentication successful");
 
-    // Initialize session for premium users
+    // Warm Spotify playback state for premium users when possible
     super::helpers::initialize_premium_session_if_needed(&state).await?;
 
     crate::websocket::emit_spotify_status(&state).await;
@@ -67,10 +67,9 @@ pub async fn check_spotify_premium(state: State<'_, AppState>) -> Result<bool, S
         .ok_or_else(|| "Spotify not authenticated".to_string())
 }
 
-/// Initialize Spotify session for premium track streaming
+/// Initialize Spotify playback warm-up state from an access token.
 ///
-/// This should be called after successful Spotify authentication to enable
-/// full track streaming for premium users via librespot.
+/// Kept for compatibility with existing frontend flows and startup restore.
 #[tauri::command]
 pub async fn initialize_spotify_session(
     state: State<'_, AppState>,
@@ -85,9 +84,9 @@ pub async fn initialize_spotify_session(
     Ok(())
 }
 
-/// Initialize Spotify session using the stored provider access token
+/// Initialize Spotify warm-up state using the stored provider access token.
 /// This convenience command lets the frontend ask the backend to initialize
-/// the librespot session using the provider-managed OAuth token, avoiding
+/// playback warm-up state using the provider-managed OAuth token, avoiding
 /// the need for the frontend to pass the token value across IPC.
 #[tauri::command]
 pub async fn initialize_spotify_session_from_provider(
@@ -100,7 +99,7 @@ pub async fn initialize_spotify_session_from_provider(
         playback
             .initialize_spotify_session(&access_token)
             .await
-            .map_err(|e| format!("Failed to initialize session: {}", e))?;
+            .map_err(|e| format!("Failed to initialize Spotify warm-up state: {}", e))?;
         drop(playback);
 
         crate::websocket::emit_spotify_status(&state).await;
@@ -111,17 +110,17 @@ pub async fn initialize_spotify_session_from_provider(
     }
 }
 
-/// Check if Spotify session is initialized and ready for playback
+/// Check if Spotify warm-up state is initialized and ready.
 #[tauri::command]
 pub async fn is_spotify_session_ready(state: State<'_, AppState>) -> Result<bool, String> {
     let playback = state.playback.lock().await;
     Ok(playback.is_spotify_session_ready().await)
 }
 
-/// Refresh Spotify OAuth token and reinitialize session if needed
+/// Refresh Spotify OAuth token and reinitialize warm-up state if needed.
 ///
 /// Called periodically or when token expires to maintain active authentication
-/// and session state for premium playback features.
+/// and playback readiness metadata.
 #[tauri::command]
 pub async fn refresh_spotify_token(state: State<'_, AppState>) -> Result<(), String> {
     let mut providers = state.providers.lock().await;
@@ -130,17 +129,20 @@ pub async fn refresh_spotify_token(state: State<'_, AppState>) -> Result<(), Str
         .await
         .map_err(|e| format!("Failed to refresh Spotify token: {}", e))?;
 
-    // If token was refreshed and user is premium, reinitialize session
+    // If token was refreshed and user is premium, refresh warm-up state
     if let Some(true) = providers.premium_status(Source::Spotify).await {
         if let Some(access_token) = providers.get_access_token(Source::Spotify).await {
             drop(providers); // Release providers lock
             let playback = state.playback.lock().await;
             match playback.initialize_spotify_session(&access_token).await {
                 Ok(()) => {
-                    tracing::info!("Spotify session reinitialized after token refresh");
+                    tracing::info!("Spotify warm-up state reinitialized after token refresh");
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to reinitialize session after token refresh: {}", e);
+                    tracing::warn!(
+                        "Failed to reinitialize Spotify warm-up state after token refresh: {}",
+                        e
+                    );
                 }
             }
             drop(playback);
@@ -175,7 +177,7 @@ pub async fn check_oauth_code(state: State<'_, AppState>) -> Result<bool, String
 
         tracing::info!("Provider authentication succeeded");
 
-        // Initialize session for premium users
+        // Warm Spotify playback state for premium users when possible
         super::helpers::initialize_premium_session_if_needed(&state).await?;
 
         crate::websocket::emit_spotify_status(&state).await;
