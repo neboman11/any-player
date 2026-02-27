@@ -542,7 +542,7 @@ impl AudioPlayer {
         const MIN_SAMPLES: usize = 4_096;
         const MAX_SAMPLES: usize = 44_100 * 2 * 6;
 
-        let decoder = match Decoder::new(Cursor::new(bytes.to_vec())) {
+        let decoder = match Decoder::new(Cursor::new(bytes)) {
             Ok(decoder) => decoder,
             Err(error) => {
                 tracing::warn!("Failed to decode track for loudness analysis: {}", error);
@@ -645,7 +645,7 @@ impl AudioPlayer {
                 if skip_heavy_analysis {
                     1.0
                 } else {
-                    Self::compute_track_normalization_gain(bytes.as_ref(), 100)
+                    Self::compute_track_normalization_gain(bytes.as_ref(), normalize_target)
                 }
             }
         } else {
@@ -2467,6 +2467,19 @@ impl PlaybackManager {
 
                         match request.send().await {
                             Ok(response) if response.status().is_success() => {
+                                // Skip preload if Content-Length exceeds 50 MB to avoid OOM
+                                const MAX_PRELOAD_BYTES: u64 = 50 * 1024 * 1024;
+                                if response
+                                    .content_length()
+                                    .is_some_and(|len| len > MAX_PRELOAD_BYTES)
+                                {
+                                    tracing::debug!(
+                                        "Skipping preload for {} - Content-Length exceeds {} bytes",
+                                        track.id,
+                                        MAX_PRELOAD_BYTES
+                                    );
+                                    continue;
+                                }
                                 match response.bytes().await {
                                     Ok(bytes) => {
                                         let bytes_vec = bytes.to_vec();
@@ -2479,7 +2492,7 @@ impl PlaybackManager {
                                             } else {
                                                 Some(AudioPlayer::compute_track_normalization_gain(
                                                     bytes_vec.as_ref(),
-                                                    100,
+                                                    normalization.target,
                                                 ))
                                             }
                                         } else {

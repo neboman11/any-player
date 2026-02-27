@@ -25,4 +25,16 @@ describe("syncHelpers", () => {
       "ws://sync.local:9000/v1/ws",
     );
   });
+
+  it("passes through wss targets unchanged", () => {
+    expect(toWebSocketUrl("wss://sync.example.com")).toBe(
+      "wss://sync.example.com/v1/ws",
+    );
+  });
+
+  it("passes through ws targets unchanged", () => {
+    expect(toWebSocketUrl("ws://localhost:9000")).toBe(
+      "ws://localhost:9000/v1/ws",
+    );
+  });
 });
