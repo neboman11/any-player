@@ -284,7 +284,7 @@ pub async fn export_app_config(state: State<'_, AppState>) -> Result<ExportConfi
 
 #[tauri::command]
 pub async fn export_app_config_to_file(state: State<'_, AppState>) -> Result<String, String> {
-    let payload = export_app_config(state).await?;
+    let payload: ExportConfigPayload = export_app_config(state).await?;
     let content = serde_json::to_string_pretty(&payload)
         .map_err(|e| format!("Failed to serialize export payload: {}", e))?;
 
@@ -319,7 +319,7 @@ pub async fn export_app_config_to_path(
         return Err("Export path cannot be empty".to_string());
     }
 
-    let payload = export_app_config(state).await?;
+    let payload: ExportConfigPayload = export_app_config(state).await?;
     let content = serde_json::to_string_pretty(&payload)
         .map_err(|e| format!("Failed to serialize export payload: {}", e))?;
 
