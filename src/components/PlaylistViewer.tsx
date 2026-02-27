@@ -32,16 +32,36 @@ interface PlaylistViewerProps {
   onDelete?: () => Promise<void>;
 }
 
-function sanitizeTrackForCache(track: Track): Track {
-  if (!track.image_url) return track;
+const SENSITIVE_QUERY_PARAMS = ["api_key", "X-Plex-Token", "access_token", "token"];
+
+function sanitizeUrlForCache(rawUrl?: string | null): string | null | undefined {
+  if (!rawUrl) return rawUrl ?? undefined;
   try {
-    const url = new URL(track.image_url);
-    if (!url.searchParams.has("api_key")) return track;
-    url.searchParams.delete("api_key");
-    return { ...track, image_url: url.toString() };
+    const url = new URL(rawUrl);
+    let modified = false;
+    for (const param of SENSITIVE_QUERY_PARAMS) {
+      if (url.searchParams.has(param)) {
+        url.searchParams.delete(param);
+        modified = true;
+      }
+    }
+    return modified ? url.toString() : rawUrl;
   } catch {
-    return track;
+    return rawUrl;
   }
+}
+
+function sanitizeTrackForCache(track: Track): Track {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { auth_headers: _auth_headers, ...rest } = track as Track & {
+    auth_headers?: unknown;
+  };
+  const sanitized: Track = { ...rest };
+  const sanitizedImageUrl = sanitizeUrlForCache(track.image_url);
+  if (sanitizedImageUrl !== undefined) sanitized.image_url = sanitizedImageUrl;
+  const sanitizedUrl = sanitizeUrlForCache(track.url);
+  if (sanitizedUrl !== undefined) sanitized.url = sanitizedUrl;
+  return sanitized;
 }
 
 function getPlaylistById(source: ServiceSource, id: string): Promise<Playlist> {
