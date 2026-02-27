@@ -831,20 +831,41 @@ body {
   font-size: 1.1rem;
 }
 
-.provider-settings {
+.settings-tabs {
   display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
 }
 
-.provider-item {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.settings-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background: #222;
+  color: #cfcfcf;
+  cursor: pointer;
+  font-size: 0.9rem;
 }
 
-.provider-item h4 {
-  margin-bottom: 0.5rem;
+.settings-tab-btn:hover {
+  border-color: #5a5a5a;
+  color: #fff;
+}
+
+.settings-tab-btn.active {
+  background: #2f3d52;
+  border-color: #4a9eff;
+  color: #fff;
+}
+
+.settings-tab-check {
+  color: #7cd992;
+  font-weight: 700;
+  cursor: help;
 }
 
 .setting-input {

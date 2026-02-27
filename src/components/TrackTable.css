@@ -25,6 +25,21 @@
   letter-spacing: 0.05em;
 }
 
+.track-table .column-sort-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.track-table .column-sort-btn:hover {
+  color: #fff;
+}
+
 .track-table td {
   padding: 0.75rem;
   border-bottom: 1px solid #333;

@@ -17,6 +17,11 @@ import { LoadingSpinner } from "./components/shared/LoadingSpinner";
 import { backendSocket } from "./websocket";
 import { withTimeout } from "./utils/timeout";
 import { withTimeoutAndRetry } from "./utils/timeoutWithRetry";
+import {
+  getSyncSettings,
+  pullSyncSnapshot,
+  startRealtimeAppStateSync,
+} from "./sync";
 
 const STARTUP_PROVIDER_CHECK_TIMEOUT_MS = 2500;
 const STARTUP_SERVICE_SYNC_TIMEOUT_MS = 8000;
@@ -54,6 +59,13 @@ export default function App() {
 
   // Warm caches on startup without blocking the UI
   useEffect(() => {
+    const stopRealtimeSync = startRealtimeAppStateSync();
+    return () => {
+      stopRealtimeSync();
+    };
+  }, []);
+
+  useEffect(() => {
     mountedRef.current = true;
 
     const initializePlaylists = async () => {
@@ -67,6 +79,19 @@ export default function App() {
 
         // Create abort controller for cancellation
         abortControllerRef.current = new AbortController();
+
+        const syncSettings = getSyncSettings();
+        if (syncSettings.serverTarget.trim()) {
+          if (!mountedRef.current) return;
+          setStartupMessage("Checking sync server...");
+
+          const syncResult = await pullSyncSnapshot(syncSettings);
+          if (syncResult.usedFallback) {
+            console.info(
+              "Sync server unavailable; continuing with local app state.",
+            );
+          }
+        }
 
         console.log("Warming custom playlist cache on startup...");
         // Start custom playlist loading early but await it later to allow parallel loading

@@ -7,42 +7,33 @@ use crate::models::{Playlist, Source, Track};
 pub use any_player_core::providers::{
     MusicProvider, ProviderAuthRequest, ProviderAuthResponse, ProviderError, ProviderHandle,
 };
-use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Provider registry for managing multiple providers
 pub struct ProviderRegistry {
-    providers: HashMap<Source, ProviderHandle>,
+    core: any_player_core::providers::ProviderRegistry,
 }
 
 impl ProviderRegistry {
     pub fn new() -> Self {
         Self {
-            providers: HashMap::new(),
+            core: any_player_core::providers::ProviderRegistry::new(),
         }
     }
 
     pub fn register(&mut self, provider: impl MusicProvider + 'static) -> ProviderHandle {
-        let source = provider.source();
-        let boxed: Box<dyn MusicProvider> = Box::new(provider);
-        let handle: ProviderHandle = Arc::new(tokio::sync::Mutex::new(boxed));
-        self.providers.insert(source, handle.clone());
-        handle
+        self.core.register(provider)
     }
 
     pub fn register_boxed(&mut self, provider: Box<dyn MusicProvider>) -> ProviderHandle {
-        let source = provider.source();
-        let handle = Arc::new(tokio::sync::Mutex::new(provider));
-        self.providers.insert(source, handle.clone());
-        handle
+        self.core.register_boxed(provider)
     }
 
     pub fn get(&self, source: Source) -> Option<ProviderHandle> {
-        self.providers.get(&source).cloned()
+        self.core.get(source)
     }
 
     pub fn get_all(&self) -> Vec<ProviderHandle> {
-        self.providers.values().cloned().collect()
+        self.core.get_all()
     }
 
     fn require_provider(&self, source: Source) -> Result<ProviderHandle, ProviderError> {
@@ -363,7 +354,21 @@ impl ProviderRegistry {
     pub async fn refresh_auth(&mut self, source: Source) -> Result<(), ProviderError> {
         let provider = self.require_provider(source)?;
         let mut provider = provider.lock().await;
-        provider.refresh_auth().await
+        provider.refresh_auth().await?;
+
+        if source == Source::Spotify {
+            if let Some(spotify) = provider.as_any().downcast_ref::<spotify::SpotifyProvider>() {
+                if let Some(token) = spotify.get_token().await {
+                    let mut tokens = crate::config::Config::load_tokens()
+                        .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
+                    tokens.spotify_token = Some(token);
+                    crate::config::Config::save_tokens(&tokens)
+                        .map_err(|e| ProviderError(format!("Failed to save tokens: {}", e)))?;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn premium_status(&self, source: Source) -> Option<bool> {
@@ -416,12 +421,7 @@ impl ProviderRegistry {
             Source::Custom => {}
         }
 
-        if let Some(handle) = self.get(source) {
-            let mut provider = handle.lock().await;
-            provider.disconnect().await?;
-        }
-
-        self.providers.remove(&source);
+        self.core.disconnect(source).await?;
         Ok(())
     }
 

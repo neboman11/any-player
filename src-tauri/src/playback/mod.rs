@@ -1,8 +1,13 @@
 /// Playback management
 use crate::models::{PlaybackInfo, PlaybackState, RepeatMode, Track};
 use crate::providers::{spotify::SPOTIFY_CLIENT_ID, ProviderRegistry};
+use any_player_core::audio_normalization::{
+    AdaptiveNormalizationState, AudioNormalizationSettings, AudioNormalizationSource,
+    INTERNAL_NORMALIZATION_TARGET, effective_output_volume,
+};
 use any_player_spotify_engine::LibrespotPlayer as SharedLibrespotPlayer;
 use rodio::{Decoder, OutputStream, Sink, Source};
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -28,6 +33,8 @@ pub struct PlaybackHandle {
     /// Direct reference to rodio sink for immediate pause/play control
     /// Using Arc<Mutex<Option<...>>> for interior mutability
     sink: Arc<Mutex<Option<Arc<Mutex<Sink>>>>>,
+    /// Last per-track normalization gain applied (NaN when unknown)
+    normalization_gain_bits: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl PlaybackHandle {
@@ -38,7 +45,20 @@ impl PlaybackHandle {
             duration_ms: Arc::new(AtomicU64::new(0)),
             is_paused: Arc::new(AtomicBool::new(false)),
             sink: Arc::new(Mutex::new(None)),
+            normalization_gain_bits: Arc::new(std::sync::atomic::AtomicU32::new(
+                f32::NAN.to_bits(),
+            )),
         }
+    }
+
+    pub fn set_normalization_gain(&self, gain: f32) {
+        self.normalization_gain_bits
+            .store(gain.to_bits(), Ordering::SeqCst);
+    }
+
+    pub fn get_normalization_gain(&self) -> Option<f32> {
+        let gain = f32::from_bits(self.normalization_gain_bits.load(Ordering::SeqCst));
+        gain.is_finite().then_some(gain)
     }
 
     /// Set the sink handle for direct pause/play control
@@ -399,11 +419,18 @@ impl AudioPlayer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn play_url(
         &self,
         url: &str,
         auth_headers: Option<Vec<(String, String)>>,
         volume: u32,
+        normalize_enabled: bool,
+        normalize_target: u32,
+        normalize_strict_mode: bool,
+        source: crate::models::Source,
+        preloaded_audio_bytes: Option<Vec<u8>>,
+        precomputed_track_gain: Option<f32>,
     ) -> Result<PlaybackHandle, String> {
         let url = url.to_string();
         let handle = PlaybackHandle::new();
@@ -433,7 +460,20 @@ impl AudioPlayer {
             let result = tokio::task::spawn_blocking({
                 let url = url.clone();
                 let handle = handle_clone.clone();
-                move || Self::play_audio_blocking(&url, &handle, auth_headers, volume)
+                move || {
+                    Self::play_audio_blocking(
+                        &url,
+                        &handle,
+                        auth_headers,
+                        volume,
+                        normalize_enabled,
+                        normalize_target,
+                        normalize_strict_mode,
+                        source,
+                        preloaded_audio_bytes,
+                        precomputed_track_gain,
+                    )
+                }
             })
             .await;
 
@@ -453,11 +493,18 @@ impl AudioPlayer {
         Ok(handle)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn play_audio_blocking(
         url: &str,
         handle: &PlaybackHandle,
         auth_headers: Option<Vec<(String, String)>>,
         volume: u32,
+        normalize_enabled: bool,
+        normalize_target: u32,
+        normalize_strict_mode: bool,
+        source: crate::models::Source,
+        preloaded_audio_bytes: Option<Vec<u8>>,
+        precomputed_track_gain: Option<f32>,
     ) -> Result<(), String> {
         // Spotify URIs are handled by the dedicated shared-engine Spotify path.
         if url.starts_with("spotify:track:") {
@@ -472,46 +519,150 @@ impl AudioPlayer {
             ));
         }
 
-        Self::play_http_audio(url, handle, auth_headers, volume)
+        Self::play_http_audio(
+            url,
+            handle,
+            auth_headers,
+            volume,
+            normalize_enabled,
+            normalize_target,
+            normalize_strict_mode,
+            source,
+            preloaded_audio_bytes,
+            precomputed_track_gain,
+        )
     }
 
+    fn target_rms_from_percent(target: u32) -> f32 {
+        let normalized = (target.min(100) as f32) / 100.0;
+        0.04 + (normalized * 0.18)
+    }
+
+    fn compute_track_normalization_gain(bytes: &[u8], target: u32) -> f32 {
+        const MIN_SAMPLES: usize = 4_096;
+        const MAX_SAMPLES: usize = 44_100 * 2 * 6;
+
+        let decoder = match Decoder::new(Cursor::new(bytes.to_vec())) {
+            Ok(decoder) => decoder,
+            Err(error) => {
+                tracing::warn!("Failed to decode track for loudness analysis: {}", error);
+                return 1.0;
+            }
+        };
+
+        let mut sum_sq = 0.0_f64;
+        let mut peak = 0.0_f32;
+        let mut count = 0usize;
+
+        for sample in decoder.convert_samples::<f32>().take(MAX_SAMPLES) {
+            let amplitude = sample.abs();
+            peak = peak.max(amplitude);
+            let amplitude_f64 = f64::from(amplitude);
+            sum_sq += amplitude_f64 * amplitude_f64;
+            count += 1;
+        }
+
+        if count < MIN_SAMPLES {
+            return 1.0;
+        }
+
+        let rms = (sum_sq / (count as f64)).sqrt() as f32;
+        if rms <= 0.0005 {
+            return 1.0;
+        }
+
+        let target_rms = Self::target_rms_from_percent(target);
+        let mut gain = (target_rms / rms).clamp(0.4, 3.0);
+
+        if peak > 0.0 {
+            gain = gain.min(0.98 / peak);
+        }
+
+        let clamped_gain = gain.clamp(0.25, 3.0);
+        tracing::debug!(
+            "Track normalization analysis: samples={}, rms={:.5}, peak={:.5}, target_rms={:.5}, gain={:.3}",
+            count,
+            rms,
+            peak,
+            target_rms,
+            clamped_gain
+        );
+        clamped_gain
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn play_http_audio(
         url: &str,
         handle: &PlaybackHandle,
         auth_headers: Option<Vec<(String, String)>>,
         volume: u32,
+        normalize_enabled: bool,
+        normalize_target: u32,
+        normalize_strict_mode: bool,
+        source: crate::models::Source,
+        preloaded_audio_bytes: Option<Vec<u8>>,
+        precomputed_track_gain: Option<f32>,
     ) -> Result<(), String> {
         // Get audio output stream
         let (_stream, stream_handle) = OutputStream::try_default()
             .map_err(|e| format!("Failed to get audio output: {}", e))?;
 
-        // Fetch audio data from URL
-        let client = reqwest::blocking::Client::new();
-        let mut request = client
-            .get(url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+        let bytes: Vec<u8> = if let Some(preloaded) = preloaded_audio_bytes {
+            tracing::debug!("Using preloaded audio bytes for immediate playback start");
+            preloaded
+        } else {
+            let client = reqwest::blocking::Client::new();
+            let mut request = client
+                .get(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
 
-        // Add authentication headers if provided (e.g., for Jellyfin)
-        if let Some(headers) = auth_headers {
-            for (key, value) in headers {
-                request = request.header(key, value);
+            if let Some(headers) = auth_headers {
+                for (key, value) in headers {
+                    request = request.header(key, value);
+                }
             }
-        }
 
-        let response = request
-            .send()
-            .map_err(|e| format!("Failed to fetch audio: {}", e))?;
+            let response = request
+                .send()
+                .map_err(|e| format!("Failed to fetch audio: {}", e))?;
 
-        if !response.status().is_success() {
-            return Err(format!("Failed to fetch audio: HTTP {}", response.status()));
-        }
+            if !response.status().is_success() {
+                return Err(format!("Failed to fetch audio: HTTP {}", response.status()));
+            }
 
-        let bytes = response
-            .bytes()
-            .map_err(|e| format!("Failed to read response body: {}", e))?;
+            response
+                .bytes()
+                .map_err(|e| format!("Failed to read response body: {}", e))?
+                .to_vec()
+        };
+
+        let track_gain = if normalize_enabled {
+            if let Some(precomputed) = precomputed_track_gain {
+                precomputed
+            } else {
+                let skip_heavy_analysis =
+                    source == crate::models::Source::Plex && !normalize_strict_mode;
+                if skip_heavy_analysis {
+                    1.0
+                } else {
+                    Self::compute_track_normalization_gain(bytes.as_ref(), 100)
+                }
+            }
+        } else {
+            1.0
+        };
+
+        handle.set_normalization_gain(track_gain);
+
+        tracing::debug!(
+            "HTTP track normalization settings: enabled={}, runtime_target={}, track_gain={:.3}",
+            normalize_enabled,
+            normalize_target,
+            track_gain
+        );
 
         // Decode audio data
-        let cursor = Cursor::new(bytes.to_vec());
+        let cursor = Cursor::new(bytes);
         let source = Decoder::new(cursor).map_err(|e| format!("Failed to decode audio: {}", e))?;
 
         // Get duration
@@ -564,12 +715,14 @@ impl AudioPlayer {
         if initial_position > 0 {
             tracing::info!("Seeking to restored position: {}ms", initial_position);
             // Use skip_duration to skip ahead
-            let source = source.skip_duration(Duration::from_millis(initial_position));
+            let source = source
+                .skip_duration(Duration::from_millis(initial_position))
+                .amplify(track_gain);
             if let Ok(s) = sink_handle.try_lock() {
                 s.append(source);
             }
         } else if let Ok(s) = sink_handle.try_lock() {
-            s.append(source);
+            s.append(source.amplify(track_gain));
         }
 
         // Track playback progress - initialize from handle position for restore support
@@ -748,7 +901,6 @@ impl AudioPlayer {
 
                 Ok::<(), String>(())
             })();
-
             match result.await {
                 Ok(()) => {
                     tracing::info!("Spotify track playback completed");
@@ -771,7 +923,6 @@ impl AudioPlayer {
         volume: u32,
     ) -> Result<(), String> {
         tracing::info!("Starting shared Spotify engine playback for: {}", track_id);
-
         let initial_position_ms = handle.get_position();
         let normalized_track_id = track_id.trim_start_matches("spotify:track:").to_string();
         if normalized_track_id.is_empty() {
@@ -938,6 +1089,12 @@ impl Default for AudioPlayer {
     }
 }
 
+#[derive(Clone)]
+struct PreloadedHttpTrack {
+    bytes: Vec<u8>,
+    track_gain: Option<f32>,
+}
+
 /// Playback manager - handles playback state and queue
 pub struct PlaybackManager {
     queue: Arc<Mutex<PlaybackQueue>>,
@@ -948,6 +1105,9 @@ pub struct PlaybackManager {
     track_complete_tx: mpsc::UnboundedSender<()>,
     track_complete_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
     monitoring_task_abort: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
+    audio_normalization: Arc<Mutex<AudioNormalizationSettings>>,
+    adaptive_normalization: Arc<Mutex<AdaptiveNormalizationState>>,
+    preloaded_http_tracks: Arc<Mutex<HashMap<String, PreloadedHttpTrack>>>,
     state_save_tx: mpsc::UnboundedSender<()>,
     state_save_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
 }
@@ -969,6 +1129,9 @@ impl PlaybackManager {
             track_complete_tx,
             track_complete_rx: Arc::new(Mutex::new(Some(track_complete_rx))),
             monitoring_task_abort: Arc::new(Mutex::new(None)),
+            audio_normalization: Arc::new(Mutex::new(AudioNormalizationSettings::default())),
+            adaptive_normalization: Arc::new(Mutex::new(AdaptiveNormalizationState::default())),
+            preloaded_http_tracks: Arc::new(Mutex::new(HashMap::new())),
             state_save_tx,
             state_save_rx: Arc::new(Mutex::new(Some(state_save_rx))),
         }
@@ -979,9 +1142,11 @@ impl PlaybackManager {
         if let Some(state_save_rx) = self.state_save_rx.lock().await.take() {
             let info_clone = self.info.clone();
             let queue_clone = self.queue.clone();
+            let normalization_clone = self.audio_normalization.clone();
             tokio::spawn(Self::state_saver_task(
                 info_clone,
                 queue_clone,
+                normalization_clone,
                 state_save_rx,
             ));
         }
@@ -992,6 +1157,7 @@ impl PlaybackManager {
     async fn state_saver_task(
         info: Arc<Mutex<PlaybackInfo>>,
         queue: Arc<Mutex<PlaybackQueue>>,
+        audio_normalization: Arc<Mutex<AudioNormalizationSettings>>,
         mut save_rx: mpsc::UnboundedReceiver<()>,
     ) {
         let mut last_save = Instant::now();
@@ -1003,7 +1169,7 @@ impl PlaybackManager {
                 Ok(Some(())) => {
                     // Request received, check if enough time has passed
                     if last_save.elapsed() >= SAVE_INTERVAL {
-                        Self::perform_state_save(&info, &queue).await;
+                        Self::perform_state_save(&info, &queue, &audio_normalization).await;
                         last_save = Instant::now();
                     }
                     // If not enough time has passed, the request is dropped (debounced)
@@ -1017,7 +1183,7 @@ impl PlaybackManager {
                     // Timeout, perform periodic save if state might have changed
                     // This ensures we save even during continuous playback
                     if last_save.elapsed() >= SAVE_INTERVAL {
-                        Self::perform_state_save(&info, &queue).await;
+                        Self::perform_state_save(&info, &queue, &audio_normalization).await;
                         last_save = Instant::now();
                     }
                 }
@@ -1029,11 +1195,13 @@ impl PlaybackManager {
     async fn perform_state_save(
         info: &Arc<Mutex<PlaybackInfo>>,
         queue: &Arc<Mutex<PlaybackQueue>>,
+        audio_normalization: &Arc<Mutex<AudioNormalizationSettings>>,
     ) {
         use crate::state::PersistentPlaybackState;
 
         let info_locked = info.lock().await;
         let queue_locked = queue.lock().await;
+        let normalization_settings = audio_normalization.lock().await.clone();
 
         let state = PersistentPlaybackState {
             current_track: info_locked.current_track.clone(),
@@ -1043,6 +1211,9 @@ impl PlaybackManager {
             shuffle: info_locked.shuffle,
             repeat_mode: info_locked.repeat_mode,
             volume: info_locked.volume,
+            audio_normalization_enabled: normalization_settings.enabled,
+            audio_normalization_target: normalization_settings.target,
+            audio_normalization_strict_mode: normalization_settings.strict_mode,
             shuffle_order: queue_locked.shuffle_order.clone(),
             state: info_locked.state,
         };
@@ -1059,6 +1230,104 @@ impl PlaybackManager {
     pub fn request_state_save(&self) {
         // Ignore send errors - if the channel is closed, we're shutting down anyway
         let _ = self.state_save_tx.send(());
+    }
+
+    fn source_key(source: crate::models::Source) -> String {
+        source.to_string()
+    }
+
+    fn normalization_source(source: Option<crate::models::Source>) -> AudioNormalizationSource {
+        match source {
+            Some(crate::models::Source::Spotify) => AudioNormalizationSource::Spotify,
+            _ => AudioNormalizationSource::Other,
+        }
+    }
+
+    fn preload_track_key(track: &Track) -> String {
+        format!("{}:{}", Self::source_key(track.source), track.id)
+    }
+
+    async fn take_preloaded_http_track(&self, track: &Track) -> Option<PreloadedHttpTrack> {
+        let key = Self::preload_track_key(track);
+        self.preloaded_http_tracks.lock().await.remove(&key)
+    }
+
+    async fn prune_preloaded_http_tracks(&self, keep_tracks: &[Track]) {
+        let keep_keys: HashSet<String> = keep_tracks.iter().map(Self::preload_track_key).collect();
+        self.preloaded_http_tracks
+            .lock()
+            .await
+            .retain(|key, _| keep_keys.contains(key));
+    }
+
+    async fn strict_source_compensation_gain(
+        &self,
+        source: Option<crate::models::Source>,
+        strict_mode: bool,
+    ) -> f32 {
+        if !strict_mode {
+            return 1.0;
+        }
+
+        let Some(source) = source else {
+            return 1.0;
+        };
+
+        let source_key = Self::source_key(source);
+        let adaptive = self.adaptive_normalization.lock().await;
+        adaptive.strict_compensation_gain(&source_key)
+    }
+
+    async fn effective_output_volume(
+        &self,
+        base_volume: u32,
+        source: Option<crate::models::Source>,
+    ) -> u32 {
+        let normalization = self.audio_normalization.lock().await.clone();
+        let strict_gain = self
+            .strict_source_compensation_gain(source, normalization.strict_mode)
+            .await;
+
+        effective_output_volume(
+            base_volume,
+            Self::normalization_source(source),
+            &normalization,
+            strict_gain,
+        )
+    }
+
+    pub async fn get_audio_normalization_settings(&self) -> AudioNormalizationSettings {
+        self.audio_normalization.lock().await.clone()
+    }
+
+    pub async fn set_audio_normalization_settings(&self, enabled: bool, strict_mode: bool) {
+        {
+            let mut normalization = self.audio_normalization.lock().await;
+            normalization.enabled = enabled;
+            normalization.target = INTERNAL_NORMALIZATION_TARGET;
+            normalization.strict_mode = strict_mode;
+        }
+
+        let base_volume = {
+            let info = self.info.lock().await;
+            info.volume
+        };
+        let current_source = {
+            let info = self.info.lock().await;
+            info.current_track.as_ref().map(|track| track.source)
+        };
+        let effective_volume = self
+            .effective_output_volume(base_volume, current_source)
+            .await;
+
+        if let Err(error) = self.audio_player.set_volume(effective_volume).await {
+            tracing::warn!(
+                "Failed to apply audio normalization settings to active playback: {}",
+                error
+            );
+        }
+
+        let _ = self.save_state().await;
     }
 
     /// Take the track completion receiver.
@@ -1148,12 +1417,17 @@ impl PlaybackManager {
                 let track_complete_tx = self.track_complete_tx.clone();
                 let monitoring_abort = self.monitoring_task_abort.clone();
                 let state_save_tx = self.state_save_tx.clone();
+                let adaptive_normalization = self.adaptive_normalization.clone();
+                let track_source = track.source;
 
-                // Get current volume
-                let volume = {
+                // Get current volume and apply normalization settings
+                let base_volume = {
                     let info = self.info.lock().await;
                     info.volume
                 };
+                let volume = self
+                    .effective_output_volume(base_volume, Some(crate::models::Source::Spotify))
+                    .await;
 
                 match self.play_spotify_track(url, volume).await {
                     Ok(handle) => {
@@ -1196,6 +1470,11 @@ impl PlaybackManager {
                                     tracing::debug!(
                                         "Spotify monitoring task detected should_stop=true"
                                     );
+                                    if let Some(gain) = handle.get_normalization_gain() {
+                                        let source_key = PlaybackManager::source_key(track_source);
+                                        let mut adaptive = adaptive_normalization.lock().await;
+                                        adaptive.push_gain(&source_key, gain);
+                                    }
                                     {
                                         let mut info = info_arc.lock().await;
                                         info.state = PlaybackState::Stopped;
@@ -1230,6 +1509,12 @@ impl PlaybackManager {
                 let track_complete_tx = self.track_complete_tx.clone();
                 let monitoring_abort = self.monitoring_task_abort.clone();
                 let state_save_tx = self.state_save_tx.clone();
+                let adaptive_normalization = self.adaptive_normalization.clone();
+                let track_source = track.source;
+                let preloaded = self.take_preloaded_http_track(&track).await;
+                if preloaded.is_some() {
+                    tracing::debug!("Using preloaded audio payload for track {}", track.id);
+                }
 
                 // Fetch auth headers dynamically from provider if needed (e.g., for Jellyfin)
                 let auth_headers = if track.source == crate::models::Source::Jellyfin {
@@ -1239,13 +1524,31 @@ impl PlaybackManager {
                     track.auth_headers.clone()
                 };
 
-                // Get current volume
-                let volume = {
+                // Get current volume and apply normalization settings
+                let base_volume = {
                     let info = self.info.lock().await;
                     info.volume
                 };
+                let volume = self
+                    .effective_output_volume(base_volume, Some(track.source))
+                    .await;
+                let normalization = self.audio_normalization.lock().await.clone();
 
-                match self.audio_player.play_url(url, auth_headers, volume).await {
+                match self
+                    .audio_player
+                    .play_url(
+                        url,
+                        auth_headers,
+                        volume,
+                        normalization.enabled,
+                        normalization.target,
+                        normalization.strict_mode,
+                        track.source,
+                        preloaded.as_ref().map(|entry| entry.bytes.clone()),
+                        preloaded.as_ref().and_then(|entry| entry.track_gain),
+                    )
+                    .await
+                {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
                         let info_arc = self.info.clone();
@@ -1296,6 +1599,11 @@ impl PlaybackManager {
                                     tracing::debug!(
                                         "HTTP monitoring task detected should_stop=true"
                                     );
+                                    if let Some(gain) = handle.get_normalization_gain() {
+                                        let source_key = PlaybackManager::source_key(track_source);
+                                        let mut adaptive = adaptive_normalization.lock().await;
+                                        adaptive.push_gain(&source_key, gain);
+                                    }
                                     {
                                         let mut info = info_arc.lock().await;
                                         info.state = PlaybackState::Stopped;
@@ -1351,6 +1659,7 @@ impl PlaybackManager {
     pub async fn clear_queue(&self) {
         let mut queue = self.queue.lock().await;
         queue.clear();
+        self.preloaded_http_tracks.lock().await.clear();
         let mut info = self.info.lock().await;
         info.state = PlaybackState::Stopped;
         info.current_track = None;
@@ -1516,11 +1825,16 @@ impl PlaybackManager {
     pub async fn set_volume(&self, volume: u32) {
         let mut info = self.info.lock().await;
         info.volume = volume.min(100);
+        let source = info.current_track.as_ref().map(|track| track.source);
         drop(info);
 
-        if let Err(error) = self.audio_player.set_volume(volume).await {
+        let effective_volume = self.effective_output_volume(volume, source).await;
+
+        if let Err(error) = self.audio_player.set_volume(effective_volume).await {
             tracing::warn!("Failed to set active playback volume: {}", error);
         }
+
+        self.request_state_save();
     }
 
     /// Toggle shuffle mode
@@ -1656,6 +1970,7 @@ impl PlaybackManager {
 
         let info = self.info.lock().await;
         let queue = self.queue.lock().await;
+        let normalization = self.audio_normalization.lock().await;
 
         PersistentPlaybackState {
             current_track: info.current_track.clone(),
@@ -1665,6 +1980,9 @@ impl PlaybackManager {
             shuffle: info.shuffle,
             repeat_mode: info.repeat_mode,
             volume: info.volume,
+            audio_normalization_enabled: normalization.enabled,
+            audio_normalization_target: normalization.target,
+            audio_normalization_strict_mode: normalization.strict_mode,
             shuffle_order: queue.shuffle_order.clone(),
             state: info.state,
         }
@@ -1737,6 +2055,13 @@ impl PlaybackManager {
             info.state = PlaybackState::Paused;
         }
 
+        {
+            let mut normalization = self.audio_normalization.lock().await;
+            normalization.enabled = saved_state.audio_normalization_enabled;
+            normalization.target = INTERNAL_NORMALIZATION_TARGET;
+            normalization.strict_mode = saved_state.audio_normalization_strict_mode;
+        }
+
         tracing::info!(
             "Restored playback state: {} tracks in queue, current_index: {}, shuffle: {}, position: {}ms",
             queue_len,
@@ -1790,7 +2115,12 @@ impl PlaybackManager {
                     let handle_for_spawn = handle.clone();
                     let audio_player = self.audio_player.clone();
                     let providers = self.providers.clone();
-                    let volume = saved_state.volume;
+                    let volume = self
+                        .effective_output_volume(
+                            saved_state.volume,
+                            Some(crate::models::Source::Spotify),
+                        )
+                        .await;
 
                     tokio::spawn(async move {
                         let result = audio_player
@@ -1820,6 +2150,8 @@ impl PlaybackManager {
                     let track_complete_tx = self.track_complete_tx.clone();
                     let monitoring_abort = self.monitoring_task_abort.clone();
                     let state_save_tx = self.state_save_tx.clone();
+                    let adaptive_normalization = self.adaptive_normalization.clone();
+                    let track_source = track.source;
 
                     let task = tokio::spawn(async move {
                         tracing::debug!("Spotify monitoring task started (restore)");
@@ -1855,6 +2187,11 @@ impl PlaybackManager {
                                 tracing::debug!(
                                     "Spotify monitoring task detected should_stop=true"
                                 );
+                                if let Some(gain) = handle.get_normalization_gain() {
+                                    let source_key = PlaybackManager::source_key(track_source);
+                                    let mut adaptive = adaptive_normalization.lock().await;
+                                    adaptive.push_gain(&source_key, gain);
+                                }
                                 {
                                     let mut info = info_arc.lock().await;
                                     info.state = PlaybackState::Stopped;
@@ -1916,7 +2253,10 @@ impl PlaybackManager {
                     };
 
                     // Get current volume for restore
-                    let volume = saved_state.volume;
+                    let volume = self
+                        .effective_output_volume(saved_state.volume, Some(track.source))
+                        .await;
+                    let normalization = self.audio_normalization.lock().await.clone();
 
                     tokio::spawn(async move {
                         tracing::info!(
@@ -1933,6 +2273,12 @@ impl PlaybackManager {
                                     &handle,
                                     auth_headers,
                                     volume,
+                                    normalization.enabled,
+                                    normalization.target,
+                                    normalization.strict_mode,
+                                    track.source,
+                                    None,
+                                    None,
                                 )
                             }
                         })
@@ -1966,6 +2312,8 @@ impl PlaybackManager {
                     let track_complete_tx = self.track_complete_tx.clone();
                     let monitoring_abort = self.monitoring_task_abort.clone();
                     let state_save_tx = self.state_save_tx.clone();
+                    let adaptive_normalization = self.adaptive_normalization.clone();
+                    let track_source = track.source;
 
                     let task = tokio::spawn(async move {
                         tracing::debug!("HTTP restore monitoring task started");
@@ -2002,6 +2350,11 @@ impl PlaybackManager {
                                 tracing::debug!(
                                     "HTTP restore monitoring task detected should_stop=true"
                                 );
+                                if let Some(gain) = handle.get_normalization_gain() {
+                                    let source_key = PlaybackManager::source_key(track_source);
+                                    let mut adaptive = adaptive_normalization.lock().await;
+                                    adaptive.push_gain(&source_key, gain);
+                                }
                                 {
                                     let mut info = info_arc.lock().await;
                                     info.state = PlaybackState::Stopped;
@@ -2039,10 +2392,10 @@ impl PlaybackManager {
         let shuffle_enabled = info.shuffle;
         let current_index = queue.current_index;
 
-        // Preload next 2 tracks in the queue
+        // Preload next 10 tracks in the queue
         let tracks_to_preload: Vec<Track> = if shuffle_enabled && !queue.shuffle_order.is_empty() {
             // Use shuffle order
-            (1..=2)
+            (1..=10)
                 .filter_map(|offset| {
                     let next_pos = current_index + offset;
                     if next_pos < queue.shuffle_order.len() {
@@ -2055,7 +2408,7 @@ impl PlaybackManager {
                 .collect()
         } else {
             // Use normal order
-            (1..=2)
+            (1..=10)
                 .filter_map(|offset| {
                     let next_index = current_index + offset;
                     queue.tracks.get(next_index).cloned()
@@ -2066,21 +2419,109 @@ impl PlaybackManager {
         drop(queue);
         drop(info);
 
+        self.prune_preloaded_http_tracks(&tracks_to_preload).await;
+
         if !tracks_to_preload.is_empty() {
             tracing::info!(
                 "Starting look-ahead preload for {} tracks",
                 tracks_to_preload.len()
             );
 
+            let providers = self.providers.clone();
+            let normalization = self.audio_normalization.lock().await.clone();
+            let preload_cache = self.preloaded_http_tracks.clone();
+
             // Spawn async task for preloading
             tokio::spawn(async move {
+                let client = reqwest::Client::new();
+
                 for track in tracks_to_preload {
-                    // Preload track data if it's from a provider
                     if let Some(url) = &track.url {
-                        if !url.starts_with("spotify:track:") {
-                            // For HTTP URLs, we can prefetch headers to warm up the connection
-                            let _ = reqwest::Client::new().head(url).send().await;
-                            tracing::debug!("Preloaded: {} - {}", track.artist, track.title);
+                        if url.starts_with("spotify:track:") {
+                            continue;
+                        }
+
+                        let cache_key =
+                            format!("{}:{}", PlaybackManager::source_key(track.source), track.id);
+
+                        if preload_cache.lock().await.contains_key(&cache_key) {
+                            continue;
+                        }
+
+                        let auth_headers = if track.source == crate::models::Source::Jellyfin {
+                            let providers_guard = providers.lock().await;
+                            providers_guard.get_auth_headers(track.source).await
+                        } else {
+                            track.auth_headers.clone()
+                        };
+
+                        let mut request = client
+                            .get(url)
+                            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+
+                        if let Some(headers) = auth_headers {
+                            for (key, value) in headers {
+                                request = request.header(key, value);
+                            }
+                        }
+
+                        match request.send().await {
+                            Ok(response) if response.status().is_success() => {
+                                match response.bytes().await {
+                                    Ok(bytes) => {
+                                        let bytes_vec = bytes.to_vec();
+                                        let track_gain = if normalization.enabled {
+                                            let skip_heavy_analysis = track.source
+                                                == crate::models::Source::Plex
+                                                && !normalization.strict_mode;
+                                            if skip_heavy_analysis {
+                                                Some(1.0)
+                                            } else {
+                                                Some(AudioPlayer::compute_track_normalization_gain(
+                                                    bytes_vec.as_ref(),
+                                                    100,
+                                                ))
+                                            }
+                                        } else {
+                                            None
+                                        };
+
+                                        preload_cache.lock().await.insert(
+                                            cache_key,
+                                            PreloadedHttpTrack {
+                                                bytes: bytes_vec,
+                                                track_gain,
+                                            },
+                                        );
+                                        tracing::debug!(
+                                            "Preloaded full track payload: {} - {}",
+                                            track.artist,
+                                            track.title
+                                        );
+                                    }
+                                    Err(error) => {
+                                        tracing::debug!(
+                                            "Lookahead preload failed reading body for {}: {}",
+                                            track.id,
+                                            error
+                                        );
+                                    }
+                                }
+                            }
+                            Ok(response) => {
+                                tracing::debug!(
+                                    "Lookahead preload HTTP error for {}: {}",
+                                    track.id,
+                                    response.status()
+                                );
+                            }
+                            Err(error) => {
+                                tracing::debug!(
+                                    "Lookahead preload request failed for {}: {}",
+                                    track.id,
+                                    error
+                                );
+                            }
                         }
                     }
                 }

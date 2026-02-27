@@ -3,41 +3,53 @@ use crate::commands::AppState;
 use crate::database::{ColumnPreferences, CustomPlaylist, PlaylistTrack, UnionPlaylistSource};
 use crate::models::Track;
 use crate::Source;
-use serde::{Deserialize, Serialize};
+use any_player_core::config_export::{
+    ExportConfigPayload, ExportCustomPlaylist, ExportPlaylist, ExportPlaylistTrack,
+    ExportProviderConfigs, ExportServerConfig, ExportSpotifyConfig, ExportUnionPlaylistSource,
+    CONFIG_EXPORT_VERSION,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tauri::State;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExportConfigPayload {
-    pub export_version: u32,
-    pub provider_configs: ExportProviderConfigs,
-    pub custom_playlists: Vec<ExportCustomPlaylist>,
+fn map_export_playlist(value: CustomPlaylist) -> ExportPlaylist {
+    ExportPlaylist {
+        id: value.id,
+        name: value.name,
+        description: value.description,
+        image_url: value.image_url,
+        created_at: value.created_at,
+        updated_at: value.updated_at,
+        track_count: value.track_count,
+        playlist_type: value.playlist_type,
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExportProviderConfigs {
-    pub spotify: ExportSpotifyConfig,
-    pub jellyfin: ExportServerConfig,
-    pub plex: ExportServerConfig,
+fn map_export_track(value: PlaylistTrack) -> ExportPlaylistTrack {
+    ExportPlaylistTrack {
+        id: value.id,
+        playlist_id: value.playlist_id,
+        track_source: value.track_source,
+        track_id: value.track_id,
+        position: value.position,
+        added_at: value.added_at,
+        title: value.title,
+        artist: value.artist,
+        album: value.album,
+        duration_ms: value.duration_ms,
+        image_url: value.image_url,
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExportSpotifyConfig {
-    pub client_id: Option<String>,
-    pub redirect_uri: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExportServerConfig {
-    pub base_url: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExportCustomPlaylist {
-    pub playlist: CustomPlaylist,
-    pub tracks: Vec<PlaylistTrack>,
-    pub union_sources: Vec<UnionPlaylistSource>,
+fn map_export_union_source(value: UnionPlaylistSource) -> ExportUnionPlaylistSource {
+    ExportUnionPlaylistSource {
+        id: value.id,
+        union_playlist_id: value.union_playlist_id,
+        source_type: value.source_type,
+        source_playlist_id: value.source_playlist_id,
+        position: value.position,
+        added_at: value.added_at,
+    }
 }
 
 fn provider_source_from_str(source_type: &str) -> Option<Source> {
@@ -251,9 +263,12 @@ pub async fn export_app_config(state: State<'_, AppState>) -> Result<ExportConfi
             };
 
             exported.push(ExportCustomPlaylist {
-                playlist,
-                tracks,
-                union_sources,
+                playlist: map_export_playlist(playlist),
+                tracks: tracks.into_iter().map(map_export_track).collect(),
+                union_sources: union_sources
+                    .into_iter()
+                    .map(map_export_union_source)
+                    .collect(),
             });
         }
 
@@ -261,7 +276,7 @@ pub async fn export_app_config(state: State<'_, AppState>) -> Result<ExportConfi
     };
 
     Ok(ExportConfigPayload {
-        export_version: 1,
+        export_version: CONFIG_EXPORT_VERSION,
         provider_configs,
         custom_playlists,
     })
