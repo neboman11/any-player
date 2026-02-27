@@ -297,7 +297,6 @@ impl PlexProvider {
             .filter_map(|item| self.track_from_metadata(item))
             .collect())
     }
-
 }
 
 #[async_trait]
@@ -390,7 +389,9 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        self.api_client.get_playlist(&self.session_request(), id).await
+        self.api_client
+            .get_playlist(&self.session_request(), id)
+            .await
     }
 
     async fn get_track(&self, id: &str) -> Result<Track, ProviderError> {

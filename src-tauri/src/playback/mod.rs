@@ -2,8 +2,8 @@
 use crate::models::{PlaybackInfo, PlaybackState, RepeatMode, Track};
 use crate::providers::{spotify::SPOTIFY_CLIENT_ID, ProviderRegistry};
 use any_player_core::audio_normalization::{
-    AdaptiveNormalizationState, AudioNormalizationSettings, AudioNormalizationSource,
-    INTERNAL_NORMALIZATION_TARGET, effective_output_volume,
+    effective_output_volume, AdaptiveNormalizationState, AudioNormalizationSettings,
+    AudioNormalizationSource, INTERNAL_NORMALIZATION_TARGET,
 };
 use any_player_spotify_engine::LibrespotPlayer as SharedLibrespotPlayer;
 use rodio::{Decoder, OutputStream, Sink, Source};

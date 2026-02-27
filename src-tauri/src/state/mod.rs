@@ -1,6 +1,6 @@
 /// Persistent state management for playback session
-use any_player_core::audio_normalization::INTERNAL_NORMALIZATION_TARGET;
 use crate::models::{PlaybackState, RepeatMode, Track};
+use any_player_core::audio_normalization::INTERNAL_NORMALIZATION_TARGET;
 use serde::{
     de::Error as DeError, ser::Error as SerError, Deserialize, Deserializer, Serialize, Serializer,
 };

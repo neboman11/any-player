@@ -275,10 +275,7 @@ impl JellyfinProvider {
     /// Convert Jellyfin item to Playlist
     fn item_to_playlist(&self, item: &JellyfinItem) -> Playlist {
         let image_url = self.get_image_url(item);
-        let track_count = item
-            .child_count
-            .or(item.recursive_item_count)
-            .unwrap_or(0) as usize;
+        let track_count = item.child_count.or(item.recursive_item_count).unwrap_or(0) as usize;
 
         Playlist {
             id: item.id.clone(),
@@ -357,7 +354,9 @@ impl MusicProvider for JellyfinProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        self.api_client.get_playlist(&self.session_request(), id).await
+        self.api_client
+            .get_playlist(&self.session_request(), id)
+            .await
     }
 
     async fn get_track(&self, id: &str) -> Result<Track, ProviderError> {

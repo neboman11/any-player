@@ -116,7 +116,10 @@ pub async fn read_provider_playlist_cache(
 
 /// Clear provider playlist cache
 #[tauri::command]
-pub async fn clear_provider_playlist_cache(source: String, playlist_id: String) -> Result<(), String> {
+pub async fn clear_provider_playlist_cache(
+    source: String,
+    playlist_id: String,
+) -> Result<(), String> {
     crate::cache::clear_provider_playlist_cache(&source, &playlist_id)
         .map_err(|e| format!("Failed to clear provider playlist cache: {}", e))
 }

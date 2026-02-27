@@ -19,6 +19,34 @@ interface TrackTableProps {
   sortStorageKey?: string;
 }
 
+function readInitialSortState(sortStorageKey: string): {
+  column: TrackSortColumn | null;
+  ascending: boolean;
+} {
+  try {
+    const rawValue = window.localStorage.getItem(
+      `any-player.track-table.sort.${sortStorageKey}`,
+    );
+
+    if (!rawValue) {
+      return { column: null, ascending: true };
+    }
+
+    const parsed = JSON.parse(rawValue) as {
+      column?: TrackSortColumn | null;
+      ascending?: boolean;
+    };
+
+    return {
+      column: parsed.column ?? null,
+      ascending: parsed.ascending ?? true,
+    };
+  } catch (err) {
+    console.warn("Failed to restore track table sort state", err);
+    return { column: null, ascending: true };
+  }
+}
+
 const DEFAULT_COLUMNS: ColumnPreferences = {
   columns: ["title", "artist", "album", "duration", "source"],
   column_order: [0, 1, 2, 3, 4],
@@ -42,29 +70,12 @@ export function TrackTable({
   const [columnPrefs, setColumnPrefs] =
     useState<ColumnPreferences>(DEFAULT_COLUMNS);
   const [draggedTrack, setDraggedTrack] = useState<number | null>(null);
-  const [sortColumn, setSortColumn] = useState<TrackSortColumn | null>(null);
-  const [sortAscending, setSortAscending] = useState<boolean>(true);
-
-  useEffect(() => {
-    try {
-      const rawValue = window.localStorage.getItem(
-        `any-player.track-table.sort.${sortStorageKey}`,
-      );
-      if (!rawValue) {
-        return;
-      }
-
-      const parsed = JSON.parse(rawValue) as {
-        column?: TrackSortColumn | null;
-        ascending?: boolean;
-      };
-
-      setSortColumn(parsed.column ?? null);
-      setSortAscending(parsed.ascending ?? true);
-    } catch (err) {
-      console.warn("Failed to restore track table sort state", err);
-    }
-  }, [sortStorageKey]);
+  const [sortColumn, setSortColumn] = useState<TrackSortColumn | null>(
+    () => readInitialSortState(sortStorageKey).column,
+  );
+  const [sortAscending, setSortAscending] = useState<boolean>(
+    () => readInitialSortState(sortStorageKey).ascending,
+  );
 
   useEffect(() => {
     try {
