@@ -32,6 +32,18 @@ interface PlaylistViewerProps {
   onDelete?: () => Promise<void>;
 }
 
+function sanitizeTrackForCache(track: Track): Track {
+  if (!track.image_url) return track;
+  try {
+    const url = new URL(track.image_url);
+    if (!url.searchParams.has("api_key")) return track;
+    url.searchParams.delete("api_key");
+    return { ...track, image_url: url.toString() };
+  } catch {
+    return track;
+  }
+}
+
 function getPlaylistById(source: ServiceSource, id: string): Promise<Playlist> {
   switch (source) {
     case "spotify":
@@ -111,10 +123,14 @@ export function PlaylistViewer({
       const fullPlaylist = await getPlaylistById(source, regularPlaylist.id);
       setRegularTracks(fullPlaylist.tracks || []);
 
+      const sanitizedPlaylist = {
+        ...fullPlaylist,
+        tracks: fullPlaylist.tracks?.map(sanitizeTrackForCache),
+      };
       const cacheData: ProviderPlaylistCacheData = {
         version: CACHE_VERSION,
         timestamp: Date.now(),
-        playlist: fullPlaylist,
+        playlist: sanitizedPlaylist,
       };
       tauriAPI
         .writeProviderPlaylistCache(

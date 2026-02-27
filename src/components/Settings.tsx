@@ -17,6 +17,8 @@ import {
 
 type SettingsTab = "general" | "spotify" | "jellyfin" | "plex";
 
+const SETTINGS_TABS: SettingsTab[] = ["general", "spotify", "jellyfin", "plex"];
+
 interface AuthModalProps {
   authUrl: string;
   onClose: () => void;
@@ -396,6 +398,24 @@ export function Settings() {
     saveSyncSettings(next);
   }, []);
 
+  const handleTabKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      const currentIndex = SETTINGS_TABS.indexOf(activeTab);
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setActiveTab(SETTINGS_TABS[(currentIndex + 1) % SETTINGS_TABS.length]);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setActiveTab(
+          SETTINGS_TABS[
+            (currentIndex - 1 + SETTINGS_TABS.length) % SETTINGS_TABS.length
+          ],
+        );
+      }
+    },
+    [activeTab],
+  );
+
   const handlePullSyncSnapshot = useCallback(async () => {
     setSyncLoading(true);
     setSyncStatus("");
@@ -463,18 +483,26 @@ export function Settings() {
           <button
             type="button"
             role="tab"
+            id="settings-tab-general"
+            aria-controls="settings-panel-general"
             aria-selected={activeTab === "general"}
+            tabIndex={activeTab === "general" ? 0 : -1}
             className={`settings-tab-btn ${activeTab === "general" ? "active" : ""}`}
             onClick={() => setActiveTab("general")}
+            onKeyDown={handleTabKeyDown}
           >
             General
           </button>
           <button
             type="button"
             role="tab"
+            id="settings-tab-spotify"
+            aria-controls="settings-panel-spotify"
             aria-selected={activeTab === "spotify"}
+            tabIndex={activeTab === "spotify" ? 0 : -1}
             className={`settings-tab-btn ${activeTab === "spotify" ? "active" : ""}`}
             onClick={() => setActiveTab("spotify")}
+            onKeyDown={handleTabKeyDown}
           >
             Spotify
             {spotify.isConnected && (
@@ -486,9 +514,13 @@ export function Settings() {
           <button
             type="button"
             role="tab"
+            id="settings-tab-jellyfin"
+            aria-controls="settings-panel-jellyfin"
             aria-selected={activeTab === "jellyfin"}
+            tabIndex={activeTab === "jellyfin" ? 0 : -1}
             className={`settings-tab-btn ${activeTab === "jellyfin" ? "active" : ""}`}
             onClick={() => setActiveTab("jellyfin")}
+            onKeyDown={handleTabKeyDown}
           >
             Jellyfin
             {jellyfin.isConnected && (
@@ -500,9 +532,13 @@ export function Settings() {
           <button
             type="button"
             role="tab"
+            id="settings-tab-plex"
+            aria-controls="settings-panel-plex"
             aria-selected={activeTab === "plex"}
+            tabIndex={activeTab === "plex" ? 0 : -1}
             className={`settings-tab-btn ${activeTab === "plex" ? "active" : ""}`}
             onClick={() => setActiveTab("plex")}
+            onKeyDown={handleTabKeyDown}
           >
             Plex
             {plex.isConnected && (
@@ -514,7 +550,11 @@ export function Settings() {
         </div>
 
         {activeTab === "general" && (
-          <>
+          <div
+            role="tabpanel"
+            id="settings-panel-general"
+            aria-labelledby="settings-tab-general"
+          >
             <div className="settings-section">
               <h3>Sync Server</h3>
               <p className="section-description">
@@ -699,11 +739,16 @@ export function Settings() {
             </div>
 
             <ColumnPreferencesSection />
-          </>
+          </div>
         )}
 
         {activeTab === "spotify" && (
-          <div className="settings-section">
+          <div
+            className="settings-section"
+            role="tabpanel"
+            id="settings-panel-spotify"
+            aria-labelledby="settings-tab-spotify"
+          >
             <h3>Spotify</h3>
             <button
               id="spotify-connect-btn"
@@ -727,7 +772,12 @@ export function Settings() {
         )}
 
         {activeTab === "jellyfin" && (
-          <div className="settings-section">
+          <div
+            className="settings-section"
+            role="tabpanel"
+            id="settings-panel-jellyfin"
+            aria-labelledby="settings-tab-jellyfin"
+          >
             <h3>Jellyfin</h3>
             <input
               type="text"
@@ -802,7 +852,12 @@ export function Settings() {
         )}
 
         {activeTab === "plex" && (
-          <div className="settings-section">
+          <div
+            className="settings-section"
+            role="tabpanel"
+            id="settings-panel-plex"
+            aria-labelledby="settings-tab-plex"
+          >
             <h3>Plex</h3>
             <input
               type="text"

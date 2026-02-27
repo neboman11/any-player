@@ -299,7 +299,10 @@ mod tests {
         assert_eq!(state.repeat_mode, RepeatMode::Off);
         assert_eq!(state.volume, 50);
         assert!(!state.audio_normalization_enabled);
-        assert_eq!(state.audio_normalization_target, 85);
+        assert_eq!(
+            state.audio_normalization_target,
+            INTERNAL_NORMALIZATION_TARGET
+        );
         assert!(!state.audio_normalization_strict_mode);
         assert_eq!(state.shuffle_order.len(), 0);
         assert_eq!(state.state, PlaybackState::Stopped);

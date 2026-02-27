@@ -104,7 +104,7 @@ export function UnionPlaylistEditor({
   }, [customPlaylists, providerPlaylists]);
 
   const loadExternalPlaylists = async (): Promise<void> => {
-    if (!isProviderPlaylistCacheReady) {
+    if (!isProviderPlaylistCacheReady || providerPlaylists.length === 0) {
       await loadPlaylists("all");
     }
 
