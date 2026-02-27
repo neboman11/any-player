@@ -1534,6 +1534,10 @@ impl PlaybackManager {
                     .await;
                 let normalization = self.audio_normalization.lock().await.clone();
 
+                let (preloaded_bytes, preloaded_gain) = preloaded
+                    .map(|entry| (Some(entry.bytes), entry.track_gain))
+                    .unwrap_or((None, None));
+
                 match self
                     .audio_player
                     .play_url(
@@ -1544,8 +1548,8 @@ impl PlaybackManager {
                         normalization.target,
                         normalization.strict_mode,
                         track.source,
-                        preloaded.as_ref().map(|entry| entry.bytes.clone()),
-                        preloaded.as_ref().and_then(|entry| entry.track_gain),
+                        preloaded_bytes,
+                        preloaded_gain,
                     )
                     .await
                 {

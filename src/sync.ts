@@ -228,71 +228,89 @@ async function applyRemotePlaylists(playlistsValue: unknown): Promise<boolean> {
   const remotePlaylists = readRemotePlaylists(playlistsValue);
   const localPlaylists = await tauriAPI.getCustomPlaylists();
 
+  const localIds = new Set(localPlaylists.map((playlist) => playlist.id));
+  const remoteIds = new Set(remotePlaylists.map((item) => item.playlist.id));
+
+  let willDestructivelyOverwrite = localIds.size !== remoteIds.size;
+  if (!willDestructivelyOverwrite) {
+    for (const id of localIds) {
+      if (!remoteIds.has(id)) {
+        willDestructivelyOverwrite = true;
+        break;
+      }
+    }
+  }
+
   if (
-    localPlaylists.length > remotePlaylists.length &&
+    willDestructivelyOverwrite &&
     !window.confirm(
-      `Sync playlists will delete local playlists not present on the server (local: ${localPlaylists.length}, remote: ${remotePlaylists.length}). Continue?`,
+      `Sync playlists will replace your local playlists with those from the server and may delete or overwrite local playlists (local: ${localPlaylists.length}, remote: ${remotePlaylists.length}). Continue?`,
     )
   ) {
     return false;
   }
 
-  for (const playlist of localPlaylists) {
-    await tauriAPI.deleteCustomPlaylist(playlist.id);
-  }
-
   const idMap = new Map<string, string>();
 
-  for (const item of remotePlaylists) {
-    const playlist = item.playlist;
-    const created =
-      playlist.playlist_type === "union"
-        ? await tauriAPI.createUnionPlaylist(
-            playlist.name,
-            playlist.description,
-            playlist.image_url,
-          )
-        : await tauriAPI.createCustomPlaylist(
-            playlist.name,
-            playlist.description,
-            playlist.image_url,
-          );
+  try {
+    for (const item of remotePlaylists) {
+      const playlist = item.playlist;
+      const created =
+        playlist.playlist_type === "union"
+          ? await tauriAPI.createUnionPlaylist(
+              playlist.name,
+              playlist.description,
+              playlist.image_url,
+            )
+          : await tauriAPI.createCustomPlaylist(
+              playlist.name,
+              playlist.description,
+              playlist.image_url,
+            );
 
-    idMap.set(playlist.id, created.id);
+      idMap.set(playlist.id, created.id);
 
-    if (playlist.playlist_type !== "union") {
-      const sortedTracks = [...item.tracks].sort(
-        (left, right) => left.position - right.position,
-      );
-      for (const track of sortedTracks) {
-        await tauriAPI.addTrackToCustomPlaylist(created.id, toTrack(track));
+      if (playlist.playlist_type !== "union") {
+        const sortedTracks = [...item.tracks].sort(
+          (left, right) => left.position - right.position,
+        );
+        for (const track of sortedTracks) {
+          await tauriAPI.addTrackToCustomPlaylist(created.id, toTrack(track));
+        }
       }
     }
+
+    for (const item of remotePlaylists) {
+      if (item.playlist.playlist_type !== "union") {
+        continue;
+      }
+
+      const newUnionId = idMap.get(item.playlist.id);
+      if (!newUnionId) {
+        continue;
+      }
+
+      const sortedSources = [...item.union_sources].sort(
+        (left, right) => left.position - right.position,
+      );
+
+      for (const source of sortedSources) {
+        const mappedSourcePlaylistId =
+          idMap.get(source.source_playlist_id) ?? source.source_playlist_id;
+        await tauriAPI.addSourceToUnionPlaylist(
+          newUnionId,
+          source.source_type,
+          mappedSourcePlaylistId,
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Failed to apply remote playlists", error);
+    return false;
   }
 
-  for (const item of remotePlaylists) {
-    if (item.playlist.playlist_type !== "union") {
-      continue;
-    }
-
-    const newUnionId = idMap.get(item.playlist.id);
-    if (!newUnionId) {
-      continue;
-    }
-
-    const sortedSources = [...item.union_sources].sort(
-      (left, right) => left.position - right.position,
-    );
-
-    for (const source of sortedSources) {
-      const mappedSourcePlaylistId =
-        idMap.get(source.source_playlist_id) ?? source.source_playlist_id;
-      await tauriAPI.addSourceToUnionPlaylist(
-        newUnionId,
-        source.source_type,
-        mappedSourcePlaylistId,
-      );
-    }
+  for (const playlist of localPlaylists) {
+    await tauriAPI.deleteCustomPlaylist(playlist.id);
   }
 
   return true;
