@@ -357,7 +357,10 @@ impl ProviderRegistry {
         provider.refresh_auth().await?;
 
         if source == Source::Spotify {
-            if let Some(spotify) = provider.as_any().downcast_ref::<spotify::SpotifyProvider>() {
+            if let Some(spotify) = provider
+                .as_any_mut()
+                .downcast_mut::<spotify::SpotifyProvider>()
+            {
                 if let Some(token) = spotify.get_token().await {
                     let mut tokens = crate::config::Config::load_tokens()
                         .map_err(|e| ProviderError(format!("Failed to load tokens: {}", e)))?;
