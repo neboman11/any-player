@@ -68,7 +68,12 @@ impl PlexProvider {
         let insecure_client = Client::builder()
             .danger_accept_invalid_certs(true)
             .build()
-            .unwrap_or_else(|_| Client::new());
+            .unwrap_or_else(|_| {
+                Client::builder()
+                    .danger_accept_invalid_certs(true)
+                    .build()
+                    .expect("Failed to build insecure reqwest::Client with invalid certs accepted")
+            });
 
         Self {
             base_url,
@@ -362,12 +367,16 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError(Self::map_auth_status(response.status())));
         }
 
+        let tls_mode_changed = !self.authenticated || self.use_insecure_tls != used_insecure_tls;
         self.use_insecure_tls = used_insecure_tls;
-        self.api_client = if used_insecure_tls {
-            PlexApiClient::with_client(self.insecure_client.clone())
-        } else {
-            PlexApiClient::with_client(self.client.clone())
-        };
+
+        if tls_mode_changed {
+            self.api_client = if used_insecure_tls {
+                PlexApiClient::with_client(self.insecure_client.clone())
+            } else {
+                PlexApiClient::with_client(self.client.clone())
+            };
+        }
         self.authenticated = true;
         Ok(())
     }

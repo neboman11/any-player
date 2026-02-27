@@ -170,7 +170,7 @@ async function putAppState(
   payload: RemoteAppStatePayload,
 ): Promise<void> {
   const base = normalizeServerTarget(serverTarget);
-  await fetch(`${base}/v1/state/app-state`, {
+  const response = await fetch(`${base}/v1/state/app-state`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -180,6 +180,10 @@ async function putAppState(
       data: payload,
     }),
   });
+
+  if (!response.ok) {
+    throw new Error(`Sync put app state failed (${response.status})`);
+  }
 }
 
 function normalizeTrackSource(value: string): Track["source"] {
@@ -551,6 +555,13 @@ export function startRealtimeAppStateSync(): () => void {
         lastSyncedVersion = Math.max(lastSyncedVersion, snapshot.version ?? 0);
       } catch (err) {
         console.debug("Ignoring sync websocket message", err);
+      }
+    };
+
+    websocket.onerror = (event) => {
+      console.error("Sync websocket error", event);
+      if (!stopped && connectedTarget === serverTarget) {
+        closeSocket();
       }
     };
 
