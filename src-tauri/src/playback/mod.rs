@@ -542,7 +542,7 @@ impl AudioPlayer {
         const MIN_SAMPLES: usize = 4_096;
         const MAX_SAMPLES: usize = 44_100 * 2 * 6;
 
-        let decoder = match Decoder::new(Cursor::new(bytes)) {
+        let decoder = match Decoder::new(Cursor::new(bytes.to_vec())) {
             Ok(decoder) => decoder,
             Err(error) => {
                 tracing::warn!("Failed to decode track for loudness analysis: {}", error);

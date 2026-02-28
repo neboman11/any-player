@@ -32,9 +32,14 @@ interface PlaylistViewerProps {
   onDelete?: () => Promise<void>;
 }
 
-const SENSITIVE_QUERY_PARAMS = ["api_key", "X-Plex-Token", "access_token", "token"];
+const SENSITIVE_QUERY_PARAMS = [
+  "api_key",
+  "X-Plex-Token",
+  "access_token",
+  "token",
+];
 
-function sanitizeUrlForCache(rawUrl?: string | null): string | null | undefined {
+function sanitizeUrlForCache(rawUrl?: string | null): string | undefined {
   if (!rawUrl) return rawUrl ?? undefined;
   try {
     const url = new URL(rawUrl);
@@ -110,6 +115,7 @@ export function PlaylistViewer({
   const [searchQuery, setSearchQuery] = useState("");
 
   const playback = usePlayback();
+  const playlistSource = isCustom ? "custom" : (playlist as Playlist).source;
 
   async function loadRegularPlaylistTracks(forceReload = false) {
     const regularPlaylist = playlist as Playlist;
@@ -173,11 +179,7 @@ export function PlaylistViewer({
       void loadRegularPlaylistTracks(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    isCustom,
-    playlist.id,
-    isCustom ? "custom" : (playlist as Playlist).source,
-  ]);
+  }, [isCustom, playlist.id, playlistSource]);
 
   const handleRefresh = async () => {
     if (isCustom && refreshCustomTracks) {
