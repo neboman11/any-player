@@ -15,6 +15,11 @@ export interface PlaybackStatus {
   queue: Track[];
 }
 
+export interface AudioNormalizationSettings {
+  enabled: boolean;
+  strict_mode: boolean;
+}
+
 export interface Track {
   id: string;
   title: string;

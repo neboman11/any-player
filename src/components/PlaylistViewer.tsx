@@ -12,6 +12,14 @@ import type { CustomPlaylist, PlaylistTrack, Playlist, Track } from "../types";
 import type { ServiceSource } from "../providerCatalog";
 import "./CustomPlaylistEditor.css";
 
+const CACHE_VERSION = 1;
+
+interface ProviderPlaylistCacheData {
+  version: number;
+  timestamp: number;
+  playlist: Playlist;
+}
+
 interface PlaylistViewerProps {
   playlist: CustomPlaylist | Playlist;
   isCustom: boolean;
@@ -24,7 +32,43 @@ interface PlaylistViewerProps {
   onDelete?: () => Promise<void>;
 }
 
-// Helper function to get playlist by ID based on source
+const SENSITIVE_QUERY_PARAMS = [
+  "api_key",
+  "X-Plex-Token",
+  "access_token",
+  "token",
+];
+
+function sanitizeUrlForCache(rawUrl?: string | null): string | undefined {
+  if (!rawUrl) return rawUrl ?? undefined;
+  try {
+    const url = new URL(rawUrl);
+    let modified = false;
+    for (const param of SENSITIVE_QUERY_PARAMS) {
+      if (url.searchParams.has(param)) {
+        url.searchParams.delete(param);
+        modified = true;
+      }
+    }
+    return modified ? url.toString() : rawUrl;
+  } catch {
+    return rawUrl;
+  }
+}
+
+function sanitizeTrackForCache(track: Track): Track {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { auth_headers: _auth_headers, ...rest } = track as Track & {
+    auth_headers?: unknown;
+  };
+  const sanitized: Track = { ...rest };
+  const sanitizedImageUrl = sanitizeUrlForCache(track.image_url);
+  if (sanitizedImageUrl !== undefined) sanitized.image_url = sanitizedImageUrl;
+  const sanitizedUrl = sanitizeUrlForCache(track.url);
+  if (sanitizedUrl !== undefined) sanitized.url = sanitizedUrl;
+  return sanitized;
+}
+
 function getPlaylistById(source: ServiceSource, id: string): Promise<Playlist> {
   switch (source) {
     case "spotify":
@@ -34,7 +78,6 @@ function getPlaylistById(source: ServiceSource, id: string): Promise<Playlist> {
     case "plex":
       return tauriAPI.getPlexPlaylist(id);
     default: {
-      // Exhaustiveness check - this should never happen
       const _exhaustiveCheck: never = source;
       throw new Error(`Unknown source: ${_exhaustiveCheck}`);
     }
@@ -72,48 +115,77 @@ export function PlaylistViewer({
   const [searchQuery, setSearchQuery] = useState("");
 
   const playback = usePlayback();
+  const playlistSource = isCustom ? "custom" : (playlist as Playlist).source;
 
-  // Load tracks for regular playlists
+  async function loadRegularPlaylistTracks(forceReload = false) {
+    const regularPlaylist = playlist as Playlist;
+    const source = regularPlaylist.source as ServiceSource;
+
+    if (!forceReload) {
+      try {
+        const cached = await tauriAPI.readProviderPlaylistCache(
+          source,
+          regularPlaylist.id,
+        );
+
+        if (cached) {
+          const cacheData: ProviderPlaylistCacheData = JSON.parse(cached);
+          if (
+            cacheData.version === CACHE_VERSION &&
+            Array.isArray(cacheData.playlist?.tracks)
+          ) {
+            setRegularTracks(cacheData.playlist.tracks || []);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to read provider playlist cache:", err);
+      }
+    }
+
+    setLoading(true);
+    try {
+      const fullPlaylist = await getPlaylistById(source, regularPlaylist.id);
+      setRegularTracks(fullPlaylist.tracks || []);
+
+      const sanitizedPlaylist = {
+        ...fullPlaylist,
+        tracks: fullPlaylist.tracks?.map(sanitizeTrackForCache),
+      };
+      const cacheData: ProviderPlaylistCacheData = {
+        version: CACHE_VERSION,
+        timestamp: Date.now(),
+        playlist: sanitizedPlaylist,
+      };
+      tauriAPI
+        .writeProviderPlaylistCache(
+          source,
+          regularPlaylist.id,
+          JSON.stringify(cacheData),
+        )
+        .catch((err) => {
+          console.error("Failed to write provider playlist cache:", err);
+        });
+    } catch (err) {
+      console.error("Failed to load playlist tracks:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!isCustom) {
-      const regularPlaylist = playlist as Playlist;
-      const loadTracks = async () => {
-        setLoading(true);
-        try {
-          const fullPlaylist = await getPlaylistById(
-            regularPlaylist.source as ServiceSource,
-            regularPlaylist.id,
-          );
-
-          setRegularTracks(fullPlaylist.tracks || []);
-        } catch (err) {
-          console.error("Failed to load playlist tracks:", err);
-        } finally {
-          setLoading(false);
-        }
-      };
-      void loadTracks();
+      void loadRegularPlaylistTracks(false);
     }
-  }, [isCustom, playlist.id, playlist]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCustom, playlist.id, playlistSource]);
 
   const handleRefresh = async () => {
     if (isCustom && refreshCustomTracks) {
       await refreshCustomTracks(true);
     } else if (!isCustom) {
-      // For regular playlists, reload tracks
-      const regularPlaylist = playlist as Playlist;
-      setLoading(true);
-      try {
-        const fullPlaylist = await getPlaylistById(
-          regularPlaylist.source as ServiceSource,
-          regularPlaylist.id,
-        );
-        setRegularTracks(fullPlaylist.tracks || []);
-      } catch (err) {
-        console.error("Failed to reload playlist tracks:", err);
-      } finally {
-        setLoading(false);
-      }
+      await loadRegularPlaylistTracks(true);
     }
   };
 
@@ -134,14 +206,11 @@ export function PlaylistViewer({
       let source: string;
 
       if (isCustom) {
-        // Custom playlist track has source in track_source
         source = (track as PlaylistTrack).track_source;
       } else {
-        // Regular playlist track has source property
         source = (track as Track).source || (playlist as Playlist).source;
       }
 
-      // Normalize source to lowercase for backend
       const normalizedSource = source.toLowerCase();
 
       await playback.playTrack(trackId, normalizedSource);
@@ -153,7 +222,6 @@ export function PlaylistViewer({
 
   const handlePlayFromTrack = async (index: number) => {
     try {
-      // When using filtered tracks, we need to find the original index in the full tracks array
       const unfilteredTracks = isCustom ? customTracks : regularTracks;
       const filteredTracks = isCustom
         ? filterTracks(customTracks, searchQuery)
@@ -172,7 +240,6 @@ export function PlaylistViewer({
   const isLoading = isCustom ? customLoading : loading;
   const trackCount = "track_count" in playlist ? playlist.track_count : 0;
 
-  // Filter tracks based on search query - handle types separately
   const tracks = isCustom
     ? filterTracks(customTracks, searchQuery)
     : filterTracks(regularTracks, searchQuery);
@@ -261,6 +328,7 @@ export function PlaylistViewer({
             onReorderTrack={isCustom ? reorderTrack : undefined}
             onPlayTrack={handlePlayTrack}
             onPlayFromTrack={handlePlayFromTrack}
+            sortStorageKey={`playlist-viewer:${isCustom ? "custom" : "provider"}:${playlist.id}`}
           />
         )}
       </div>

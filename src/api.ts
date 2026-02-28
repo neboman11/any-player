@@ -12,6 +12,7 @@ import type {
   ColumnPreferences,
   UnionPlaylistSource,
   ExportConfigPayload,
+  AudioNormalizationSettings,
 } from "./types";
 
 declare global {
@@ -64,6 +65,22 @@ export class TauriAPI {
 
   async setVolume(volume: number): Promise<void> {
     return invoke<void>("set_volume", { volume });
+  }
+
+  async getAudioNormalizationSettings(): Promise<AudioNormalizationSettings> {
+    return invoke<AudioNormalizationSettings>(
+      "get_audio_normalization_settings",
+    );
+  }
+
+  async setAudioNormalizationSettings(
+    enabled: boolean,
+    strictMode: boolean,
+  ): Promise<void> {
+    return invoke<void>("set_audio_normalization_settings", {
+      enabled,
+      strictMode,
+    });
   }
 
   async toggleShuffle(): Promise<void> {
@@ -490,6 +507,36 @@ export class TauriAPI {
 
   async clearUnionPlaylistTracksCache(playlistId: string): Promise<void> {
     return invoke("clear_union_playlist_tracks_cache", { playlistId });
+  }
+
+  async writeProviderPlaylistCache(
+    source: string,
+    playlistId: string,
+    data: string,
+  ): Promise<void> {
+    return invoke("write_provider_playlist_cache", {
+      source,
+      playlistId,
+      data,
+    });
+  }
+
+  async readProviderPlaylistCache(
+    source: string,
+    playlistId: string,
+  ): Promise<string | null> {
+    return invoke("read_provider_playlist_cache", { source, playlistId });
+  }
+
+  async clearProviderPlaylistCache(
+    source: string,
+    playlistId: string,
+  ): Promise<void> {
+    return invoke("clear_provider_playlist_cache", { source, playlistId });
+  }
+
+  async clearProviderPlaylistsCache(): Promise<number> {
+    return invoke("clear_provider_playlists_cache");
   }
 
   // Playback state commands

@@ -1,6 +1,8 @@
 use super::{MusicProvider, ProviderAuthRequest, ProviderAuthResponse, ProviderError};
 /// Jellyfin provider implementation
 use crate::models::{Playlist, Source, Track};
+use any_player_core::provider_api::{ProviderApi, ProviderConnectionCheck};
+use any_player_core::provider_clients::jellyfin::JellyfinApiClient;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -13,16 +15,7 @@ pub struct JellyfinProvider {
     authenticated: bool,
     user_id: Option<String>,
     client: Client,
-}
-
-/// Jellyfin API response types
-#[derive(Debug, Deserialize)]
-struct JellyfinUser {
-    #[serde(rename = "Id")]
-    id: String,
-    #[serde(rename = "Name")]
-    #[allow(dead_code)]
-    name: String,
+    api_client: JellyfinApiClient,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,6 +43,8 @@ struct JellyfinItem {
     user_data: Option<Value>,
     #[serde(rename = "ChildCount")]
     child_count: Option<u32>,
+    #[serde(rename = "RecursiveItemCount")]
+    recursive_item_count: Option<u32>,
     #[serde(rename = "Bitrate")]
     #[serde(alias = "BitRate")]
     bitrate: Option<u32>,
@@ -109,7 +104,19 @@ impl JellyfinProvider {
             authenticated: false,
             user_id: None,
             client: Client::new(),
+            api_client: JellyfinApiClient::new(),
         }
+    }
+
+    fn session_request(&self) -> ProviderAuthRequest {
+        let mut request = ProviderAuthRequest::from_pairs([
+            ("url", self.base_url.as_str()),
+            ("api_key", self.api_key.as_str()),
+        ]);
+        if let Some(user_id) = &self.user_id {
+            request.insert("user_id", user_id.clone());
+        }
+        request
     }
 
     /// Get authentication headers for streaming requests
@@ -179,21 +186,6 @@ impl JellyfinProvider {
             }
         }
         None
-    }
-
-    /// Create a fallback playlist with basic metadata when detailed metadata is unavailable
-    fn create_fallback_playlist(&self, id: &str, tracks: Vec<Track>) -> Playlist {
-        let track_count = tracks.len();
-        Playlist {
-            id: id.to_string(),
-            name: format!("Playlist {}", id),
-            description: None,
-            owner: "Jellyfin".to_string(),
-            image_url: None,
-            track_count,
-            tracks,
-            source: Source::Jellyfin,
-        }
     }
 
     /// Convert Jellyfin item to Track
@@ -283,6 +275,7 @@ impl JellyfinProvider {
     /// Convert Jellyfin item to Playlist
     fn item_to_playlist(&self, item: &JellyfinItem) -> Playlist {
         let image_url = self.get_image_url(item);
+        let track_count = item.child_count.or(item.recursive_item_count).unwrap_or(0) as usize;
 
         Playlist {
             id: item.id.clone(),
@@ -290,7 +283,7 @@ impl JellyfinProvider {
             description: None,
             owner: "Jellyfin".to_string(),
             image_url,
-            track_count: item.child_count.unwrap_or(0) as usize,
+            track_count,
             tracks: Vec::new(),
             source: Source::Jellyfin,
         }
@@ -326,74 +319,22 @@ impl MusicProvider for JellyfinProvider {
     }
 
     async fn authenticate(&mut self) -> Result<(), ProviderError> {
-        // Verify connection to Jellyfin server
-        // GET /System/Info with api_key header
-        let url = format!("{}/System/Info", self.base_url);
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to connect to Jellyfin: {}", e)))?;
-
-        if !response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Jellyfin authentication failed: HTTP {}",
-                response.status()
-            )));
-        }
-
-        // Get list of users from the /Users endpoint and pick the first one
-        // (since API keys don't have a "current user"; typically this is the admin/main user)
-        let users_url = format!("{}/Users", self.base_url);
-        let users_response = self
-            .client
-            .get(&users_url)
-            .headers(self.build_headers())
-            .send()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to get users: {}", e)))?;
-
-        if !users_response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Failed to get user list: HTTP {}",
-                users_response.status()
-            )));
-        }
-
-        let users: Vec<JellyfinUser> = users_response
-            .json()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to parse users: {}", e)))?;
-
-        if users.is_empty() {
-            return Err(ProviderError(
-                "No users found on Jellyfin server".to_string(),
-            ));
-        }
-
-        // If a user_id was preconfigured on this provider, try to match it against the
-        // users returned by the server. This allows multi-user instances to explicitly
-        // select which user to act as.
-        //
-        // If no user_id is configured or the configured id is not found, we fall back
-        // to using the first user in the list (typically the admin/main user). This
-        // preserves existing behavior but means that, in multi-user setups, the caller
-        // SHOULD provide an explicit user_id if the default is not appropriate.
-        let selected_user_id = if let Some(ref configured_id) = self.user_id {
-            if users.iter().any(|u| &u.id == configured_id) {
-                configured_id.clone()
-            } else {
-                users[0].id.clone()
+        match self
+            .api_client
+            .validate_connection(&self.session_request())
+            .await?
+        {
+            ProviderConnectionCheck::Connected { metadata, .. } => {
+                self.user_id = metadata
+                    .get("user_id")
+                    .cloned()
+                    .or_else(|| metadata.get("userId").cloned())
+                    .or_else(|| self.user_id.clone());
+                self.authenticated = true;
+                Ok(())
             }
-        } else {
-            users[0].id.clone()
-        };
-
-        self.user_id = Some(selected_user_id);
-        self.authenticated = true;
-        Ok(())
+            ProviderConnectionCheck::Failed(message) => Err(ProviderError(message)),
+        }
     }
 
     fn is_authenticated(&self) -> bool {
@@ -405,44 +346,7 @@ impl MusicProvider for JellyfinProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        let user_id = self
-            .user_id
-            .as_ref()
-            .ok_or_else(|| ProviderError("User ID not available".to_string()))?;
-
-        // GET /Users/{userId}/Items with Filters=IsFolder
-        let url = format!(
-            "{}/Users/{}/Items?Filters=IsFolder&Recursive=true&IncludeItemTypes=Playlist",
-            self.base_url, user_id
-        );
-
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to fetch playlists: {}", e)))?;
-
-        if !response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Failed to fetch playlists: HTTP {}",
-                response.status()
-            )));
-        }
-
-        let data: JellyfinItemsResponse = response
-            .json()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to parse playlists: {}", e)))?;
-
-        let playlists: Vec<Playlist> = data
-            .items
-            .into_iter()
-            .map(|item| self.item_to_playlist(&item))
-            .collect();
-
-        Ok(playlists)
+        self.api_client.get_playlists(&self.session_request()).await
     }
 
     async fn get_playlist(&self, id: &str) -> Result<Playlist, ProviderError> {
@@ -450,103 +354,9 @@ impl MusicProvider for JellyfinProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        let user_id = self
-            .user_id
-            .as_ref()
-            .ok_or_else(|| ProviderError("User ID not available".to_string()))?;
-
-        // Fetch all playlist items with pagination
-        let mut all_tracks = Vec::new();
-        let limit = 300; // Jellyfin default limit
-        let mut start_index = 0;
-        // Safety limit to prevent infinite loops. With limit=300, this allows for
-        // playlists with up to 300,000 items (1000 * 300), which should be sufficient
-        // for any realistic use case while protecting against API issues.
-        const MAX_ITERATIONS: usize = 1000;
-        let mut iteration_count = 0;
-
-        loop {
-            iteration_count += 1;
-            if iteration_count > MAX_ITERATIONS {
-                tracing::warn!(
-                    "Reached maximum iteration count ({}) while fetching Jellyfin playlist items",
-                    MAX_ITERATIONS
-                );
-                break;
-            }
-
-            let items_url = format!(
-                "{}/Users/{}/Items?ParentId={}&Fields=AudioInfo,MediaSources,ParentId&Limit={}&StartIndex={}",
-                self.base_url, user_id, id, limit, start_index
-            );
-            let items_response = self
-                .client
-                .get(&items_url)
-                .headers(self.build_headers())
-                .send()
-                .await
-                .map_err(|e| ProviderError(format!("Failed to fetch playlist items: {}", e)))?;
-
-            if !items_response.status().is_success() {
-                return Err(ProviderError(format!(
-                    "Failed to fetch playlist items: HTTP {}",
-                    items_response.status()
-                )));
-            }
-
-            let items_data: JellyfinItemsResponse = items_response
-                .json()
-                .await
-                .map_err(|e| ProviderError(format!("Failed to parse playlist items: {}", e)))?;
-
-            let tracks: Vec<Track> = items_data
-                .items
-                .into_iter()
-                .filter(|item| item.item_type == "Audio")
-                .map(|item| self.item_to_track(&item))
-                .collect();
-
-            let fetched_count = tracks.len();
-            all_tracks.extend(tracks);
-
-            // Check if we've fetched all items
-            // Break if: no items returned, fewer items than requested, or we've reached the total
-            if fetched_count == 0
-                || fetched_count < limit
-                || all_tracks.len() >= items_data.total_record_count as usize
-            {
-                break;
-            }
-
-            start_index += limit;
-        }
-
-        // Try to get playlist metadata using the direct Playlists endpoint first
-        let metadata_url = format!("{}/Playlists/{}", self.base_url, id);
-        let metadata_response = self
-            .client
-            .get(&metadata_url)
-            .headers(self.build_headers())
-            .send()
-            .await;
-
-        // If direct endpoint works, use it; otherwise fall back to basic metadata
-        let playlist = if let Ok(response) = metadata_response {
-            if response.status().is_success() {
-                if let Ok(item) = response.json::<JellyfinItem>().await {
-                    let mut playlist = self.item_to_playlist(&item);
-                    playlist.tracks = all_tracks;
-                    return Ok(playlist);
-                }
-            }
-            // Fallback: create basic playlist from ID
-            self.create_fallback_playlist(id, all_tracks)
-        } else {
-            // Fallback: create basic playlist from ID
-            self.create_fallback_playlist(id, all_tracks)
-        };
-
-        Ok(playlist)
+        self.api_client
+            .get_playlist(&self.session_request(), id)
+            .await
     }
 
     async fn get_track(&self, id: &str) -> Result<Track, ProviderError> {
@@ -554,38 +364,7 @@ impl MusicProvider for JellyfinProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        let user_id = self
-            .user_id
-            .as_ref()
-            .ok_or_else(|| ProviderError("User ID not available".to_string()))?;
-
-        // GET /Users/{userId}/Items/{id}
-        let url = format!(
-            "{}/Users/{}/Items/{}?Fields=AudioInfo,MediaSources",
-            self.base_url, user_id, id
-        );
-
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to fetch track: {}", e)))?;
-
-        if !response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Failed to fetch track: HTTP {}",
-                response.status()
-            )));
-        }
-
-        let item: JellyfinItem = response
-            .json()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to parse track: {}", e)))?;
-
-        Ok(self.item_to_track(&item))
+        self.api_client.get_track(&self.session_request(), id).await
     }
 
     async fn search_tracks(&self, query: &str) -> Result<Vec<Track>, ProviderError> {
@@ -593,44 +372,9 @@ impl MusicProvider for JellyfinProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        let user_id = self
-            .user_id
-            .as_ref()
-            .ok_or_else(|| ProviderError("User ID not available".to_string()))?;
-
-        // GET /Items with search query
-        let url = format!(
-            "{}/Users/{}/Items?searchTerm={}&IncludeItemTypes=Audio&Recursive=true&Fields=AudioInfo,MediaSources",
-            self.base_url, user_id, query
-        );
-
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
+        self.api_client
+            .search_tracks(&self.session_request(), query)
             .await
-            .map_err(|e| ProviderError(format!("Failed to search tracks: {}", e)))?;
-
-        if !response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Failed to search tracks: HTTP {}",
-                response.status()
-            )));
-        }
-
-        let data: JellyfinItemsResponse = response
-            .json()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to parse search results: {}", e)))?;
-
-        let tracks: Vec<Track> = data
-            .items
-            .into_iter()
-            .map(|item| self.item_to_track(&item))
-            .collect();
-
-        Ok(tracks)
     }
 
     async fn search_playlists(&self, query: &str) -> Result<Vec<Playlist>, ProviderError> {
@@ -638,53 +382,15 @@ impl MusicProvider for JellyfinProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        let user_id = self
-            .user_id
-            .as_ref()
-            .ok_or_else(|| ProviderError("User ID not available".to_string()))?;
-
-        // GET /Items with search query for playlists
-        let url = format!(
-            "{}/Users/{}/Items?searchTerm={}&IncludeItemTypes=Playlist&Recursive=true",
-            self.base_url, user_id, query
-        );
-
-        let response = self
-            .client
-            .get(&url)
-            .headers(self.build_headers())
-            .send()
+        self.api_client
+            .search_playlists(&self.session_request(), query)
             .await
-            .map_err(|e| ProviderError(format!("Failed to search playlists: {}", e)))?;
-
-        if !response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Failed to search playlists: HTTP {}",
-                response.status()
-            )));
-        }
-
-        let data: JellyfinItemsResponse = response
-            .json()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to parse search results: {}", e)))?;
-
-        let playlists: Vec<Playlist> = data
-            .items
-            .into_iter()
-            .map(|item| self.item_to_playlist(&item))
-            .collect();
-
-        Ok(playlists)
     }
 
     async fn get_stream_url(&self, track_id: &str) -> Result<String, ProviderError> {
-        // Get direct stream URL from Jellyfin
-        // Format: {base_url}/Audio/{track_id}/universal?api_key={api_key}
-        Ok(format!(
-            "{}/Audio/{}/universal?api_key={}",
-            self.base_url, track_id, self.api_key
-        ))
+        self.api_client
+            .get_stream_url(&self.session_request(), track_id)
+            .await
     }
 
     async fn get_auth_headers(&self) -> Option<Vec<(String, String)>> {

@@ -235,36 +235,6 @@ export function useCustomPlaylistTracks(playlistId: string | null) {
               );
               setTracks(cacheData.tracks);
               setLoading(false);
-              // Still fetch fresh data in the background and update
-              tauriAPI
-                .getCustomPlaylistTracks(playlistId)
-                .then((data) => {
-                  console.log(
-                    `Fetched ${data.length} tracks from backend for playlist ${playlistId}`,
-                  );
-                  setTracks(data);
-                  const newCacheData = {
-                    version: CACHE_VERSION,
-                    timestamp: Date.now(),
-                    tracks: data,
-                  };
-                  tauriAPI
-                    .writeCustomPlaylistTracksCache(
-                      playlistId,
-                      JSON.stringify(newCacheData),
-                    )
-                    .catch((err) => {
-                      console.error("Failed to update tracks cache:", err);
-                    });
-                })
-                .catch((err) => {
-                  console.error("Failed to refresh tracks:", err);
-                  setError(
-                    err instanceof Error
-                      ? err.message
-                      : "Failed to refresh tracks",
-                  );
-                });
               return;
             }
           }
@@ -490,39 +460,6 @@ export function useUnionPlaylistTracks(unionPlaylistId: string | null) {
               );
               setTracks(cacheData.tracks);
               setLoading(false);
-              // Still fetch fresh data in the background and update
-              tauriAPI
-                .getUnionPlaylistTracks(unionPlaylistId)
-                .then((data) => {
-                  console.log(
-                    `Fetched ${data.length} tracks from backend for union playlist ${unionPlaylistId}`,
-                  );
-                  setTracks(data);
-                  const newCacheData = {
-                    version: CACHE_VERSION,
-                    timestamp: Date.now(),
-                    tracks: data,
-                  };
-                  tauriAPI
-                    .writeUnionPlaylistTracksCache(
-                      unionPlaylistId,
-                      JSON.stringify(newCacheData),
-                    )
-                    .catch((err) => {
-                      console.error(
-                        "Failed to update union tracks cache:",
-                        err,
-                      );
-                    });
-                })
-                .catch((err) => {
-                  console.error("Failed to refresh union tracks:", err);
-                  setError(
-                    err instanceof Error
-                      ? err.message
-                      : "Failed to refresh tracks",
-                  );
-                });
               return;
             }
           }

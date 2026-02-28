@@ -94,6 +94,8 @@ pub fn run() {
             commands::skip_to_queue_index,
             commands::seek,
             commands::set_volume,
+            commands::get_audio_normalization_settings,
+            commands::set_audio_normalization_settings,
             commands::toggle_shuffle,
             commands::set_repeat_mode,
             // Playlist commands
@@ -179,6 +181,10 @@ pub fn run() {
             commands::write_union_playlist_tracks_cache,
             commands::read_union_playlist_tracks_cache,
             commands::clear_union_playlist_tracks_cache,
+            commands::write_provider_playlist_cache,
+            commands::read_provider_playlist_cache,
+            commands::clear_provider_playlist_cache,
+            commands::clear_provider_playlists_cache,
             // Playback state commands
             commands::save_playback_state,
             commands::restore_playback_state,
@@ -209,6 +215,9 @@ pub fn run() {
             let ws_sender_for_server = ws_sender.clone();
             let ws_sender_for_playback = ws_sender.clone();
             let playback_for_ws = playback.clone();
+            let playback_for_refresh = playback.clone();
+            let providers_for_refresh = providers_for_state.clone();
+            let handle_for_refresh = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(err) =
                     websocket::start_ws_server(handle_for_ws, ws_sender_for_server).await
@@ -219,6 +228,15 @@ pub fn run() {
 
             tauri::async_runtime::spawn(async move {
                 websocket::start_playback_broadcast(playback_for_ws, ws_sender_for_playback).await;
+            });
+
+            tauri::async_runtime::spawn(async move {
+                start_spotify_token_refresh_job(
+                    providers_for_refresh,
+                    playback_for_refresh,
+                    handle_for_refresh,
+                )
+                .await;
             });
 
             // Spawn a task to listen for track completion and emit events
@@ -564,6 +582,65 @@ async fn restore_plex_provider_on_startup(providers: Arc<Mutex<ProviderRegistry>
             tracing::warn!("Timed out restoring Plex provider on startup");
             false
         }
+    }
+}
+
+async fn start_spotify_token_refresh_job(
+    providers: Arc<Mutex<ProviderRegistry>>,
+    playback: Arc<Mutex<PlaybackManager>>,
+    app_handle: tauri::AppHandle,
+) {
+    const SPOTIFY_REFRESH_INTERVAL_SECS: u64 = 5 * 60;
+
+    let mut interval = tokio::time::interval(Duration::from_secs(SPOTIFY_REFRESH_INTERVAL_SECS));
+
+    interval.tick().await;
+
+    loop {
+        interval.tick().await;
+
+        let maybe_access_token = {
+            let mut providers_locked = providers.lock().await;
+
+            if !providers_locked.is_authenticated(Source::Spotify).await {
+                None
+            } else {
+                match providers_locked.refresh_auth(Source::Spotify).await {
+                    Ok(()) => {
+                        tracing::debug!("Spotify token refresh job completed a refresh cycle");
+                        let premium = providers_locked
+                            .premium_status(Source::Spotify)
+                            .await
+                            .unwrap_or(false);
+                        if premium {
+                            providers_locked.get_access_token(Source::Spotify).await
+                        } else {
+                            None
+                        }
+                    }
+                    Err(error) => {
+                        tracing::warn!("Spotify token refresh job failed: {}", error);
+                        None
+                    }
+                }
+            }
+        };
+
+        if let Some(access_token) = maybe_access_token {
+            let playback_locked = playback.lock().await;
+            if let Err(error) = playback_locked
+                .initialize_spotify_session(&access_token)
+                .await
+            {
+                tracing::warn!(
+                    "Spotify token refresh job failed to reinitialize playback warm-up: {}",
+                    error
+                );
+            }
+        }
+
+        let app_state = app_handle.state::<commands::AppState>();
+        websocket::emit_spotify_status(&app_state).await;
     }
 }
 

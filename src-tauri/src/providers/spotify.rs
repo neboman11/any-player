@@ -1,6 +1,7 @@
 use super::{MusicProvider, ProviderAuthRequest, ProviderAuthResponse, ProviderError};
 use crate::models::{Playlist, Source, Track};
 use async_trait::async_trait;
+use chrono::{Duration as ChronoDuration, Utc};
 use futures::stream::StreamExt;
 use rspotify::{prelude::*, scopes, AuthCodePkceSpotify, Credentials, OAuth, Token};
 use std::path::PathBuf;
@@ -429,20 +430,79 @@ impl SpotifyProvider {
         None
     }
 
-    /// Refresh the OAuth token if needed
+    /// Refresh the OAuth token when it is expired or close to expiry.
     ///
-    /// In a production implementation, this would refresh the token with Spotify's API
-    /// and notify the playback manager to refresh playback warm-up state if needed.
-    /// For now, this is a placeholder that logs the intention.
+    /// Uses a proactive refresh window so long-running sessions keep working
+    /// without waiting for the exact expiry boundary.
     pub async fn refresh_token(&mut self) -> Result<(), ProviderError> {
-        // TODO: Implement actual token refresh when rspotify provides refresh capability
-        // Steps:
-        // 1. Check if token is expired
-        // 2. Request new token from Spotify
-        // 3. Update internal client with new token
-        // 4. Return new token for playback warm-up refresh
+        const REFRESH_WINDOW_SECONDS: i64 = 10 * 60;
 
-        tracing::debug!("Spotify token refresh called (placeholder)");
+        let client = self
+            .client
+            .as_mut()
+            .ok_or_else(|| ProviderError("Client not configured".to_string()))?;
+
+        let current_token = client
+            .token
+            .lock()
+            .await
+            .map_err(|_| ProviderError("Failed to lock token".to_string()))?
+            .clone();
+
+        let Some(token) = current_token else {
+            return Err(ProviderError(
+                "No Spotify token is available to refresh".to_string(),
+            ));
+        };
+
+        let now = Utc::now();
+        let refresh_deadline = now + ChronoDuration::seconds(REFRESH_WINDOW_SECONDS);
+        let should_refresh = token.is_expired()
+            || token
+                .expires_at
+                .map(|expires_at| expires_at <= refresh_deadline)
+                .unwrap_or(true);
+
+        if !should_refresh {
+            tracing::debug!("Spotify token refresh skipped (token still valid)");
+            return Ok(());
+        }
+
+        if token.refresh_token.is_none() {
+            return Err(ProviderError(
+                "Spotify token is expiring/expired but has no refresh token".to_string(),
+            ));
+        }
+
+        tracing::info!("Refreshing Spotify OAuth token");
+        client
+            .refresh_token()
+            .await
+            .map_err(|e| ProviderError(format!("Failed to refresh Spotify token: {}", e)))?;
+
+        let refreshed_token = client
+            .token
+            .lock()
+            .await
+            .map_err(|_| ProviderError("Failed to lock refreshed token".to_string()))?
+            .clone();
+
+        let Some(refreshed_token) = refreshed_token else {
+            return Err(ProviderError(
+                "Spotify refresh reported success but no token is present".to_string(),
+            ));
+        };
+
+        self.access_token = Some(refreshed_token.access_token.clone());
+        self.is_authenticated = true;
+
+        if let Err(error) = self.check_and_update_premium_status().await {
+            tracing::warn!(
+                "Spotify token refresh succeeded but premium status refresh failed: {}",
+                error
+            );
+        }
+
         Ok(())
     }
 }

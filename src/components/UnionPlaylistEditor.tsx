@@ -6,6 +6,7 @@ import {
   useUnionPlaylistSources,
   useUnionPlaylistTracks,
   useCustomPlaylists,
+  usePlaylists,
   usePlayback,
   usePlaylistEditor,
 } from "../hooks";
@@ -51,6 +52,11 @@ export function UnionPlaylistEditor({
     refresh: refreshTracks,
   } = useUnionPlaylistTracks(playlist.id);
   const { playlists: customPlaylists } = useCustomPlaylists();
+  const {
+    playlists: providerPlaylists,
+    loadPlaylists,
+    isCached: isProviderPlaylistCacheReady,
+  } = usePlaylists();
   const playback = usePlayback();
 
   const editorState = usePlaylistEditor({
@@ -75,7 +81,7 @@ export function UnionPlaylistEditor({
   // Load playlists when needed
   useEffect(() => {
     if (showAddSource) {
-      loadExternalPlaylists();
+      void loadExternalPlaylists();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAddSource, selectedSourceType]);
@@ -83,97 +89,53 @@ export function UnionPlaylistEditor({
   // Resolve source playlist IDs to display names for the source list.
   // Falls back to ID when a provider is unavailable or unauthenticated.
   useEffect(() => {
-    let isCancelled = false;
+    const nextNames: Record<string, string> = {};
 
-    const loadSourcePlaylistNames = async () => {
-      const nextNames: Record<string, string> = {};
+    for (const customPlaylist of customPlaylists) {
+      nextNames[`custom:${customPlaylist.id}`] = customPlaylist.name;
+    }
 
-      // Custom playlists are always available locally
-      for (const customPlaylist of customPlaylists) {
-        nextNames[`custom:${customPlaylist.id}`] = customPlaylist.name;
-      }
+    for (const providerPlaylist of providerPlaylists) {
+      nextNames[`${providerPlaylist.source}:${providerPlaylist.id}`] =
+        providerPlaylist.name;
+    }
 
-      const providerTypes = Array.from(
-        new Set(
-          sources
-            .filter((source) => source.source_type !== "custom")
-            .map((source) => source.source_type),
-        ),
-      );
+    setSourcePlaylistNames(nextNames);
+  }, [customPlaylists, providerPlaylists]);
 
-      for (const sourceType of providerTypes) {
-        const provider = SERVICE_PROVIDERS.find((p) => p.id === sourceType);
-        if (!provider) {
-          continue;
-        }
+  const loadExternalPlaylists = async (): Promise<void> => {
+    if (!isProviderPlaylistCacheReady || providerPlaylists.length === 0) {
+      await loadPlaylists("all");
+    }
 
-        try {
-          const isAuthenticated = await provider.isAuthenticated();
-          if (!isAuthenticated) {
-            continue;
-          }
-
-          const playlists = await provider.getPlaylists();
-          for (const providerPlaylist of playlists) {
-            nextNames[`${sourceType}:${providerPlaylist.id}`] =
-              providerPlaylist.name;
-          }
-        } catch (err) {
-          console.error(`Failed to load ${sourceType} playlist names:`, err);
-        }
-      }
-
-      if (!isCancelled) {
-        setSourcePlaylistNames(nextNames);
-      }
-    };
-
-    void loadSourcePlaylistNames();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [sources, customPlaylists]);
-
-  const loadExternalPlaylists = async () => {
     const playlists: Playlist[] = [];
 
-    try {
-      // Add custom playlists (excluding current and union types)
-      if (selectedSourceType === "all" || selectedSourceType === "custom") {
-        const filtered = customPlaylists.filter(
-          (p) => p.id !== playlist.id && p.playlist_type !== "union",
-        );
-        playlists.push(
-          ...filtered.map((p) => ({
-            id: p.id,
-            name: p.name,
-            owner: "You",
-            track_count: p.track_count,
-            source: "custom" as const,
-            description: p.description || undefined,
-            image_url: p.image_url || undefined,
-          })),
-        );
-      }
-
-      // Add external playlists
-      for (const provider of SERVICE_PROVIDERS) {
-        if (!includesSource(selectedSourceType, provider.id)) {
-          continue;
-        }
-
-        const isAuthenticated = await provider.isAuthenticated();
-        if (isAuthenticated) {
-          const providerPlaylists = await provider.getPlaylists();
-          playlists.push(...providerPlaylists);
-        }
-      }
-
-      setAvailablePlaylists(playlists);
-    } catch (err) {
-      console.error("Failed to load playlists:", err);
+    if (selectedSourceType === "all" || selectedSourceType === "custom") {
+      const filtered = customPlaylists.filter(
+        (p) => p.id !== playlist.id && p.playlist_type !== "union",
+      );
+      playlists.push(
+        ...filtered.map((p) => ({
+          id: p.id,
+          name: p.name,
+          owner: "You",
+          track_count: p.track_count,
+          source: "custom" as const,
+          description: p.description || undefined,
+          image_url: p.image_url || undefined,
+        })),
+      );
     }
+
+    playlists.push(
+      ...providerPlaylists.filter(
+        (providerPlaylist) =>
+          providerPlaylist.source !== "custom" &&
+          includesSource(selectedSourceType, providerPlaylist.source),
+      ),
+    );
+
+    setAvailablePlaylists(playlists);
   };
 
   const handleAddSource = async (playlistId: string, sourceType: string) => {
@@ -429,6 +391,7 @@ export function UnionPlaylistEditor({
             tracks={filteredTracks}
             onPlayTrack={handlePlayTrack}
             onPlayFromTrack={handlePlayFromTrack}
+            sortStorageKey={`union-playlist-editor:${playlist.id}`}
           />
         )}
       </div>

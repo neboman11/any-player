@@ -115,6 +115,7 @@ export function CustomPlaylistEditor({
             onRemoveTrack={removeTrack}
             onReorderTrack={reorderTrack}
             onPlayTrack={handlePlayTrack}
+            sortStorageKey={`custom-playlist-editor:${playlist.id}`}
           />
         )}
       </div>

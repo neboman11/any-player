@@ -92,3 +92,41 @@ pub async fn clear_union_playlist_tracks_cache(playlist_id: String) -> Result<()
     crate::cache::clear_union_playlist_tracks_cache(&playlist_id)
         .map_err(|e| format!("Failed to clear union playlist tracks cache: {}", e))
 }
+
+/// Write provider playlist cache to disk
+#[tauri::command]
+pub async fn write_provider_playlist_cache(
+    source: String,
+    playlist_id: String,
+    data: String,
+) -> Result<(), String> {
+    crate::cache::write_provider_playlist_cache(&source, &playlist_id, &data)
+        .map_err(|e| format!("Failed to write provider playlist cache: {}", e))
+}
+
+/// Read provider playlist cache from disk
+#[tauri::command]
+pub async fn read_provider_playlist_cache(
+    source: String,
+    playlist_id: String,
+) -> Result<Option<String>, String> {
+    crate::cache::read_provider_playlist_cache(&source, &playlist_id)
+        .map_err(|e| format!("Failed to read provider playlist cache: {}", e))
+}
+
+/// Clear provider playlist cache
+#[tauri::command]
+pub async fn clear_provider_playlist_cache(
+    source: String,
+    playlist_id: String,
+) -> Result<(), String> {
+    crate::cache::clear_provider_playlist_cache(&source, &playlist_id)
+        .map_err(|e| format!("Failed to clear provider playlist cache: {}", e))
+}
+
+/// Clear all provider playlist caches
+#[tauri::command]
+pub async fn clear_provider_playlists_cache() -> Result<usize, String> {
+    crate::cache::clear_provider_playlists_cache()
+        .map_err(|e| format!("Failed to clear provider playlists cache: {}", e))
+}

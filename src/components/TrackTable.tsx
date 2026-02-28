@@ -1,7 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { PlaylistTrack, ColumnPreferences, Track } from "../types";
 import { tauriAPI } from "../api";
 import "./TrackTable.css";
+
+type TrackSortColumn = "title" | "artist" | "album" | "duration" | "source";
+
+interface IndexedTrackRow {
+  track: PlaylistTrack | Track;
+  originalIndex: number;
+}
 
 interface TrackTableProps {
   tracks: PlaylistTrack[] | Track[];
@@ -9,6 +16,35 @@ interface TrackTableProps {
   onReorderTrack?: (trackId: number, newPosition: number) => void;
   onPlayTrack?: (track: PlaylistTrack | Track) => void;
   onPlayFromTrack?: (index: number) => void;
+  sortStorageKey?: string;
+}
+
+function readInitialSortState(sortStorageKey: string): {
+  column: TrackSortColumn | null;
+  ascending: boolean;
+} {
+  try {
+    const rawValue = window.localStorage.getItem(
+      `any-player.track-table.sort.${sortStorageKey}`,
+    );
+
+    if (!rawValue) {
+      return { column: null, ascending: true };
+    }
+
+    const parsed = JSON.parse(rawValue) as {
+      column?: TrackSortColumn | null;
+      ascending?: boolean;
+    };
+
+    return {
+      column: parsed.column ?? null,
+      ascending: parsed.ascending ?? true,
+    };
+  } catch (err) {
+    console.warn("Failed to restore track table sort state", err);
+    return { column: null, ascending: true };
+  }
 }
 
 const DEFAULT_COLUMNS: ColumnPreferences = {
@@ -29,10 +65,31 @@ export function TrackTable({
   onReorderTrack,
   onPlayTrack,
   onPlayFromTrack,
+  sortStorageKey = "track-table-default",
 }: TrackTableProps) {
   const [columnPrefs, setColumnPrefs] =
     useState<ColumnPreferences>(DEFAULT_COLUMNS);
   const [draggedTrack, setDraggedTrack] = useState<number | null>(null);
+  const [sortColumn, setSortColumn] = useState<TrackSortColumn | null>(
+    () => readInitialSortState(sortStorageKey).column,
+  );
+  const [sortAscending, setSortAscending] = useState<boolean>(
+    () => readInitialSortState(sortStorageKey).ascending,
+  );
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        `any-player.track-table.sort.${sortStorageKey}`,
+        JSON.stringify({
+          column: sortColumn,
+          ascending: sortAscending,
+        }),
+      );
+    } catch (err) {
+      console.warn("Failed to persist track table sort state", err);
+    }
+  }, [sortStorageKey, sortColumn, sortAscending]);
 
   useEffect(() => {
     const loadPreferences = async () => {
@@ -77,6 +134,32 @@ export function TrackTable({
     .map((index) => columnPrefs.columns[index])
     .filter((col) => col !== undefined);
 
+  const rows = useMemo<IndexedTrackRow[]>(() => {
+    const indexedRows = tracks.map((track, originalIndex) => ({
+      track,
+      originalIndex,
+    }));
+
+    if (!sortColumn) {
+      return indexedRows;
+    }
+
+    const sorted = [...indexedRows].sort((left, right) => {
+      const leftValue = getSortValue(left.track, sortColumn);
+      const rightValue = getSortValue(right.track, sortColumn);
+
+      if (typeof leftValue === "number" && typeof rightValue === "number") {
+        return leftValue - rightValue;
+      }
+
+      return String(leftValue).localeCompare(String(rightValue));
+    });
+
+    return sortAscending ? sorted : sorted.reverse();
+  }, [tracks, sortColumn, sortAscending]);
+
+  const isSorted = sortColumn !== null;
+
   const getColumnValue = (track: PlaylistTrack | Track, column: string) => {
     // Check if it's a PlaylistTrack (has track_source) or Track (has source)
     const isPlaylistTrack = "track_source" in track;
@@ -116,6 +199,49 @@ export function TrackTable({
     }
   };
 
+  function getSortValue(
+    track: PlaylistTrack | Track,
+    column: TrackSortColumn,
+  ): string | number {
+    const isPlaylistTrack = "track_source" in track;
+
+    switch (column) {
+      case "title":
+        return track.title.toLowerCase();
+      case "artist":
+        return track.artist.toLowerCase();
+      case "album":
+        return (track.album || "").toLowerCase();
+      case "duration":
+        return track.duration_ms ?? 0;
+      case "source":
+        return String(
+          isPlaylistTrack
+            ? (track as PlaylistTrack).track_source
+            : (track as Track).source,
+        ).toLowerCase();
+      default:
+        return "";
+    }
+  }
+
+  const handleColumnSort = (column: string) => {
+    const typedColumn = column as TrackSortColumn;
+    if (sortColumn !== typedColumn) {
+      setSortColumn(typedColumn);
+      setSortAscending(true);
+      return;
+    }
+
+    if (sortAscending) {
+      setSortAscending(false);
+      return;
+    }
+
+    setSortColumn(null);
+    setSortAscending(true);
+  };
+
   return (
     <div className="track-table">
       <table>
@@ -130,20 +256,32 @@ export function TrackTable({
                   width: columnPrefs.column_widths[column] || "auto",
                 }}
               >
-                {getColumnLabel(column)}
+                <button
+                  type="button"
+                  className="column-sort-btn"
+                  onClick={() => handleColumnSort(column)}
+                >
+                  {sortColumn === column
+                    ? `${getColumnLabel(column)} ${sortAscending ? "↑" : "↓"}`
+                    : getColumnLabel(column)}
+                </button>
               </th>
             ))}
             {onRemoveTrack && <th className="actions-column">Actions</th>}
           </tr>
         </thead>
         <tbody>
-          {tracks.map((track, index) => (
+          {rows.map(({ track, originalIndex }, index) => (
             <tr
               key={track.id}
-              draggable={!!onReorderTrack}
+              draggable={!!onReorderTrack && !isSorted}
               onDragStart={() => handleDragStart(track.id)}
               onDragOver={handleDragOver}
-              onDrop={() => handleDrop(index)}
+              onDrop={() => {
+                if (!isSorted) {
+                  handleDrop(index);
+                }
+              }}
               className={draggedTrack === track.id ? "dragging" : ""}
               onClick={() => onPlayTrack?.(track)}
             >
@@ -153,7 +291,7 @@ export function TrackTable({
                     className="play-track-btn"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onPlayFromTrack(index);
+                      onPlayFromTrack(originalIndex);
                     }}
                     aria-label="Play from here"
                     title="Play from here"
@@ -162,7 +300,7 @@ export function TrackTable({
                   </button>
                 </td>
               )}
-              <td className="position-column">{index + 1}</td>
+              <td className="position-column">{originalIndex + 1}</td>
               {visibleColumns.map((column) => (
                 <td
                   key={column}

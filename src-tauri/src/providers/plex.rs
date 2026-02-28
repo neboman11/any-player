@@ -1,17 +1,19 @@
 use super::{MusicProvider, ProviderAuthRequest, ProviderAuthResponse, ProviderError};
 use crate::models::{Playlist, Source, Track};
+use any_player_core::provider_api::ProviderApi;
+use any_player_core::provider_clients::plex::PlexApiClient;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
-
-// Plex item type constants
-const PLEX_TYPE_PLAYLIST: &str = "15";
 
 pub struct PlexProvider {
     base_url: String,
     token: String,
     authenticated: bool,
     client: Client,
+    insecure_client: Client,
+    use_insecure_tls: bool,
+    api_client: PlexApiClient,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,10 +35,6 @@ struct PlexMetadata {
     #[serde(default)]
     title: String,
     #[serde(default)]
-    summary: Option<String>,
-    #[serde(default, rename = "leafCount")]
-    leaf_count: Option<u32>,
-    #[serde(default)]
     thumb: Option<String>,
     #[serde(default)]
     duration: Option<u64>,
@@ -47,8 +45,6 @@ struct PlexMetadata {
     #[serde(default)]
     #[serde(rename = "Media")]
     media: Option<Vec<PlexMedia>>,
-    #[serde(default, rename = "type")]
-    item_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,12 +65,51 @@ struct PlexPart {
 
 impl PlexProvider {
     pub fn new(base_url: String, token: String) -> Self {
+        let insecure_client = Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .unwrap_or_else(|_| {
+                Client::builder()
+                    .danger_accept_invalid_certs(true)
+                    .build()
+                    .expect("Failed to build insecure reqwest::Client with invalid certs accepted")
+            });
+
         Self {
             base_url,
             token,
             authenticated: false,
             client: Client::new(),
+            insecure_client,
+            use_insecure_tls: false,
+            api_client: PlexApiClient::new(),
         }
+    }
+
+    fn session_request(&self) -> ProviderAuthRequest {
+        ProviderAuthRequest::from_pairs([
+            ("url", self.base_url.as_str()),
+            ("token", self.token.as_str()),
+        ])
+    }
+
+    fn active_client(&self) -> &Client {
+        if self.use_insecure_tls {
+            &self.insecure_client
+        } else {
+            &self.client
+        }
+    }
+
+    fn is_tls_error(error: &reqwest::Error) -> bool {
+        let message = error.to_string().to_lowercase();
+
+        message.contains("certificate")
+            || message.contains("tls")
+            || message.contains("ssl")
+            || message.contains("unknown issuer")
+            || message.contains("self signed")
+            || message.contains("invalid peer certificate")
     }
 
     fn normalize_base_url(url: &str) -> String {
@@ -101,6 +136,10 @@ impl PlexProvider {
     fn map_connect_error(error: &reqwest::Error) -> String {
         let raw = error.to_string();
         let message = raw.to_lowercase();
+
+        if Self::is_tls_error(error) {
+            return "TLS/SSL handshake failed while connecting to Plex. This often happens with self-signed or locally-issued certificates.".to_string();
+        }
 
         if error.is_timeout() || message.contains("timed out") {
             return "Timed out connecting to Plex. Check that the server URL is reachable and the server is online.".to_string();
@@ -155,6 +194,7 @@ impl PlexProvider {
 
         self.base_url = normalized_url;
         self.token = token.to_string();
+        self.use_insecure_tls = false;
         Ok(())
     }
 
@@ -232,24 +272,9 @@ impl PlexProvider {
         })
     }
 
-    fn playlist_from_metadata(&self, item: PlexMetadata) -> Option<Playlist> {
-        let id = item.rating_key?;
-
-        Some(Playlist {
-            id,
-            name: item.title,
-            description: item.summary,
-            owner: "Plex".to_string(),
-            image_url: self.image_url_from_path(&item.thumb),
-            track_count: item.leaf_count.unwrap_or(0) as usize,
-            tracks: Vec::new(),
-            source: Source::Plex,
-        })
-    }
-
     async fn get_tracks_from_endpoint(&self, endpoint: &str) -> Result<Vec<Track>, ProviderError> {
         let response = self
-            .client
+            .active_client()
             .get(self.authed_url(endpoint))
             .header("Accept", "application/json")
             .send()
@@ -275,57 +300,6 @@ impl PlexProvider {
             .metadata
             .into_iter()
             .filter_map(|item| self.track_from_metadata(item))
-            .collect())
-    }
-
-    /// Fetches playlists from a Plex API endpoint without type filtering.
-    /// For type-filtered requests, use `get_playlists_from_endpoint_with_filter`.
-    async fn get_playlists_from_endpoint(
-        &self,
-        endpoint: &str,
-    ) -> Result<Vec<Playlist>, ProviderError> {
-        self.get_playlists_from_endpoint_with_filter(endpoint, None)
-            .await
-    }
-
-    /// Fetches playlists from a Plex API endpoint with optional type filtering.
-    /// Used when the endpoint returns mixed item types and filtering is needed.
-    async fn get_playlists_from_endpoint_with_filter(
-        &self,
-        endpoint: &str,
-        type_filter: Option<&str>,
-    ) -> Result<Vec<Playlist>, ProviderError> {
-        let response = self
-            .client
-            .get(self.authed_url(endpoint))
-            .header("Accept", "application/json")
-            .send()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to fetch Plex playlists: {}", e)))?;
-
-        if !response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Plex playlist request failed: HTTP {}",
-                response.status()
-            )));
-        }
-
-        let body = response
-            .text()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to read Plex response body: {}", e)))?;
-
-        let parsed = Self::parse_json_response::<PlexResponse>(&body)?;
-
-        Ok(parsed
-            .media_container
-            .metadata
-            .into_iter()
-            .filter(|item| {
-                // Apply type filter if provided
-                type_filter.is_none_or(|filter_type| item.item_type.as_deref() == Some(filter_type))
-            })
-            .filter_map(|item| self.playlist_from_metadata(item))
             .collect())
     }
 }
@@ -359,18 +333,50 @@ impl MusicProvider for PlexProvider {
     }
 
     async fn authenticate(&mut self) -> Result<(), ProviderError> {
-        let response = self
+        let identity_url = self.authed_url("identity");
+        let mut used_insecure_tls = false;
+
+        let response = match self
             .client
-            .get(self.authed_url("identity"))
+            .get(&identity_url)
             .header("Accept", "application/json")
             .send()
             .await
-            .map_err(|e| ProviderError(Self::map_connect_error(&e)))?;
+        {
+            Ok(response) => response,
+            Err(error) if self.base_url.starts_with("https://") && Self::is_tls_error(&error) => {
+                tracing::warn!(
+                    "Plex HTTPS TLS validation failed; retrying with insecure certificate validation"
+                );
+
+                let insecure_response = self
+                    .insecure_client
+                    .get(&identity_url)
+                    .header("Accept", "application/json")
+                    .send()
+                    .await
+                    .map_err(|e| ProviderError(Self::map_connect_error(&e)))?;
+
+                used_insecure_tls = true;
+                insecure_response
+            }
+            Err(error) => return Err(ProviderError(Self::map_connect_error(&error))),
+        };
 
         if !response.status().is_success() {
             return Err(ProviderError(Self::map_auth_status(response.status())));
         }
 
+        let tls_mode_changed = !self.authenticated || self.use_insecure_tls != used_insecure_tls;
+        self.use_insecure_tls = used_insecure_tls;
+
+        if tls_mode_changed {
+            self.api_client = if used_insecure_tls {
+                PlexApiClient::with_client(self.insecure_client.clone())
+            } else {
+                PlexApiClient::with_client(self.client.clone())
+            };
+        }
         self.authenticated = true;
         Ok(())
     }
@@ -384,8 +390,7 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        self.get_playlists_from_endpoint("playlists/all?type=15")
-            .await
+        self.api_client.get_playlists(&self.session_request()).await
     }
 
     async fn get_playlist(&self, id: &str) -> Result<Playlist, ProviderError> {
@@ -393,21 +398,9 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        let mut playlists = self
-            .get_playlists_from_endpoint(&format!("library/metadata/{}", id))
-            .await?;
-
-        let mut playlist = playlists
-            .pop()
-            .ok_or_else(|| ProviderError(format!("Plex playlist not found: {}", id)))?;
-
-        let tracks = self
-            .get_tracks_from_endpoint(&format!("playlists/{}/items", id))
-            .await?;
-        playlist.track_count = tracks.len();
-        playlist.tracks = tracks;
-
-        Ok(playlist)
+        self.api_client
+            .get_playlist(&self.session_request(), id)
+            .await
     }
 
     async fn get_track(&self, id: &str) -> Result<Track, ProviderError> {
@@ -415,14 +408,7 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        let tracks = self
-            .get_tracks_from_endpoint(&format!("library/metadata/{}", id))
-            .await?;
-
-        tracks
-            .into_iter()
-            .next()
-            .ok_or_else(|| ProviderError(format!("Plex track not found: {}", id)))
+        self.api_client.get_track(&self.session_request(), id).await
     }
 
     async fn search_tracks(&self, query: &str) -> Result<Vec<Track>, ProviderError> {
@@ -430,9 +416,8 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        let encoded_query: String =
-            url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-        self.get_tracks_from_endpoint(&format!("search?query={}&limit=50", encoded_query))
+        self.api_client
+            .search_tracks(&self.session_request(), query)
             .await
     }
 
@@ -441,24 +426,15 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        // Plex search API returns mixed results (tracks, albums, artists, playlists, etc.).
-        // We filter to only playlist types using type "15" (PLEX_TYPE_PLAYLIST).
-        // This is necessary because the Plex API doesn't support type filtering in search queries.
-        let encoded_query: String =
-            url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-
-        self.get_playlists_from_endpoint_with_filter(
-            &format!("search?query={}&limit=50", encoded_query),
-            Some(PLEX_TYPE_PLAYLIST),
-        )
-        .await
+        self.api_client
+            .search_playlists(&self.session_request(), query)
+            .await
     }
 
     async fn get_stream_url(&self, track_id: &str) -> Result<String, ProviderError> {
-        let track = self.get_track(track_id).await?;
-        track
-            .url
-            .ok_or_else(|| ProviderError("No stream URL available for Plex track".to_string()))
+        self.api_client
+            .get_stream_url(&self.session_request(), track_id)
+            .await
     }
 
     async fn create_playlist(

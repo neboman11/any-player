@@ -7,6 +7,7 @@ const PLAYLISTS_CACHE_FILE: &str = "playlists_cache.json";
 const CUSTOM_PLAYLISTS_CACHE_FILE: &str = "custom_playlists_cache.json";
 const CUSTOM_PLAYLIST_TRACKS_CACHE_PREFIX: &str = "custom_playlist_tracks_";
 const UNION_PLAYLIST_TRACKS_CACHE_PREFIX: &str = "union_playlist_tracks_";
+const PROVIDER_PLAYLIST_CACHE_PREFIX: &str = "provider_playlist_";
 
 /// Get the XDG cache directory for the application
 fn get_cache_dir() -> Result<PathBuf> {
@@ -139,6 +140,60 @@ pub fn read_union_playlist_tracks_cache(playlist_id: &str) -> Result<Option<Stri
 pub fn clear_union_playlist_tracks_cache(playlist_id: &str) -> Result<()> {
     let filename = format!("{}{}.json", UNION_PLAYLIST_TRACKS_CACHE_PREFIX, playlist_id);
     clear_cache(&filename)
+}
+
+/// Write provider playlist details to cache
+pub fn write_provider_playlist_cache(source: &str, playlist_id: &str, data: &str) -> Result<()> {
+    let filename = format!(
+        "{}{}_{}.json",
+        PROVIDER_PLAYLIST_CACHE_PREFIX, source, playlist_id
+    );
+    write_cache(&filename, &data)
+}
+
+/// Read provider playlist details from cache
+pub fn read_provider_playlist_cache(source: &str, playlist_id: &str) -> Result<Option<String>> {
+    let filename = format!(
+        "{}{}_{}.json",
+        PROVIDER_PLAYLIST_CACHE_PREFIX, source, playlist_id
+    );
+    read_cache(&filename)
+}
+
+/// Clear provider playlist details cache
+pub fn clear_provider_playlist_cache(source: &str, playlist_id: &str) -> Result<()> {
+    let filename = format!(
+        "{}{}_{}.json",
+        PROVIDER_PLAYLIST_CACHE_PREFIX, source, playlist_id
+    );
+    clear_cache(&filename)
+}
+
+/// Clear all provider playlist details caches
+pub fn clear_provider_playlists_cache() -> Result<usize> {
+    let cache_dir = get_cache_dir()?;
+    let mut cleared_count = 0usize;
+
+    for entry in fs::read_dir(&cache_dir)
+        .with_context(|| format!("Failed to read cache directory: {}", cache_dir.display()))?
+    {
+        let entry = entry.context("Failed to read cache directory entry")?;
+        let path = entry.path();
+
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+
+        if !file_name.starts_with(PROVIDER_PLAYLIST_CACHE_PREFIX) {
+            continue;
+        }
+
+        fs::remove_file(&path)
+            .with_context(|| format!("Failed to remove cache file: {}", path.display()))?;
+        cleared_count += 1;
+    }
+
+    Ok(cleared_count)
 }
 
 #[cfg(test)]

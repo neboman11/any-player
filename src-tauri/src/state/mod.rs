@@ -1,5 +1,6 @@
 /// Persistent state management for playback session
 use crate::models::{PlaybackState, RepeatMode, Track};
+use any_player_core::audio_normalization::INTERNAL_NORMALIZATION_TARGET;
 use serde::{
     de::Error as DeError, ser::Error as SerError, Deserialize, Deserializer, Serialize, Serializer,
 };
@@ -108,10 +109,31 @@ pub struct PersistentPlaybackState {
     pub repeat_mode: RepeatMode,
     /// Volume (0-100)
     pub volume: u32,
+    /// Whether cross-provider audio normalization is enabled
+    #[serde(default = "default_audio_normalization_enabled")]
+    pub audio_normalization_enabled: bool,
+    /// Normalization target level percent (0-100)
+    #[serde(default = "default_audio_normalization_target")]
+    pub audio_normalization_target: u32,
+    /// Whether strict adaptive normalization is enabled
+    #[serde(default = "default_audio_normalization_strict_mode")]
+    pub audio_normalization_strict_mode: bool,
     /// Shuffle order
     pub shuffle_order: Vec<usize>,
     /// Playback state (playing/paused/stopped)
     pub state: PlaybackState,
+}
+
+const fn default_audio_normalization_enabled() -> bool {
+    false
+}
+
+const fn default_audio_normalization_target() -> u32 {
+    INTERNAL_NORMALIZATION_TARGET
+}
+
+const fn default_audio_normalization_strict_mode() -> bool {
+    false
 }
 
 impl Default for PersistentPlaybackState {
@@ -124,6 +146,9 @@ impl Default for PersistentPlaybackState {
             shuffle: false,
             repeat_mode: RepeatMode::Off,
             volume: 50,
+            audio_normalization_enabled: default_audio_normalization_enabled(),
+            audio_normalization_target: default_audio_normalization_target(),
+            audio_normalization_strict_mode: default_audio_normalization_strict_mode(),
             shuffle_order: Vec::new(),
             state: PlaybackState::Stopped,
         }
@@ -184,7 +209,7 @@ impl PersistentPlaybackState {
             .await
             .map_err(|e| format!("Failed to write state file: {}", e))?;
 
-        tracing::info!("Saved playback state to {:?}", path);
+        tracing::trace!("Saved playback state to {:?}", path);
         Ok(())
     }
 
@@ -273,6 +298,12 @@ mod tests {
         assert!(!state.shuffle);
         assert_eq!(state.repeat_mode, RepeatMode::Off);
         assert_eq!(state.volume, 50);
+        assert!(!state.audio_normalization_enabled);
+        assert_eq!(
+            state.audio_normalization_target,
+            INTERNAL_NORMALIZATION_TARGET
+        );
+        assert!(!state.audio_normalization_strict_mode);
         assert_eq!(state.shuffle_order.len(), 0);
         assert_eq!(state.state, PlaybackState::Stopped);
     }
@@ -288,6 +319,9 @@ mod tests {
             shuffle: false,
             repeat_mode: RepeatMode::Off,
             volume: 75,
+            audio_normalization_enabled: true,
+            audio_normalization_target: 82,
+            audio_normalization_strict_mode: false,
             shuffle_order: vec![],
             state: PlaybackState::Playing,
         };
@@ -372,6 +406,9 @@ mod tests {
             shuffle: true,
             repeat_mode: RepeatMode::All,
             volume: 80,
+            audio_normalization_enabled: true,
+            audio_normalization_target: 90,
+            audio_normalization_strict_mode: true,
             shuffle_order: vec![1, 0],
             state: PlaybackState::Paused,
         };
@@ -408,6 +445,9 @@ mod tests {
         assert!(restored_state.shuffle);
         assert_eq!(restored_state.repeat_mode, RepeatMode::All);
         assert_eq!(restored_state.volume, 80);
+        assert!(restored_state.audio_normalization_enabled);
+        assert_eq!(restored_state.audio_normalization_target, 90);
+        assert!(restored_state.audio_normalization_strict_mode);
         assert_eq!(restored_state.shuffle_order, vec![1, 0]);
         assert_eq!(restored_state.state, PlaybackState::Paused);
     }
@@ -426,6 +466,9 @@ mod tests {
             shuffle: false,
             repeat_mode: RepeatMode::One,
             volume: 60,
+            audio_normalization_enabled: true,
+            audio_normalization_target: 78,
+            audio_normalization_strict_mode: true,
             shuffle_order: vec![],
             state: PlaybackState::Playing,
         };
@@ -442,6 +485,9 @@ mod tests {
         // Verify
         assert_eq!(loaded_state.position_ms, 10000);
         assert_eq!(loaded_state.volume, 60);
+        assert!(loaded_state.audio_normalization_enabled);
+        assert_eq!(loaded_state.audio_normalization_target, 78);
+        assert!(loaded_state.audio_normalization_strict_mode);
         assert_eq!(loaded_state.state, PlaybackState::Playing);
         assert!(loaded_state.current_track.is_some());
         assert_eq!(

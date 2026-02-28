@@ -1,5 +1,5 @@
 /// Playback control commands
-use crate::commands::{AppState, PlaybackStatus, TrackInfo};
+use crate::commands::{AppState, AudioNormalizationStatus, PlaybackStatus, TrackInfo};
 use crate::{PlaybackState, RepeatMode};
 use tauri::State;
 
@@ -181,6 +181,34 @@ pub async fn seek(state: State<'_, AppState>, position: u64) -> Result<(), Strin
 pub async fn set_volume(state: State<'_, AppState>, volume: u32) -> Result<(), String> {
     let playback = { state.playback.lock().await };
     playback.set_volume(volume).await;
+    Ok(())
+}
+
+/// Get current audio normalization settings
+#[tauri::command]
+pub async fn get_audio_normalization_settings(
+    state: State<'_, AppState>,
+) -> Result<AudioNormalizationStatus, String> {
+    let playback = { state.playback.lock().await };
+    let settings = playback.get_audio_normalization_settings().await;
+
+    Ok(AudioNormalizationStatus {
+        enabled: settings.enabled,
+        strict_mode: settings.strict_mode,
+    })
+}
+
+/// Set audio normalization settings
+#[tauri::command]
+pub async fn set_audio_normalization_settings(
+    state: State<'_, AppState>,
+    enabled: bool,
+    strict_mode: bool,
+) -> Result<(), String> {
+    let playback = { state.playback.lock().await };
+    playback
+        .set_audio_normalization_settings(enabled, strict_mode)
+        .await;
     Ok(())
 }
 

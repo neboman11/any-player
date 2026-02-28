@@ -116,9 +116,10 @@ export function usePlaylists() {
         return;
       }
 
-      // Use cache if available and not forcing reload
+      // Use cache when initialized unless force reload is explicitly requested
       if (cacheInitialized && !forceReload) {
         setPlaylists(playlistCache);
+        setError(null);
         setIsLoading(false);
         return;
       }
