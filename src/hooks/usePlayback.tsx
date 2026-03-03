@@ -254,22 +254,21 @@ function usePlaybackState() {
   }, []);
 
   const playTrack = useCallback(
-    async (trackId: string, source: string) => {
+    async (trackId: string, source: TrackSource) => {
       // Check provider auth before attempting playback, mirroring the
       // togglePlayPause guard so all playback entry points are consistent.
       if (source !== "custom") {
-        const trackSource = source as TrackSource;
         try {
-          const authenticated = await isSourceAuthenticated(trackSource);
+          const authenticated = await isSourceAuthenticated(source);
           if (!authenticated) {
-            setPlaybackDisabledReason(notAuthenticatedReason(trackSource));
+            setPlaybackDisabledReason(notAuthenticatedReason(source));
             return;
           }
           // Auth confirmed – clear any stale disabled reason.
           setPlaybackDisabledReason(null);
         } catch (error) {
           console.error("Error checking playback source availability:", error);
-          setPlaybackDisabledReason(notVerifiedReason(trackSource));
+          setPlaybackDisabledReason(notVerifiedReason(source));
           return;
         }
       }

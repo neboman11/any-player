@@ -187,10 +187,8 @@ export function UnionPlaylistEditor({
     try {
       const trackId = String(track.id);
       const source = (track as Track).source || "custom";
-      // Normalize source to lowercase
-      const normalizedSource = source.toLowerCase();
 
-      await playback.playTrack(trackId, normalizedSource);
+      await playback.playTrack(trackId, source);
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play track:", err);
