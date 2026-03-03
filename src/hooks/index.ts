@@ -1,4 +1,4 @@
-export { usePlayback } from "./usePlayback";
+export { usePlayback, PlaybackProvider } from "./usePlayback";
 export { useAudioPlayback } from "./useAudioPlayback";
 export { useSearch } from "./useSearch";
 export { usePlaylists } from "./usePlaylists";

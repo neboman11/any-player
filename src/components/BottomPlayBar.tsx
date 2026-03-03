@@ -152,7 +152,12 @@ export function BottomPlayBar() {
           <button
             className="bottom-bar-control-btn bottom-bar-play-pause"
             title={
-              playback.playbackStatus?.state === "playing" ? "Pause" : "Play"
+              playback.playbackDisabledReason ||
+              (playback.playbackStatus?.state === "playing" ? "Pause" : "Play")
+            }
+            aria-label={
+              playback.playbackDisabledReason ||
+              (playback.playbackStatus?.state === "playing" ? "Pause" : "Play")
             }
             onClick={playback.togglePlayPause}
             disabled={
