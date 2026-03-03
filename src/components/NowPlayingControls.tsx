@@ -11,6 +11,7 @@ export function NowPlayingControls({
   shuffle,
   repeatMode,
   isLoading,
+  playbackDisabledReason,
 }: ReturnType<typeof usePlayback>) {
   const getRepeatIcon = useCallback(() => {
     const icons = {
@@ -47,7 +48,7 @@ export function NowPlayingControls({
         className="control-btn play-pause"
         title={playbackStatus?.state === "playing" ? "Pause" : "Play"}
         onClick={togglePlayPause}
-        disabled={isLoading}
+        disabled={isLoading || Boolean(playbackDisabledReason)}
       >
         <span>{playbackStatus?.state === "playing" ? "⏸" : "▶"}</span>
       </button>
