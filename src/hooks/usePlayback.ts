@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { tauriAPI } from "../api";
 import { backendSocket } from "../websocket";
-import type { PlaybackStatus, RepeatMode } from "../types";
+import type { PlaybackStatus, RepeatMode, Track } from "../types";
 
-type TrackSource = "spotify" | "jellyfin" | "plex" | "custom";
+type TrackSource = Track["source"];
 
 const sourceDisplayName: Record<TrackSource, string> = {
   spotify: "Spotify",
@@ -40,34 +40,59 @@ export function usePlayback() {
     string | null
   >(null);
 
+  const lastCheckedSource = useRef<TrackSource | null>(null);
+  const lastAuthResult = useRef<boolean | null>(null);
+  const hasIssuedPause = useRef(false);
+
   const updatePlaybackAvailability = useCallback(
     async (status: PlaybackStatus) => {
-      const source = status.current_track?.source as TrackSource | undefined;
+      const source = status.current_track?.source;
       if (!source || source === "custom") {
         setPlaybackDisabledReason(null);
+        lastCheckedSource.current = null;
+        lastAuthResult.current = null;
+        hasIssuedPause.current = false;
         return;
       }
 
-      try {
-        const authenticated = await isSourceAuthenticated(source);
-        if (!authenticated) {
-          setPlaybackDisabledReason(
-            `Playback disabled: ${sourceDisplayName[source]} is not configured/authenticated for this app. Reconnect it in Settings. Next/Previous still works.`,
-          );
-          if (status.state === "playing") {
-            await tauriAPI.pause();
+      if (source !== lastCheckedSource.current) {
+        // Source changed – reset cached state and re-check authentication.
+        lastCheckedSource.current = source;
+        hasIssuedPause.current = false;
+        try {
+          const authenticated = await isSourceAuthenticated(source);
+          lastAuthResult.current = authenticated;
+          if (!authenticated) {
+            setPlaybackDisabledReason(
+              `Playback disabled: ${sourceDisplayName[source]} is not configured/authenticated for this app. Reconnect it in Settings. Next/Previous still works.`,
+            );
+          } else {
+            setPlaybackDisabledReason(null);
           }
-          return;
+        } catch (error) {
+          console.error("Error checking playback source availability:", error);
+          lastAuthResult.current = false;
+          setPlaybackDisabledReason(
+            `Playback disabled: ${sourceDisplayName[source]} connection could not be verified. Reconnect it in Settings. Next/Previous still works.`,
+          );
         }
+      }
 
-        setPlaybackDisabledReason(null);
-      } catch (error) {
-        console.error("Error checking playback source availability:", error);
-        setPlaybackDisabledReason(
-          `Playback disabled: ${sourceDisplayName[source]} connection could not be verified. Reconnect it in Settings. Next/Previous still works.`,
-        );
-        if (status.state === "playing") {
-          await tauriAPI.pause();
+      // Apply cached auth result: pause once if playing while source is disabled,
+      // and reset the gate when playback reaches a paused state.
+      if (lastAuthResult.current === false) {
+        if (status.state === "paused") {
+          hasIssuedPause.current = false;
+        } else if (status.state === "playing" && !hasIssuedPause.current) {
+          hasIssuedPause.current = true;
+          try {
+            await tauriAPI.pause();
+          } catch (pauseError) {
+            console.error(
+              "Error pausing playback after availability failure:",
+              pauseError,
+            );
+          }
         }
       }
     },
