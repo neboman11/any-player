@@ -577,6 +577,7 @@ export function Settings() {
                 type="password"
                 className="setting-input"
                 placeholder="Sync bearer token"
+                aria-label="Sync bearer token"
                 value={syncSettings.authToken}
                 onChange={(e) =>
                   updateSyncSettings({
