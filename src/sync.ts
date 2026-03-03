@@ -62,14 +62,16 @@ const DEFAULT_SYNC_SETTINGS: SyncSettings = {
 };
 
 function authHeaders(authToken: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "x-client-id": getStableClientId(),
+  };
+
   const token = authToken.trim();
-  if (!token) {
-    return {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
   }
 
-  return {
-    Authorization: `Bearer ${token}`,
-  };
+  return headers;
 }
 
 export function getSyncSettings(): SyncSettings {
@@ -613,7 +615,7 @@ export function startRealtimeAppStateSync(): () => void {
 
     const settings = getSyncSettings();
     const target = normalizeServerTarget(settings.serverTarget);
-    if (!target || !settings.syncAppState || !settings.authToken.trim()) {
+    if (!target || !settings.syncAppState) {
       closeSocket();
       return;
     }
@@ -633,7 +635,7 @@ export function startRealtimeAppStateSync(): () => void {
 
     const settings = getSyncSettings();
     const target = normalizeServerTarget(settings.serverTarget);
-    if (!target || !settings.syncAppState || !settings.authToken.trim()) {
+    if (!target || !settings.syncAppState) {
       return;
     }
     if (Date.now() < remoteApplySuppressUntil) {
