@@ -58,6 +58,14 @@ export function BottomPlayBar() {
 
   return (
     <div className="bottom-play-bar">
+      {playback.playbackDisabledReason && (
+        <div
+          className="playback-disabled-banner playback-disabled-banner-bottom"
+          role="alert"
+        >
+          {playback.playbackDisabledReason}
+        </div>
+      )}
       <div className="bottom-bar-progress">
         <input
           type="range"
@@ -144,10 +152,17 @@ export function BottomPlayBar() {
           <button
             className="bottom-bar-control-btn bottom-bar-play-pause"
             title={
-              playback.playbackStatus?.state === "playing" ? "Pause" : "Play"
+              playback.playbackDisabledReason ||
+              (playback.playbackStatus?.state === "playing" ? "Pause" : "Play")
+            }
+            aria-label={
+              playback.playbackDisabledReason ||
+              (playback.playbackStatus?.state === "playing" ? "Pause" : "Play")
             }
             onClick={playback.togglePlayPause}
-            disabled={playback.isLoading}
+            disabled={
+              playback.isLoading || Boolean(playback.playbackDisabledReason)
+            }
           >
             <span>
               {playback.playbackStatus?.state === "playing" ? "⏸" : "▶"}

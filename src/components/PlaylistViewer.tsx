@@ -56,6 +56,13 @@ function sanitizeUrlForCache(rawUrl?: string | null): string | undefined {
   }
 }
 
+function normalizeToTrackSource(source: string): Track["source"] {
+  if (source === "spotify" || source === "jellyfin" || source === "plex") {
+    return source;
+  }
+  return "custom";
+}
+
 function sanitizeTrackForCache(track: Track): Track {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { auth_headers: _auth_headers, ...rest } = track as Track & {
@@ -203,15 +210,15 @@ export function PlaylistViewer({
   const handlePlayTrack = async (track: PlaylistTrack | Track) => {
     try {
       const trackId = String(track.id);
-      let source: string;
+      let rawSource: string;
 
       if (isCustom) {
-        source = (track as PlaylistTrack).track_source;
+        rawSource = (track as PlaylistTrack).track_source;
       } else {
-        source = (track as Track).source || (playlist as Playlist).source;
+        rawSource = (track as Track).source || (playlist as Playlist).source;
       }
 
-      const normalizedSource = source.toLowerCase();
+      const normalizedSource = normalizeToTrackSource(rawSource);
 
       await playback.playTrack(trackId, normalizedSource);
       await playback.updateStatus();

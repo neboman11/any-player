@@ -53,11 +53,20 @@ export function NowPlaying() {
             )}
           </div>
           <div className="track-info">
-            <h2 id="track-title">{currentTrack?.title || "No track playing"}</h2>
-            <p id="track-artist">{currentTrack?.artist || "Select a track to play"}</p>
+            <h2 id="track-title">
+              {currentTrack?.title || "No track playing"}
+            </h2>
+            <p id="track-artist">
+              {currentTrack?.artist || "Select a track to play"}
+            </p>
             <p id="track-album" className="album-name">
               {currentTrack?.album || ""}
             </p>
+            {playback.playbackDisabledReason && (
+              <div className="playback-disabled-banner" role="alert">
+                {playback.playbackDisabledReason}
+              </div>
+            )}
             {currentTrack && (
               <div className="now-playing-indicators">
                 <span className="track-indicator">
