@@ -573,6 +573,18 @@ export function Settings() {
                   })
                 }
               />
+              <input
+                type="password"
+                className="setting-input"
+                placeholder="Sync bearer token"
+                value={syncSettings.authToken}
+                onChange={(e) =>
+                  updateSyncSettings({
+                    ...syncSettings,
+                    authToken: e.target.value,
+                  })
+                }
+              />
               <div className="setting-item">
                 <label>
                   <input
