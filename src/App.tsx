@@ -9,7 +9,7 @@ import {
   Settings,
   BottomPlayBar,
 } from "./components";
-import { usePlaylists, useCustomPlaylists } from "./hooks";
+import { usePlaylists, useCustomPlaylists, PlaybackProvider } from "./hooks";
 import { tauriAPI } from "./api";
 import type { BackendInitStatus, Page } from "./types";
 import { listen } from "@tauri-apps/api/event";
@@ -308,43 +308,45 @@ export default function App() {
     showRetryButton;
 
   return (
-    <div className="app">
-      <Toaster position="top-right" />
-      <div className="container">
-        <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
-        <main className="main-content">
-          {shouldShowBanner && (
-            <div
-              className={`startup-loading-banner ${backendInitFailed ? "error" : ""}`}
-              role="status"
-              aria-live="polite"
-            >
-              {!backendInitFailed && <LoadingSpinner size="small" />}
-              <span>{startupMessage}</span>
-              {showCancelButton && (
-                <button
-                  className="startup-banner-button startup-cancel-button"
-                  onClick={handleCancel}
-                  type="button"
-                >
-                  Cancel
-                </button>
-              )}
-              {showRetryButton && (
-                <button
-                  className="startup-banner-button startup-retry-button"
-                  onClick={handleManualRetry}
-                  type="button"
-                >
-                  Retry
-                </button>
-              )}
-            </div>
-          )}
-          {pageContent}
-          {currentPage !== "now-playing" && <BottomPlayBar />}
-        </main>
+    <PlaybackProvider>
+      <div className="app">
+        <Toaster position="top-right" />
+        <div className="container">
+          <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
+          <main className="main-content">
+            {shouldShowBanner && (
+              <div
+                className={`startup-loading-banner ${backendInitFailed ? "error" : ""}`}
+                role="status"
+                aria-live="polite"
+              >
+                {!backendInitFailed && <LoadingSpinner size="small" />}
+                <span>{startupMessage}</span>
+                {showCancelButton && (
+                  <button
+                    className="startup-banner-button startup-cancel-button"
+                    onClick={handleCancel}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                )}
+                {showRetryButton && (
+                  <button
+                    className="startup-banner-button startup-retry-button"
+                    onClick={handleManualRetry}
+                    type="button"
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            )}
+            {pageContent}
+            {currentPage !== "now-playing" && <BottomPlayBar />}
+          </main>
+        </div>
       </div>
-    </div>
+    </PlaybackProvider>
   );
 }

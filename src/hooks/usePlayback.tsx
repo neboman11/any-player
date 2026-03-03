@@ -1,4 +1,12 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  createContext,
+  useContext,
+} from "react";
+import type { ReactNode } from "react";
 import { tauriAPI } from "../api";
 import { backendSocket } from "../websocket";
 import type { PlaybackStatus, RepeatMode, Track } from "../types";
@@ -22,10 +30,26 @@ async function isSourceAuthenticated(source: TrackSource): Promise<boolean> {
       return tauriAPI.isPlexAuthenticated();
     case "custom":
       return true;
+    default: {
+      const _exhaustiveCheck: never = source;
+      throw new Error(`Unhandled track source: ${String(_exhaustiveCheck)}`);
+    }
   }
 }
 
-export function usePlayback() {
+// How long (ms) to wait before re-checking a previously-failed auth result.
+// This allows the UI to recover if the user reconnects a provider in Settings.
+const AUTH_RECHECK_INTERVAL_MS = 30_000;
+
+function notAuthenticatedReason(source: TrackSource): string {
+  return `Playback disabled: ${sourceDisplayName[source]} is not configured/authenticated for this app. Reconnect it in Settings. Next/Previous still works.`;
+}
+
+function notVerifiedReason(source: TrackSource): string {
+  return `Playback disabled: ${sourceDisplayName[source]} connection could not be verified. Reconnect it in Settings. Next/Previous still works.`;
+}
+
+function usePlaybackState() {
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus | null>(
     null,
   );
@@ -42,6 +66,7 @@ export function usePlayback() {
 
   const lastCheckedSource = useRef<TrackSource | null>(null);
   const lastAuthResult = useRef<boolean | null>(null);
+  const lastAuthCheckTime = useRef<number>(0);
   const hasIssuedPause = useRef(false);
 
   const updatePlaybackAvailability = useCallback(
@@ -51,30 +76,44 @@ export function usePlayback() {
         setPlaybackDisabledReason(null);
         lastCheckedSource.current = null;
         lastAuthResult.current = null;
+        lastAuthCheckTime.current = 0;
         hasIssuedPause.current = false;
         return;
       }
 
-      if (source !== lastCheckedSource.current) {
-        // Source changed – reset cached state and re-check authentication.
+      // Re-check auth when the source changes or when a previous failure has
+      // exceeded the recheck interval (so the UI recovers after reconnecting).
+      const shouldRecheck =
+        source !== lastCheckedSource.current ||
+        (lastAuthResult.current === false &&
+          Date.now() - lastAuthCheckTime.current > AUTH_RECHECK_INTERVAL_MS);
+
+      if (shouldRecheck) {
+        // Capture the source being checked so stale results can be discarded.
+        const checkSource = source;
         lastCheckedSource.current = source;
+        lastAuthCheckTime.current = Date.now();
         hasIssuedPause.current = false;
         try {
-          const authenticated = await isSourceAuthenticated(source);
+          const authenticated = await isSourceAuthenticated(checkSource);
+          // Discard result if the source changed while we were awaiting.
+          if (lastCheckedSource.current !== checkSource) {
+            return;
+          }
           lastAuthResult.current = authenticated;
           if (!authenticated) {
-            setPlaybackDisabledReason(
-              `Playback disabled: ${sourceDisplayName[source]} is not configured/authenticated for this app. Reconnect it in Settings. Next/Previous still works.`,
-            );
+            setPlaybackDisabledReason(notAuthenticatedReason(checkSource));
           } else {
             setPlaybackDisabledReason(null);
           }
         } catch (error) {
+          // Discard error if the source changed while we were awaiting.
+          if (lastCheckedSource.current !== checkSource) {
+            return;
+          }
           console.error("Error checking playback source availability:", error);
           lastAuthResult.current = false;
-          setPlaybackDisabledReason(
-            `Playback disabled: ${sourceDisplayName[source]} connection could not be verified. Reconnect it in Settings. Next/Previous still works.`,
-          );
+          setPlaybackDisabledReason(notVerifiedReason(checkSource));
         }
       }
 
@@ -216,6 +255,25 @@ export function usePlayback() {
 
   const playTrack = useCallback(
     async (trackId: string, source: string) => {
+      // Check provider auth before attempting playback, mirroring the
+      // togglePlayPause guard so all playback entry points are consistent.
+      if (source !== "custom") {
+        const trackSource = source as TrackSource;
+        try {
+          const authenticated = await isSourceAuthenticated(trackSource);
+          if (!authenticated) {
+            setPlaybackDisabledReason(notAuthenticatedReason(trackSource));
+            return;
+          }
+          // Auth confirmed – clear any stale disabled reason.
+          setPlaybackDisabledReason(null);
+        } catch (error) {
+          console.error("Error checking playback source availability:", error);
+          setPlaybackDisabledReason(notVerifiedReason(trackSource));
+          return;
+        }
+      }
+
       try {
         setIsLoading(true);
         await tauriAPI.playTrack(trackId, source);
@@ -259,7 +317,7 @@ export function usePlayback() {
       unsubscribe();
       clearInterval(fallbackInterval);
     };
-  }, [updateStatus]);
+  }, [updateStatus, updatePlaybackAvailability]);
 
   return {
     playbackStatus,
@@ -282,4 +340,24 @@ export function usePlayback() {
     seekTo,
     playTrack,
   };
+}
+
+type PlaybackContextType = ReturnType<typeof usePlaybackState>;
+
+const PlaybackContext = createContext<PlaybackContextType | null>(null);
+
+export function PlaybackProvider({ children }: { children: ReactNode }) {
+  const state = usePlaybackState();
+  return (
+    <PlaybackContext.Provider value={state}>{children}</PlaybackContext.Provider>
+  );
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function usePlayback(): PlaybackContextType {
+  const context = useContext(PlaybackContext);
+  if (!context) {
+    throw new Error("usePlayback must be used within a PlaybackProvider");
+  }
+  return context;
 }
