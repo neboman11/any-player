@@ -205,10 +205,13 @@ export function UnionPlaylistEditor({
 
   const handlePlayFromTrack = async (index: number) => {
     try {
-      // When using filtered tracks, we need to find the original index in the full tracks array
       const trackToPlay = filteredTracks[index];
-      const originalIndex = tracks.findIndex((t) => t.id === trackToPlay.id);
-      await tauriAPI.playPlaylistFromTrack(tracks, originalIndex);
+      if (isDistinct) {
+        await tauriAPI.playCustomPlaylistFromTrack(playlist.id, trackToPlay.id);
+      } else {
+        const originalIndex = tracks.findIndex((t) => t.id === trackToPlay.id);
+        await tauriAPI.playPlaylistFromTrack(tracks, originalIndex);
+      }
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play from track:", err);
@@ -262,7 +265,7 @@ export function UnionPlaylistEditor({
 
   // Filter tracks based on search query
   const filteredTracks = filterTracks(tracks, searchQuery);
-  const duplicateGroups = buildDuplicateGroups(tracks);
+  const duplicateGroups = isDistinct ? buildDuplicateGroups(tracks) : [];
 
   const metaInfo = `${sources.length} source playlists • ${tracks.length} total tracks • Created ${new Date(playlist.created_at * 1000).toLocaleDateString()}`;
 
