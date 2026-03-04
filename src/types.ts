@@ -156,3 +156,35 @@ export interface OAuthCodeReceived {
 export type TauriSource = "spotify" | "jellyfin" | "plex" | "custom" | "all";
 export type SearchType = "tracks" | "playlists";
 export type RepeatMode = "off" | "one" | "all";
+
+// ---------------------------------------------------------------------------
+// Dedup contract types
+// Mirrors Rust DuplicateOccurrence / DuplicateGroup / DeduplicateResult.
+// Uses PlaylistTrack (not Track) to match the desktop custom-playlist surface.
+// ---------------------------------------------------------------------------
+
+/** A single duplicate occurrence within the original track list. */
+export interface DuplicateOccurrence {
+  /** Zero-based index of this track in the original input array. */
+  index: number;
+  /** track_id of this occurrence (PlaylistTrack.track_id). */
+  track_id: string;
+}
+
+/** A group of PlaylistTracks that share the same normalized dedup key. */
+export interface DuplicateGroup {
+  /** Normalized key: "{lowercase_trimmed_title}|{lowercase_trimmed_artist}" */
+  key: string;
+  /** Zero-based index of the first (kept) occurrence in the original input. */
+  first_occurrence_index: number;
+  /** All duplicate occurrences (does NOT include the first occurrence). */
+  occurrences: DuplicateOccurrence[];
+}
+
+/** Result of deduplicating a PlaylistTrack array. */
+export interface DeduplicateResult {
+  /** Tracks to keep: first occurrence of each unique title+artist key, in original order. */
+  tracks: PlaylistTrack[];
+  /** Groups of duplicates found. Empty when no duplicates exist. */
+  duplicate_groups: DuplicateGroup[];
+}
