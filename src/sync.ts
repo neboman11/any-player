@@ -19,6 +19,7 @@ type SyncDomain =
 
 export interface SyncSettings {
   serverTarget: string;
+  authToken: string;
   syncAppState: boolean;
   syncPlaylists: boolean;
   syncProviderConfiguration: boolean;
@@ -53,11 +54,25 @@ interface RemoteAppStatePayload {
 
 const DEFAULT_SYNC_SETTINGS: SyncSettings = {
   serverTarget: "",
+  authToken: "",
   syncAppState: true,
   syncPlaylists: true,
   syncProviderConfiguration: true,
   syncSettings: true,
 };
+
+function authHeaders(authToken: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "x-client-id": getStableClientId(),
+  };
+
+  const token = authToken.trim();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
+}
 
 export function getSyncSettings(): SyncSettings {
   try {
@@ -123,13 +138,12 @@ function readNumber(obj: unknown, ...keys: string[]): number | null {
 
 async function fetchSnapshot(
   serverTarget: string,
+  authToken: string,
 ): Promise<SyncSnapshotResponse> {
   const base = normalizeServerTarget(serverTarget);
   const response = await fetch(`${base}/v1/snapshot`, {
     method: "GET",
-    headers: {
-      "x-client-id": getStableClientId(),
-    },
+    headers: authHeaders(authToken),
   });
 
   if (!response.ok) {
@@ -141,6 +155,7 @@ async function fetchSnapshot(
 
 async function fetchSnapshotSince(
   serverTarget: string,
+  authToken: string,
   sinceVersion: number,
 ): Promise<SyncSnapshotResponse | null> {
   const base = normalizeServerTarget(serverTarget);
@@ -148,9 +163,7 @@ async function fetchSnapshotSince(
     `${base}/v1/snapshot?since_version=${sinceVersion}`,
     {
       method: "GET",
-      headers: {
-        "x-client-id": getStableClientId(),
-      },
+      headers: authHeaders(authToken),
     },
   );
 
@@ -167,6 +180,7 @@ async function fetchSnapshotSince(
 
 async function putAppState(
   serverTarget: string,
+  authToken: string,
   payload: RemoteAppStatePayload,
 ): Promise<void> {
   const base = normalizeServerTarget(serverTarget);
@@ -174,6 +188,7 @@ async function putAppState(
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(authToken),
     },
     body: JSON.stringify({
       client_id: getStableClientId(),
@@ -466,7 +481,7 @@ export async function pullSyncSnapshot(
 
   let snapshot: SyncSnapshotResponse;
   try {
-    snapshot = await fetchSnapshot(serverTarget);
+    snapshot = await fetchSnapshot(serverTarget, settings.authToken);
   } catch {
     return {
       appliedDomains: [],
@@ -530,7 +545,8 @@ export function startRealtimeAppStateSync(): () => void {
   };
 
   const connectSocket = (serverTarget: string) => {
-    const wsUrl = toWebSocketUrl(serverTarget);
+    const settings = getSyncSettings();
+    const wsUrl = toWebSocketUrl(serverTarget, settings.authToken);
     websocket = new WebSocket(wsUrl);
     connectedTarget = serverTarget;
 
@@ -560,8 +576,13 @@ export function startRealtimeAppStateSync(): () => void {
           return;
         }
 
+        const currentSettings = getSyncSettings();
+        const authToken =
+          (currentSettings && currentSettings.authToken) ?? settings.authToken;
+
         const snapshot = await fetchSnapshotSince(
           serverTarget,
+          authToken,
           Math.max(0, lastSyncedVersion),
         );
         if (!snapshot || snapshot.app_state === undefined) {
@@ -651,7 +672,7 @@ export function startRealtimeAppStateSync(): () => void {
         return;
       }
 
-      await putAppState(target, payload);
+      await putAppState(target, settings.authToken, payload);
       lastPushedSignature = signature;
       lastPushAt = Date.now();
     } catch {

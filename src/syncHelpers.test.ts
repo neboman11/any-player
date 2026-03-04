@@ -37,4 +37,16 @@ describe("syncHelpers", () => {
       "ws://localhost:9000/v1/ws",
     );
   });
+
+  it("appends encoded token as websocket query parameter", () => {
+    expect(toWebSocketUrl("https://sync.example.com", "token with space")).toBe(
+      "wss://sync.example.com/v1/ws?token=token+with+space",
+    );
+  });
+
+  it("builds websocket URL from serverTarget with existing path and query", () => {
+    expect(toWebSocketUrl("https://host.example.com/path?x=y")).toBe(
+      "wss://host.example.com/v1/ws",
+    );
+  });
 });
