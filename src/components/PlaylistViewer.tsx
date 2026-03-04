@@ -1,12 +1,15 @@
 import { useState, useEffect } from "react";
+import toast from "react-hot-toast";
 import { TrackTable } from "./TrackTable";
 import { PlaylistHeader, DeleteConfirmModal, SearchBar } from "./shared";
+import { DuplicatesSection } from "./shared/DuplicatesSection";
 import {
   useCustomPlaylistTracks,
   usePlayback,
   usePlaylistEditor,
 } from "../hooks";
 import { tauriAPI } from "../api";
+import { buildDuplicateGroups } from "../utils/duplicates";
 import { filterTracks } from "../utils/trackFilters";
 import type { CustomPlaylist, PlaylistTrack, Playlist, Track } from "../types";
 import type { ServiceSource } from "../providerCatalog";
@@ -120,6 +123,13 @@ export function PlaylistViewer({
   const [regularTracks, setRegularTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isDistinct, setIsDistinct] = useState(
+    isCustom ? (playlist as CustomPlaylist).is_distinct : false,
+  );
+  const [isDistinctSaving, setIsDistinctSaving] = useState(false);
+  const [duplicateIndexToRemove, setDuplicateIndexToRemove] = useState<
+    number | null
+  >(null);
 
   const playback = usePlayback();
   const playlistSource = isCustom ? "custom" : (playlist as Playlist).source;
@@ -188,6 +198,38 @@ export function PlaylistViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCustom, playlist.id, playlistSource]);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const loadDistinctPreference = async () => {
+      if (isCustom) {
+        setIsDistinct((playlist as CustomPlaylist).is_distinct);
+        return;
+      }
+
+      try {
+        const providerPlaylist = playlist as Playlist;
+        const preference = await tauriAPI.getProviderPlaylistPreference(
+          providerPlaylist.source,
+          providerPlaylist.id,
+        );
+        if (isActive) {
+          setIsDistinct(preference?.is_distinct ?? false);
+        }
+      } catch (err) {
+        console.error("Failed to load provider distinct preference:", err);
+        if (isActive) {
+          setIsDistinct(false);
+        }
+      }
+    };
+
+    void loadDistinctPreference();
+    return () => {
+      isActive = false;
+    };
+  }, [isCustom, playlist]);
+
   const handleRefresh = async () => {
     if (isCustom && refreshCustomTracks) {
       await refreshCustomTracks(true);
@@ -244,8 +286,65 @@ export function PlaylistViewer({
     }
   };
 
+  const handleDistinctToggle = async (nextValue: boolean) => {
+    const previousValue = isDistinct;
+    setIsDistinct(nextValue);
+    setIsDistinctSaving(true);
+
+    try {
+      if (isCustom) {
+        await tauriAPI.setCustomPlaylistDistinct(playlist.id, nextValue);
+      } else {
+        const providerPlaylist = playlist as Playlist;
+        await tauriAPI.setProviderPlaylistPreference(
+          providerPlaylist.source,
+          providerPlaylist.id,
+          nextValue,
+        );
+      }
+    } catch (err) {
+      console.error("Failed to persist distinct toggle:", err);
+      setIsDistinct(previousValue);
+      toast.error("Failed to save distinct preference");
+    } finally {
+      setIsDistinctSaving(false);
+    }
+  };
+
+  const handleRemoveDuplicateRequest = (occurrenceIndex: number) => {
+    setDuplicateIndexToRemove(occurrenceIndex);
+  };
+
+  const confirmDuplicateRemoval = async () => {
+    if (duplicateIndexToRemove === null) {
+      return;
+    }
+
+    const occurrenceTrack = customTracks[duplicateIndexToRemove];
+    if (!occurrenceTrack) {
+      setDuplicateIndexToRemove(null);
+      toast.error("Duplicate track could not be resolved");
+      return;
+    }
+
+    try {
+      await removeTrack(Number(occurrenceTrack.id));
+      setDuplicateIndexToRemove(null);
+      toast.success("Duplicate removed");
+    } catch (err) {
+      console.error("Failed to remove duplicate track:", err);
+      toast.error("Failed to remove duplicate track");
+    }
+  };
+
   const isLoading = isCustom ? customLoading : loading;
   const trackCount = "track_count" in playlist ? playlist.track_count : 0;
+  const unfilteredTracks = isCustom ? customTracks : regularTracks;
+  const duplicateGroups = buildDuplicateGroups(unfilteredTracks);
+  const isStandardCustomPlaylist =
+    isCustom && (playlist as CustomPlaylist).playlist_type === "standard";
+  const duplicateTrack =
+    duplicateIndexToRemove !== null ? customTracks[duplicateIndexToRemove] : null;
 
   const tracks = isCustom
     ? filterTracks(customTracks, searchQuery)
@@ -279,6 +378,17 @@ export function PlaylistViewer({
 
       <div className="editor-header">
         <div className="header-actions">
+          <label className="distinct-toggle-control">
+            <input
+              type="checkbox"
+              checked={isDistinct}
+              onChange={(event) =>
+                void handleDistinctToggle(event.target.checked)
+              }
+              disabled={isDistinctSaving}
+            />
+            Distinct
+          </label>
           <button className="play-btn" onClick={handlePlayPlaylist}>
             ▶ Play All
           </button>
@@ -326,6 +436,16 @@ export function PlaylistViewer({
 
       <div className="tracks-section">
         <SearchBar value={searchQuery} onChange={setSearchQuery} />
+        {isDistinct && duplicateGroups.length > 0 && (
+          <DuplicatesSection
+            groups={duplicateGroups}
+            tracks={unfilteredTracks}
+            isReadOnly={!isStandardCustomPlaylist}
+            onRemoveDuplicate={
+              isStandardCustomPlaylist ? handleRemoveDuplicateRequest : undefined
+            }
+          />
+        )}
         {isLoading ? (
           <div className="loading">Loading tracks...</div>
         ) : (
@@ -346,6 +466,21 @@ export function PlaylistViewer({
         message={`Are you sure you want to delete "${playlist.name}"? This cannot be undone.`}
         onConfirm={editorState.handleDelete}
         onCancel={() => editorState.setShowDeleteConfirm(false)}
+      />
+
+      <DeleteConfirmModal
+        show={duplicateIndexToRemove !== null}
+        title="Remove Duplicate"
+        message={
+          duplicateTrack
+            ? `Remove duplicate track "${duplicateTrack.title}" by ${duplicateTrack.artist}?`
+            : "Remove this duplicate track?"
+        }
+        confirmLabel="Remove"
+        onConfirm={() => {
+          void confirmDuplicateRemoval();
+        }}
+        onCancel={() => setDuplicateIndexToRemove(null)}
       />
     </div>
   );

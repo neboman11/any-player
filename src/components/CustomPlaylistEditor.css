@@ -49,7 +49,20 @@
 
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 0.75rem;
+}
+
+.distinct-toggle-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #ddd;
+  font-size: 0.875rem;
+}
+
+.distinct-toggle-control input {
+  cursor: pointer;
 }
 
 .add-track-btn,
