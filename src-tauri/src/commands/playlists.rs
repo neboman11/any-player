@@ -1,7 +1,23 @@
 /// Playlist management commands
 use crate::commands::{AppState, PlaylistInfo, TrackInfo};
 use crate::Source;
+use any_player_core::playlist_utils::deduplicate_tracks;
 use tauri::State;
+
+/// Apply distinct dedup to a provider playlist track list when `is_distinct` is true.
+///
+/// Returns the deduped track list (first-occurrence per `title|artist` key) if
+/// `is_distinct = true`; otherwise returns `tracks` unchanged.
+pub(crate) fn build_provider_playlist_queue(
+    tracks: Vec<crate::models::Track>,
+    is_distinct: bool,
+) -> Vec<crate::models::Track> {
+    if is_distinct {
+        deduplicate_tracks(&tracks).tracks
+    } else {
+        tracks
+    }
+}
 
 fn parse_source(source: &str) -> Result<Source, String> {
     match source.to_lowercase().as_str() {
@@ -114,10 +130,25 @@ pub async fn play_playlist(
 
     drop(providers);
 
+    // Check whether distinct mode is active for this provider playlist.
+    let is_distinct = {
+        let db = state.database.lock().await;
+        db.get_provider_playlist_preference(&source, &playlist_id)
+            .map_err(|e| format!("Failed to read provider playlist preference: {}", e))?
+            .map(|p| p.is_distinct)
+            .unwrap_or(false)
+    };
+
+    let queue_tracks = build_provider_playlist_queue(playlist.tracks.clone(), is_distinct);
+
+    if queue_tracks.is_empty() {
+        return Err("Playlist is empty after deduplication".to_string());
+    }
+
     // Clear queue and add all tracks from the playlist
     let playback = state.playback.lock().await;
     playback.clear_queue().await;
-    playback.queue_tracks(playlist.tracks.clone()).await;
+    playback.queue_tracks(queue_tracks.clone()).await;
 
     // Check if shuffle is enabled and generate shuffle order if needed
     let info = playback.get_info().await;
@@ -129,7 +160,7 @@ pub async fn play_playlist(
         queue.current_index = 0;
 
         // Get the first track according to shuffle order
-        if !queue.shuffle_order.is_empty() && queue.shuffle_order[0] < playlist.tracks.len() {
+        if !queue.shuffle_order.is_empty() && queue.shuffle_order[0] < queue_tracks.len() {
             queue.shuffle_order[0]
         } else {
             0
@@ -140,7 +171,7 @@ pub async fn play_playlist(
 
     // Play the first track
     playback
-        .play_track(playlist.tracks[first_track_index].clone())
+        .play_track(queue_tracks[first_track_index].clone())
         .await;
 
     drop(playback);
@@ -302,4 +333,65 @@ pub async fn play_tracks_immediate(
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::Source;
+
+    fn make_track(id: &str, title: &str, artist: &str) -> crate::models::Track {
+        crate::models::Track {
+            id: id.to_string(),
+            title: title.to_string(),
+            artist: artist.to_string(),
+            album: String::new(),
+            duration_ms: 0,
+            image_url: None,
+            source: Source::Spotify,
+            url: None,
+            bitrate_kbps: None,
+            sample_rate_hz: None,
+            auth_headers: None,
+            enriched: false,
+        }
+    }
+
+    /// PLAY-01 (provider path): distinct=true returns first-occurrence-only queue order.
+    #[test]
+    fn provider_distinct_true_deduplicates_queue() {
+        let tracks = vec![
+            make_track("t1", "Song A", "Artist"),
+            make_track("t2", "Song B", "Artist"),
+            make_track("t3", "Song A", "Artist"), // duplicate of t1
+        ];
+        let queue = build_provider_playlist_queue(tracks, true);
+        assert_eq!(queue.len(), 2, "distinct=true must remove the duplicate");
+        assert_eq!(queue[0].id, "t1", "first occurrence must be kept");
+        assert_eq!(queue[1].id, "t2");
+    }
+
+    /// PLAY-01 (provider path): distinct=false preserves duplicates.
+    #[test]
+    fn provider_distinct_false_preserves_duplicates() {
+        let tracks = vec![
+            make_track("t1", "Song A", "Artist"),
+            make_track("t2", "Song B", "Artist"),
+            make_track("t3", "Song A", "Artist"),
+        ];
+        let queue = build_provider_playlist_queue(tracks, false);
+        assert_eq!(queue.len(), 3, "distinct=false must keep all tracks");
+    }
+
+    /// Edge case: distinct=true on an already-unique list leaves it intact.
+    #[test]
+    fn provider_distinct_true_no_duplicates_unchanged() {
+        let tracks = vec![
+            make_track("t1", "Song A", "Artist 1"),
+            make_track("t2", "Song B", "Artist 2"),
+            make_track("t3", "Song C", "Artist 3"),
+        ];
+        let queue = build_provider_playlist_queue(tracks, true);
+        assert_eq!(queue.len(), 3, "no-op when no duplicates exist");
+    }
 }
