@@ -576,9 +576,13 @@ export function startRealtimeAppStateSync(): () => void {
           return;
         }
 
+        const currentSettings = getSyncSettings();
+        const authToken =
+          (currentSettings && currentSettings.authToken) ?? settings.authToken;
+
         const snapshot = await fetchSnapshotSince(
           serverTarget,
-          settings.authToken,
+          authToken,
           Math.max(0, lastSyncedVersion),
         );
         if (!snapshot || snapshot.app_state === undefined) {
