@@ -50,3 +50,18 @@ export function buildDuplicateGroups(
       occurrences: duplicateOccurrences.get(key) ?? [],
     }));
 }
+
+/**
+ * Returns a copy of `tracks` with duplicate title+artist entries removed,
+ * keeping only the first occurrence of each key (mirrors backend dedup logic).
+ */
+export function buildDistinctTracks<T extends DuplicateTrack>(tracks: T[]): T[] {
+  const groups = buildDuplicateGroups(tracks as PlaylistTrack[] | Track[]);
+  const duplicateIndices = new Set<number>();
+  for (const group of groups) {
+    for (const occ of group.occurrences) {
+      duplicateIndices.add(occ.index);
+    }
+  }
+  return tracks.filter((_, index) => !duplicateIndices.has(index));
+}

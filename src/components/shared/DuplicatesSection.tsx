@@ -63,7 +63,7 @@ export function DuplicatesSection({
                         <button
                           type="button"
                           className="remove-btn"
-                          onClick={() => onRemoveDuplicate(occurrence.index)}
+                          onClick={() => onRemoveDuplicate?.(occurrence.index)}
                         >
                           Remove
                         </button>

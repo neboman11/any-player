@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import { TrackTable } from "./TrackTable";
-import { PlaylistHeader, DeleteConfirmModal, SearchBar } from "./shared";
-import { DuplicatesSection } from "./shared/DuplicatesSection";
+import { PlaylistHeader, DeleteConfirmModal, SearchBar, DuplicatesSection } from "./shared";
 import {
   useUnionPlaylistSources,
   useUnionPlaylistTracks,
