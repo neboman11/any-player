@@ -1,6 +1,9 @@
 /// Custom playlist management commands
 use crate::commands::AppState;
-use crate::database::{ColumnPreferences, CustomPlaylist, PlaylistTrack, ProviderPlaylistPreference, UnionPlaylistSource};
+use crate::database::{
+    ColumnPreferences, CustomPlaylist, PlaylistTrack, ProviderPlaylistPreference,
+    UnionPlaylistSource,
+};
 use crate::models::Track;
 use crate::Source;
 use any_player_core::config_export::{
@@ -948,7 +951,10 @@ mod tests {
         // deduped queue: [s1, s2]
         // User clicks s3 (a duplicate). Expected: resolved to index 0 (s1).
         let idx = resolve_play_from_index(&deduped, &raw_tracks, "s3");
-        assert_eq!(idx, 0, "duplicate click must resolve to first-occurrence index");
+        assert_eq!(
+            idx, 0,
+            "duplicate click must resolve to first-occurrence index"
+        );
         assert_eq!(deduped[idx].id, "s1");
     }
 
@@ -962,7 +968,10 @@ mod tests {
         let deduped = build_custom_playlist_queue(raw_tracks.clone(), true, false);
         // No duplicates — all three are kept.
         let idx = resolve_play_from_index(&deduped, &raw_tracks, "s2");
-        assert_eq!(idx, 1, "non-duplicate track must resolve to its own queue index");
+        assert_eq!(
+            idx, 1,
+            "non-duplicate track must resolve to its own queue index"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -994,7 +1003,10 @@ mod tests {
         ];
         let queue = build_custom_playlist_queue(tracks, true, true);
         assert_eq!(queue.len(), 2);
-        assert_eq!(queue[0].id, "sp1", "Spotify winner must be kept (appeared first)");
+        assert_eq!(
+            queue[0].id, "sp1",
+            "Spotify winner must be kept (appeared first)"
+        );
         assert_eq!(queue[1].id, "sp2");
     }
 
@@ -1012,7 +1024,11 @@ mod tests {
             make_track("def", "Song Y", "Artist 2", Source::Spotify),
         ];
         let queue = build_custom_playlist_queue(tracks, true, true);
-        assert_eq!(queue.len(), 2, "two-pass must yield exactly two unique tracks");
+        assert_eq!(
+            queue.len(),
+            2,
+            "two-pass must yield exactly two unique tracks"
+        );
         assert_eq!(queue[0].id, "abc", "Spotify 'abc' must be the winner");
         assert_eq!(queue[1].id, "def");
     }

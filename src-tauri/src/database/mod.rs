@@ -385,11 +385,7 @@ impl Database {
 
     /// Set the `is_distinct` flag on a custom or union playlist.
     /// This is metadata-only; it never touches playlist_tracks or provider data.
-    pub fn set_custom_playlist_distinct(
-        &self,
-        playlist_id: &str,
-        is_distinct: bool,
-    ) -> Result<()> {
+    pub fn set_custom_playlist_distinct(&self, playlist_id: &str, is_distinct: bool) -> Result<()> {
         let now = Utc::now().timestamp();
         let is_distinct_int: i64 = if is_distinct { 1 } else { 0 };
         self.conn.execute(
@@ -923,10 +919,16 @@ mod tests {
         let playlist = db
             .create_playlist("Defaults False".to_string(), None, None)
             .unwrap();
-        assert!(!playlist.is_distinct, "new playlist should default is_distinct to false");
+        assert!(
+            !playlist.is_distinct,
+            "new playlist should default is_distinct to false"
+        );
 
         let retrieved = db.get_playlist(&playlist.id).unwrap().unwrap();
-        assert!(!retrieved.is_distinct, "retrieved playlist should have is_distinct == false");
+        assert!(
+            !retrieved.is_distinct,
+            "retrieved playlist should have is_distinct == false"
+        );
     }
 
     /// Simulates the old-schema migration path: inserts a row WITHOUT the is_distinct column
@@ -939,8 +941,9 @@ mod tests {
         let db = Database::new(":memory:".into()).unwrap();
 
         // Drop and recreate the table without is_distinct to simulate an old schema.
-        db.conn.execute_batch(
-            "DROP TABLE IF EXISTS custom_playlists;
+        db.conn
+            .execute_batch(
+                "DROP TABLE IF EXISTS custom_playlists;
              CREATE TABLE custom_playlists (
                  id TEXT PRIMARY KEY,
                  name TEXT NOT NULL,
@@ -953,7 +956,8 @@ mod tests {
              );
              INSERT INTO custom_playlists (id, name, created_at, updated_at)
              VALUES ('old-id-1', 'Old Playlist', 1000, 1000);",
-        ).unwrap();
+            )
+            .unwrap();
 
         // Now run migration guard logic (same as initialize_schema does).
         let has_is_distinct: bool = db.conn
@@ -965,16 +969,21 @@ mod tests {
             .unwrap_or(0) > 0;
 
         if !has_is_distinct {
-            db.conn.execute(
-                "ALTER TABLE custom_playlists ADD COLUMN is_distinct INTEGER DEFAULT 0",
-                [],
-            ).unwrap();
+            db.conn
+                .execute(
+                    "ALTER TABLE custom_playlists ADD COLUMN is_distinct INTEGER DEFAULT 0",
+                    [],
+                )
+                .unwrap();
         }
 
         // The old row should now read as is_distinct == false (integer 0).
         let retrieved = db.get_playlist("old-id-1").unwrap().unwrap();
         assert_eq!(retrieved.name, "Old Playlist");
-        assert!(!retrieved.is_distinct, "old-schema row should have is_distinct == false after migration");
+        assert!(
+            !retrieved.is_distinct,
+            "old-schema row should have is_distinct == false after migration"
+        );
     }
 
     /// Verifies that setting is_distinct on a custom playlist persists through re-read.
@@ -996,11 +1005,18 @@ mod tests {
         db.set_custom_playlist_distinct(&playlist.id, true).unwrap();
 
         let retrieved = db.get_playlist(&playlist.id).unwrap().unwrap();
-        assert!(retrieved.is_distinct, "is_distinct should be true after set");
+        assert!(
+            retrieved.is_distinct,
+            "is_distinct should be true after set"
+        );
 
-        db.set_custom_playlist_distinct(&playlist.id, false).unwrap();
+        db.set_custom_playlist_distinct(&playlist.id, false)
+            .unwrap();
         let retrieved2 = db.get_playlist(&playlist.id).unwrap().unwrap();
-        assert!(!retrieved2.is_distinct, "is_distinct should be false after reset");
+        assert!(
+            !retrieved2.is_distinct,
+            "is_distinct should be false after reset"
+        );
     }
 
     /// Verifies that provider playlist preferences can be upserted and read by composite key.
@@ -1009,26 +1025,49 @@ mod tests {
         let db = create_test_db();
 
         // No preference yet — should return None.
-        let pref = db.get_provider_playlist_preference("spotify", "pl-abc").unwrap();
-        assert!(pref.is_none(), "should be None before any preference is set");
+        let pref = db
+            .get_provider_playlist_preference("spotify", "pl-abc")
+            .unwrap();
+        assert!(
+            pref.is_none(),
+            "should be None before any preference is set"
+        );
 
         // Set preference to true.
-        db.set_provider_playlist_preference("spotify", "pl-abc", true).unwrap();
-        let pref = db.get_provider_playlist_preference("spotify", "pl-abc").unwrap().unwrap();
+        db.set_provider_playlist_preference("spotify", "pl-abc", true)
+            .unwrap();
+        let pref = db
+            .get_provider_playlist_preference("spotify", "pl-abc")
+            .unwrap()
+            .unwrap();
         assert_eq!(pref.source, "spotify");
         assert_eq!(pref.playlist_id, "pl-abc");
         assert!(pref.is_distinct);
 
         // Update preference to false (upsert).
-        db.set_provider_playlist_preference("spotify", "pl-abc", false).unwrap();
-        let pref2 = db.get_provider_playlist_preference("spotify", "pl-abc").unwrap().unwrap();
+        db.set_provider_playlist_preference("spotify", "pl-abc", false)
+            .unwrap();
+        let pref2 = db
+            .get_provider_playlist_preference("spotify", "pl-abc")
+            .unwrap()
+            .unwrap();
         assert!(!pref2.is_distinct, "should be false after update");
 
         // Different source+id keys are independent.
-        db.set_provider_playlist_preference("jellyfin", "pl-abc", true).unwrap();
-        let spotify_pref = db.get_provider_playlist_preference("spotify", "pl-abc").unwrap().unwrap();
-        let jellyfin_pref = db.get_provider_playlist_preference("jellyfin", "pl-abc").unwrap().unwrap();
-        assert!(!spotify_pref.is_distinct, "spotify key should still be false");
+        db.set_provider_playlist_preference("jellyfin", "pl-abc", true)
+            .unwrap();
+        let spotify_pref = db
+            .get_provider_playlist_preference("spotify", "pl-abc")
+            .unwrap()
+            .unwrap();
+        let jellyfin_pref = db
+            .get_provider_playlist_preference("jellyfin", "pl-abc")
+            .unwrap()
+            .unwrap();
+        assert!(
+            !spotify_pref.is_distinct,
+            "spotify key should still be false"
+        );
         assert!(jellyfin_pref.is_distinct, "jellyfin key should be true");
     }
 }
