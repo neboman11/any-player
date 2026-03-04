@@ -277,6 +277,20 @@
   padding: 0.15rem 0.5rem;
 }
 
+.duplicate-group .remove-btn {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 0.875rem;
+  padding: 0.25rem 0.5rem;
+  transition: color 0.2s ease;
+}
+
+.duplicate-group .remove-btn:hover {
+  color: #ff4444;
+}
+
 .loading {
   text-align: center;
   padding: 3rem;

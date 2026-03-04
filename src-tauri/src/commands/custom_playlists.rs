@@ -829,13 +829,20 @@ pub async fn play_custom_playlist_from_track(
         return Err("Playlist is empty".to_string());
     }
 
-    let queue_tracks = build_custom_playlist_queue(raw_tracks.clone(), is_distinct, is_union);
+    let (queue_tracks, original_for_resolve) = if is_distinct {
+        let deduped = build_custom_playlist_queue(raw_tracks.clone(), is_distinct, is_union);
+        (deduped, raw_tracks)
+    } else {
+        // In non-distinct mode every track survives, so resolve_play_from_index
+        // always finds the target via the fast path and never needs original_for_resolve.
+        (raw_tracks, Vec::new())
+    };
 
     if queue_tracks.is_empty() {
         return Err("Playlist is empty after deduplication".to_string());
     }
 
-    let start_index = resolve_play_from_index(&queue_tracks, &raw_tracks, &track_id);
+    let start_index = resolve_play_from_index(&queue_tracks, &original_for_resolve, &track_id);
 
     let playback = state.playback.lock().await;
     playback.clear_queue().await;

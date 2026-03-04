@@ -1,8 +1,12 @@
 import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import { TrackTable } from "./TrackTable";
-import { PlaylistHeader, DeleteConfirmModal, SearchBar } from "./shared";
-import { DuplicatesSection } from "./shared/DuplicatesSection";
+import {
+  PlaylistHeader,
+  DeleteConfirmModal,
+  SearchBar,
+  DuplicatesSection,
+} from "./shared";
 import {
   useCustomPlaylistTracks,
   usePlayback,
@@ -276,10 +280,18 @@ export function PlaylistViewer({
         ? filterTracks(customTracks, searchQuery)
         : filterTracks(regularTracks, searchQuery);
       const trackToPlay = filteredTracks[index];
-      const originalIndex = unfilteredTracks.findIndex(
-        (t) => t.id === trackToPlay.id,
-      );
-      await tauriAPI.playPlaylistFromTrack(unfilteredTracks, originalIndex);
+      if (isCustom && isDistinct) {
+        const playlistTrack = trackToPlay as PlaylistTrack;
+        await tauriAPI.playCustomPlaylistFromTrack(
+          playlist.id,
+          playlistTrack.track_id,
+        );
+      } else {
+        const originalIndex = unfilteredTracks.findIndex(
+          (t) => t.id === trackToPlay.id,
+        );
+        await tauriAPI.playPlaylistFromTrack(unfilteredTracks, originalIndex);
+      }
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play from track:", err);
@@ -340,7 +352,7 @@ export function PlaylistViewer({
   const isLoading = isCustom ? customLoading : loading;
   const trackCount = "track_count" in playlist ? playlist.track_count : 0;
   const unfilteredTracks = isCustom ? customTracks : regularTracks;
-  const duplicateGroups = buildDuplicateGroups(unfilteredTracks);
+  const duplicateGroups = isDistinct ? buildDuplicateGroups(unfilteredTracks) : [];
   const isStandardCustomPlaylist =
     isCustom && (playlist as CustomPlaylist).playlist_type === "standard";
   const duplicateTrack =

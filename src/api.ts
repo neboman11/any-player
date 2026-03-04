@@ -173,6 +173,16 @@ export class TauriAPI {
     return this.playTracksImmediate(reorderedTracks, true);
   }
 
+  async playCustomPlaylistFromTrack(
+    playlistId: string,
+    trackId: string,
+  ): Promise<void> {
+    return invoke<void>("play_custom_playlist_from_track", {
+      playlistId,
+      trackId,
+    });
+  }
+
   // Spotify commands
   async getSpotifyAuthUrl(): Promise<string> {
     return invoke<string>("get_spotify_auth_url");
