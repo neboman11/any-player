@@ -106,7 +106,7 @@ pub async fn create_union_playlist(
     image_url: Option<String>,
 ) -> Result<CustomPlaylist, String> {
     let db = state.database.lock().await;
-    db.create_playlist_with_type(name, description, image_url, "union".to_string())
+    db.create_playlist_with_type(name, description, image_url, "union".to_string(), false)
         .map_err(|e| format!("Failed to create union playlist: {}", e))
 }
 
