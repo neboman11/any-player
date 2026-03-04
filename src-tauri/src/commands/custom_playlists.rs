@@ -8,9 +8,171 @@ use any_player_core::config_export::{
     ExportProviderConfigs, ExportServerConfig, ExportSpotifyConfig, ExportUnionPlaylistSource,
     CONFIG_EXPORT_VERSION,
 };
+use any_player_core::playlist_utils::{deduplicate_tracks, duplicate_key};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tauri::State;
+
+// ---------------------------------------------------------------------------
+// Distinct-mode dedup helpers
+// ---------------------------------------------------------------------------
+
+/// Pass 1 of union two-pass dedup: keep only the first occurrence of each
+/// `(source, id)` pair.  Run this before `deduplicate_tracks` (title+artist).
+pub(crate) fn dedup_tracks_by_source_id(tracks: Vec<Track>) -> Vec<Track> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<String> = HashSet::new();
+    tracks
+        .into_iter()
+        .filter(|t| seen.insert(format!("{}:{}", t.source, t.id)))
+        .collect()
+}
+
+/// Build the playback queue for a custom/union playlist, applying distinct-mode
+/// dedup when `is_distinct` is true.
+///
+/// * **Union playlists** (`is_union = true`): two-pass dedup — pass 1 removes
+///   tracks sharing the same `(source, id)` pair, then pass 2 removes tracks
+///   sharing the same normalised `title|artist` key.
+/// * **Standard custom playlists**: title+artist dedup only (pass 2).
+/// * **`is_distinct = false`**: returns `tracks` unchanged.
+pub(crate) fn build_custom_playlist_queue(
+    tracks: Vec<Track>,
+    is_distinct: bool,
+    is_union: bool,
+) -> Vec<Track> {
+    if !is_distinct {
+        return tracks;
+    }
+    if is_union {
+        // Pass 1: source:id dedup
+        let pass1 = dedup_tracks_by_source_id(tracks);
+        // Pass 2: title+artist dedup
+        deduplicate_tracks(&pass1).tracks
+    } else {
+        deduplicate_tracks(&tracks).tracks
+    }
+}
+
+/// Resolve a `track_id` selected by the user to the correct playback index
+/// inside the **deduped** queue.
+///
+/// * If the track is present in the deduped queue, its index is returned.
+/// * If it was removed by dedup (it was a duplicate), the index of the first
+///   occurrence — identified by matching `title|artist` key — is returned.
+/// * Returns `0` as a safe fallback.
+pub(crate) fn resolve_play_from_index(
+    deduped_tracks: &[Track],
+    original_tracks: &[Track],
+    track_id: &str,
+) -> usize {
+    // Fast path: track survived dedup — return its position directly.
+    if let Some(pos) = deduped_tracks.iter().position(|t| t.id == track_id) {
+        return pos;
+    }
+    // Slow path: track was deduped away — find the keeper with the same key.
+    if let Some(original) = original_tracks.iter().find(|t| t.id == track_id) {
+        let key = duplicate_key(&original.title, &original.artist);
+        if let Some(pos) = deduped_tracks
+            .iter()
+            .position(|t| duplicate_key(&t.title, &t.artist) == key)
+        {
+            return pos;
+        }
+    }
+    0 // safe fallback
+}
+
+// ---------------------------------------------------------------------------
+// Track materialisation helper shared by play commands
+// ---------------------------------------------------------------------------
+
+/// Materialise all playback-ready tracks for a custom or union playlist.
+///
+/// Returns `(tracks, is_distinct, is_union)`.  The caller is responsible for
+/// applying distinct-mode dedup via `build_custom_playlist_queue`.
+async fn materialize_custom_playlist_tracks(
+    state: &AppState,
+    playlist_id: &str,
+) -> Result<(Vec<Track>, bool, bool), String> {
+    let db = state.database.lock().await;
+    let providers = state.providers.lock().await;
+
+    let playlist_info = db
+        .get_playlist(playlist_id)
+        .map_err(|e| format!("Failed to get playlist info: {}", e))?
+        .ok_or_else(|| format!("Playlist not found: {}", playlist_id))?;
+
+    let is_distinct = playlist_info.is_distinct;
+    let is_union = playlist_info.playlist_type == "union";
+
+    let tracks = if is_union {
+        let sources = db
+            .get_union_playlist_sources(playlist_id)
+            .map_err(|e| format!("Failed to get union playlist sources: {}", e))?;
+
+        drop(db);
+
+        let mut all_tracks = Vec::new();
+
+        for source in sources {
+            if source.source_type.eq_ignore_ascii_case("custom") {
+                let db = state.database.lock().await;
+                if let Ok(tracks) = db.get_playlist_tracks(&source.source_playlist_id) {
+                    all_tracks.extend(tracks.into_iter().map(|t| t.to_track()));
+                }
+                drop(db);
+                continue;
+            }
+
+            if let Some(provider_source) = provider_source_from_str(&source.source_type) {
+                if let Ok(playlist) = providers
+                    .get_playlist(provider_source, &source.source_playlist_id)
+                    .await
+                {
+                    all_tracks.extend(playlist.tracks);
+                }
+            }
+        }
+
+        all_tracks
+    } else {
+        let playlist_tracks = db
+            .get_playlist_tracks(playlist_id)
+            .map_err(|e| format!("Failed to get custom playlist tracks: {}", e))?;
+
+        drop(db);
+
+        let mut tracks = Vec::new();
+        for pt in playlist_tracks {
+            let track_result =
+                if let Some(provider_source) = provider_source_from_str(&pt.track_source) {
+                    providers.get_track(provider_source, &pt.track_id).await
+                } else {
+                    Ok(pt.to_track())
+                };
+
+            match track_result {
+                Ok(track) => tracks.push(track),
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to fetch track {} from {}: {}. Using cached metadata.",
+                        pt.track_id,
+                        pt.track_source,
+                        e
+                    );
+                    tracks.push(pt.to_track());
+                }
+            }
+        }
+
+        tracks
+    };
+
+    drop(providers);
+
+    Ok((tracks, is_distinct, is_union))
+}
 
 fn map_export_playlist(value: CustomPlaylist) -> ExportPlaylist {
     ExportPlaylist {
@@ -590,82 +752,18 @@ pub(super) async fn play_custom_playlist_internal(
     state: &AppState,
     playlist_id: String,
 ) -> Result<(), String> {
-    let db = state.database.lock().await;
-    let providers = state.providers.lock().await;
+    let (raw_tracks, is_distinct, is_union) =
+        materialize_custom_playlist_tracks(state, &playlist_id).await?;
 
-    let playlist_info = db
-        .get_playlist(&playlist_id)
-        .map_err(|e| format!("Failed to get playlist info: {}", e))?
-        .ok_or_else(|| format!("Playlist not found: {}", playlist_id))?;
-
-    let tracks_with_urls = if playlist_info.playlist_type == "union" {
-        let sources = db
-            .get_union_playlist_sources(&playlist_id)
-            .map_err(|e| format!("Failed to get union playlist sources: {}", e))?;
-
-        drop(db);
-
-        let mut all_tracks = Vec::new();
-
-        for source in sources {
-            if source.source_type.eq_ignore_ascii_case("custom") {
-                let db = state.database.lock().await;
-                if let Ok(tracks) = db.get_playlist_tracks(&source.source_playlist_id) {
-                    all_tracks.extend(tracks.into_iter().map(|t| t.to_track()));
-                }
-                drop(db);
-                continue;
-            }
-
-            if let Some(provider_source) = provider_source_from_str(&source.source_type) {
-                if let Ok(playlist) = providers
-                    .get_playlist(provider_source, &source.source_playlist_id)
-                    .await
-                {
-                    all_tracks.extend(playlist.tracks);
-                }
-            }
-        }
-
-        all_tracks
-    } else {
-        let playlist_tracks = db
-            .get_playlist_tracks(&playlist_id)
-            .map_err(|e| format!("Failed to get custom playlist tracks: {}", e))?;
-
-        drop(db);
-
-        let mut tracks = Vec::new();
-        for pt in playlist_tracks {
-            let track_result =
-                if let Some(provider_source) = provider_source_from_str(&pt.track_source) {
-                    providers.get_track(provider_source, &pt.track_id).await
-                } else {
-                    Ok(pt.to_track())
-                };
-
-            match track_result {
-                Ok(track) => tracks.push(track),
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to fetch track {} from {}: {}. Using cached metadata.",
-                        pt.track_id,
-                        pt.track_source,
-                        e
-                    );
-                    tracks.push(pt.to_track());
-                }
-            }
-        }
-
-        tracks
-    };
-
-    if tracks_with_urls.is_empty() {
+    if raw_tracks.is_empty() {
         return Err("Playlist is empty".to_string());
     }
 
-    drop(providers);
+    let tracks_with_urls = build_custom_playlist_queue(raw_tracks, is_distinct, is_union);
+
+    if tracks_with_urls.is_empty() {
+        return Err("Playlist is empty after deduplication".to_string());
+    }
 
     let playback = state.playback.lock().await;
     playback.clear_queue().await;
@@ -711,4 +809,204 @@ pub(super) async fn play_custom_playlist_internal(
     }
 
     Ok(())
+}
+
+/// Play a custom or union playlist starting from a specific track.
+///
+/// When distinct mode is active, duplicate-track selections are remapped to the
+/// first occurrence in the deduped queue so playback always starts on a valid
+/// queue entry.
+#[tauri::command]
+pub async fn play_custom_playlist_from_track(
+    state: State<'_, AppState>,
+    playlist_id: String,
+    track_id: String,
+) -> Result<(), String> {
+    let (raw_tracks, is_distinct, is_union) =
+        materialize_custom_playlist_tracks(&state, &playlist_id).await?;
+
+    if raw_tracks.is_empty() {
+        return Err("Playlist is empty".to_string());
+    }
+
+    let queue_tracks = build_custom_playlist_queue(raw_tracks.clone(), is_distinct, is_union);
+
+    if queue_tracks.is_empty() {
+        return Err("Playlist is empty after deduplication".to_string());
+    }
+
+    let start_index = resolve_play_from_index(&queue_tracks, &raw_tracks, &track_id);
+
+    let playback = state.playback.lock().await;
+    playback.clear_queue().await;
+    playback.queue_tracks(queue_tracks.clone()).await;
+
+    let info = playback.get_info().await;
+    let play_index = if info.shuffle {
+        let queue_arc = playback.get_queue_arc();
+        let mut queue = queue_arc.lock().await;
+        // Shuffle the queue but ensure the resolved start track plays first.
+        queue.generate_shuffle_order();
+        if let Some(pos) = queue.shuffle_order.iter().position(|&i| i == start_index) {
+            queue.shuffle_order.swap(0, pos);
+        }
+        queue.current_index = 0;
+        if !queue.shuffle_order.is_empty() {
+            queue.shuffle_order[0]
+        } else {
+            start_index
+        }
+    } else {
+        start_index
+    };
+
+    playback.play_track(queue_tracks[play_index].clone()).await;
+    drop(playback);
+
+    let playback_arc = state.playback.clone();
+    let providers_arc = state.providers.clone();
+    tokio::spawn(async move {
+        super::helpers::enrich_queued_tracks_eager(playback_arc, providers_arc, play_index).await;
+    });
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::Source;
+
+    fn make_track(id: &str, title: &str, artist: &str, source: Source) -> Track {
+        Track {
+            id: id.to_string(),
+            title: title.to_string(),
+            artist: artist.to_string(),
+            album: String::new(),
+            duration_ms: 0,
+            image_url: None,
+            source,
+            url: None,
+            bitrate_kbps: None,
+            sample_rate_hz: None,
+            auth_headers: None,
+            enriched: false,
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // PLAY-01: distinct=true queues only first-occurrence tracks
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn distinct_true_standard_queues_first_occurrence_only() {
+        let tracks = vec![
+            make_track("s1", "Song A", "Artist X", Source::Spotify),
+            make_track("s2", "Song B", "Artist X", Source::Spotify),
+            make_track("s3", "Song A", "Artist X", Source::Spotify), // duplicate of s1
+        ];
+        let queue = build_custom_playlist_queue(tracks, true, false);
+        assert_eq!(queue.len(), 2, "distinct mode must remove duplicate");
+        assert_eq!(queue[0].id, "s1", "first occurrence must be kept");
+        assert_eq!(queue[1].id, "s2");
+    }
+
+    // -------------------------------------------------------------------------
+    // PLAY-01: distinct=false keeps all tracks (including duplicates)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn distinct_false_preserves_all_tracks() {
+        let tracks = vec![
+            make_track("s1", "Song A", "Artist X", Source::Spotify),
+            make_track("s2", "Song B", "Artist X", Source::Spotify),
+            make_track("s3", "Song A", "Artist X", Source::Spotify),
+        ];
+        let queue = build_custom_playlist_queue(tracks, false, false);
+        assert_eq!(queue.len(), 3, "non-distinct mode must keep all tracks");
+    }
+
+    // -------------------------------------------------------------------------
+    // PLAY-02: play-from-track resolves duplicate click to first-occurrence index
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn play_from_track_resolves_duplicate_to_first_occurrence() {
+        let raw_tracks = vec![
+            make_track("s1", "Song A", "Artist X", Source::Spotify),
+            make_track("s2", "Song B", "Artist X", Source::Spotify),
+            make_track("s3", "Song A", "Artist X", Source::Spotify), // duplicate of s1
+        ];
+        let deduped = build_custom_playlist_queue(raw_tracks.clone(), true, false);
+        // deduped queue: [s1, s2]
+        // User clicks s3 (a duplicate). Expected: resolved to index 0 (s1).
+        let idx = resolve_play_from_index(&deduped, &raw_tracks, "s3");
+        assert_eq!(idx, 0, "duplicate click must resolve to first-occurrence index");
+        assert_eq!(deduped[idx].id, "s1");
+    }
+
+    #[test]
+    fn play_from_track_direct_hit_returns_correct_index() {
+        let raw_tracks = vec![
+            make_track("s1", "Song A", "Artist X", Source::Spotify),
+            make_track("s2", "Song B", "Artist X", Source::Spotify),
+            make_track("s3", "Song C", "Artist X", Source::Spotify),
+        ];
+        let deduped = build_custom_playlist_queue(raw_tracks.clone(), true, false);
+        // No duplicates — all three are kept.
+        let idx = resolve_play_from_index(&deduped, &raw_tracks, "s2");
+        assert_eq!(idx, 1, "non-duplicate track must resolve to its own queue index");
+    }
+
+    // -------------------------------------------------------------------------
+    // Union two-pass ordering: source:id dedup (pass 1) then title+artist (pass 2)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn union_two_pass_dedup_source_id_pass_removes_same_source_track() {
+        // t1 and t2 share Spotify:"abc" — pass 1 removes t2.
+        let tracks = vec![
+            make_track("abc", "Song X", "Artist 1", Source::Spotify),
+            make_track("abc", "Song X", "Artist 1", Source::Spotify), // same source:id
+            make_track("def", "Song Y", "Artist 2", Source::Spotify),
+        ];
+        let pass1 = dedup_tracks_by_source_id(tracks);
+        assert_eq!(pass1.len(), 2);
+        assert_eq!(pass1[0].id, "abc");
+        assert_eq!(pass1[1].id, "def");
+    }
+
+    #[test]
+    fn union_two_pass_dedup_title_artist_pass_removes_cross_source_duplicate() {
+        // t1 (Spotify) and t3 (Jellyfin) share the same title+artist.
+        // Different source:id so pass 1 keeps both; pass 2 removes t3.
+        let tracks = vec![
+            make_track("sp1", "Song X", "Artist 1", Source::Spotify),
+            make_track("jf1", "Song X", "Artist 1", Source::Jellyfin), // different source:id
+            make_track("sp2", "Song Y", "Artist 2", Source::Spotify),
+        ];
+        let queue = build_custom_playlist_queue(tracks, true, true);
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue[0].id, "sp1", "Spotify winner must be kept (appeared first)");
+        assert_eq!(queue[1].id, "sp2");
+    }
+
+    #[test]
+    fn union_two_pass_both_passes_correct_winner() {
+        // Exercises both dedup passes in a single playlist:
+        // t1: Spotify:"abc" "Song X" — first occurrence of both source:id and title+artist
+        // t2: Spotify:"abc" "Song X" — removed by pass 1 (same source:id)
+        // t3: Jellyfin:"xyz" "Song X" — removed by pass 2 (same title+artist as t1)
+        // t4: Spotify:"def" "Song Y" — unique, must survive
+        let tracks = vec![
+            make_track("abc", "Song X", "Artist 1", Source::Spotify),
+            make_track("abc", "Song X", "Artist 1", Source::Spotify), // pass-1 duplicate
+            make_track("xyz", "Song X", "Artist 1", Source::Jellyfin), // pass-2 duplicate
+            make_track("def", "Song Y", "Artist 2", Source::Spotify),
+        ];
+        let queue = build_custom_playlist_queue(tracks, true, true);
+        assert_eq!(queue.len(), 2, "two-pass must yield exactly two unique tracks");
+        assert_eq!(queue[0].id, "abc", "Spotify 'abc' must be the winner");
+        assert_eq!(queue[1].id, "def");
+    }
 }

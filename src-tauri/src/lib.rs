@@ -105,6 +105,7 @@ pub fn run() {
             commands::clear_queue,
             commands::play_playlist,
             commands::play_tracks_immediate,
+            commands::play_custom_playlist_from_track,
             // Spotify commands
             commands::get_spotify_auth_url,
             commands::authenticate_spotify,
