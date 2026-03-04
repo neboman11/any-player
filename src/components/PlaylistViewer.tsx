@@ -13,7 +13,7 @@ import {
   usePlaylistEditor,
 } from "../hooks";
 import { tauriAPI } from "../api";
-import { buildDuplicateGroups } from "../utils/duplicates";
+import { buildDuplicateGroups, buildDistinctTracks } from "../utils/duplicates";
 import { filterTracks } from "../utils/trackFilters";
 import type { CustomPlaylist, PlaylistTrack, Playlist, Track } from "../types";
 import type { ServiceSource } from "../providerCatalog";
@@ -285,6 +285,17 @@ export function PlaylistViewer({
         await tauriAPI.playCustomPlaylistFromTrack(
           playlist.id,
           playlistTrack.track_id,
+        );
+      } else if (!isCustom && isDistinct) {
+        // For provider playlists in distinct mode, apply frontend dedup to match
+        // the queue that play_playlist builds, then start from the selected track.
+        const distinctTracks = buildDistinctTracks(regularTracks);
+        const distinctIndex = distinctTracks.findIndex(
+          (t) => t.id === trackToPlay.id,
+        );
+        await tauriAPI.playPlaylistFromTrack(
+          distinctTracks,
+          distinctIndex >= 0 ? distinctIndex : 0,
         );
       } else {
         const originalIndex = unfilteredTracks.findIndex(
