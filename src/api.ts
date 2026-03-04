@@ -13,6 +13,7 @@ import type {
   UnionPlaylistSource,
   ExportConfigPayload,
   AudioNormalizationSettings,
+  ProviderPlaylistPreference,
 } from "./types";
 
 declare global {
@@ -330,11 +331,13 @@ export class TauriAPI {
     name: string,
     description: string | null,
     imageUrl: string | null,
+    isDistinct?: boolean,
   ): Promise<CustomPlaylist> {
     return invoke("create_custom_playlist", {
       name,
       description,
       imageUrl,
+      isDistinct: isDistinct ?? null,
     });
   }
 
@@ -399,16 +402,44 @@ export class TauriAPI {
     return invoke("save_column_preferences", { preferences });
   }
 
+  async setCustomPlaylistDistinct(
+    playlistId: string,
+    isDistinct: boolean,
+  ): Promise<void> {
+    return invoke("set_custom_playlist_distinct", { playlistId, isDistinct });
+  }
+
+  async getProviderPlaylistPreference(
+    source: string,
+    playlistId: string,
+  ): Promise<ProviderPlaylistPreference | null> {
+    return invoke("get_provider_playlist_preference", { source, playlistId });
+  }
+
+  async setProviderPlaylistPreference(
+    source: string,
+    playlistId: string,
+    isDistinct: boolean,
+  ): Promise<void> {
+    return invoke("set_provider_playlist_preference", {
+      source,
+      playlistId,
+      isDistinct,
+    });
+  }
+
   // Union playlist commands
   async createUnionPlaylist(
     name: string,
     description: string | null,
     imageUrl: string | null,
+    isDistinct?: boolean,
   ): Promise<CustomPlaylist> {
     return invoke("create_union_playlist", {
       name,
       description,
       imageUrl,
+      isDistinct: isDistinct ?? null,
     });
   }
 

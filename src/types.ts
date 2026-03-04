@@ -54,6 +54,13 @@ export interface CustomPlaylist {
   updated_at: number;
   track_count: number;
   playlist_type: "standard" | "union";
+  is_distinct: boolean;
+}
+
+export interface ProviderPlaylistPreference {
+  source: string;
+  playlist_id: string;
+  is_distinct: boolean;
 }
 
 export interface UnionPlaylistSource {

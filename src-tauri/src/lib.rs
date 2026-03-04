@@ -158,6 +158,9 @@ pub fn run() {
             commands::reorder_custom_playlist_tracks,
             commands::get_column_preferences,
             commands::save_column_preferences,
+            commands::set_custom_playlist_distinct,
+            commands::get_provider_playlist_preference,
+            commands::set_provider_playlist_preference,
             // Union playlist commands
             commands::create_union_playlist,
             commands::add_source_to_union_playlist,

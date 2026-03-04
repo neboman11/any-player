@@ -1,6 +1,6 @@
 /// Custom playlist management commands
 use crate::commands::AppState;
-use crate::database::{ColumnPreferences, CustomPlaylist, PlaylistTrack, UnionPlaylistSource};
+use crate::database::{ColumnPreferences, CustomPlaylist, PlaylistTrack, ProviderPlaylistPreference, UnionPlaylistSource};
 use crate::models::Track;
 use crate::Source;
 use any_player_core::config_export::{
@@ -22,6 +22,7 @@ fn map_export_playlist(value: CustomPlaylist) -> ExportPlaylist {
         updated_at: value.updated_at,
         track_count: value.track_count,
         playlist_type: value.playlist_type,
+        is_distinct: value.is_distinct,
     }
 }
 
@@ -92,10 +93,17 @@ pub async fn create_custom_playlist(
     name: String,
     description: Option<String>,
     image_url: Option<String>,
+    is_distinct: Option<bool>,
 ) -> Result<CustomPlaylist, String> {
     let db = state.database.lock().await;
-    db.create_playlist(name, description, image_url)
-        .map_err(|e| format!("Failed to create playlist: {}", e))
+    db.create_playlist_with_type(
+        name,
+        description,
+        image_url,
+        "standard".to_string(),
+        is_distinct.unwrap_or(false),
+    )
+    .map_err(|e| format!("Failed to create playlist: {}", e))
 }
 
 #[tauri::command]
@@ -104,10 +112,17 @@ pub async fn create_union_playlist(
     name: String,
     description: Option<String>,
     image_url: Option<String>,
+    is_distinct: Option<bool>,
 ) -> Result<CustomPlaylist, String> {
     let db = state.database.lock().await;
-    db.create_playlist_with_type(name, description, image_url, "union".to_string(), false)
-        .map_err(|e| format!("Failed to create union playlist: {}", e))
+    db.create_playlist_with_type(
+        name,
+        description,
+        image_url,
+        "union".to_string(),
+        is_distinct.unwrap_or(false),
+    )
+    .map_err(|e| format!("Failed to create union playlist: {}", e))
 }
 
 #[tauri::command]
@@ -215,6 +230,40 @@ pub async fn get_custom_playlist(
     let db = state.database.lock().await;
     db.get_playlist(&playlist_id)
         .map_err(|e| format!("Failed to get playlist: {}", e))
+}
+
+#[tauri::command]
+pub async fn set_custom_playlist_distinct(
+    state: State<'_, AppState>,
+    playlist_id: String,
+    is_distinct: bool,
+) -> Result<(), String> {
+    let db = state.database.lock().await;
+    db.set_custom_playlist_distinct(&playlist_id, is_distinct)
+        .map_err(|e| format!("Failed to set playlist distinct mode: {}", e))
+}
+
+#[tauri::command]
+pub async fn get_provider_playlist_preference(
+    state: State<'_, AppState>,
+    source: String,
+    playlist_id: String,
+) -> Result<Option<ProviderPlaylistPreference>, String> {
+    let db = state.database.lock().await;
+    db.get_provider_playlist_preference(&source, &playlist_id)
+        .map_err(|e| format!("Failed to get provider playlist preference: {}", e))
+}
+
+#[tauri::command]
+pub async fn set_provider_playlist_preference(
+    state: State<'_, AppState>,
+    source: String,
+    playlist_id: String,
+    is_distinct: bool,
+) -> Result<(), String> {
+    let db = state.database.lock().await;
+    db.set_provider_playlist_preference(&source, &playlist_id, is_distinct)
+        .map_err(|e| format!("Failed to set provider playlist preference: {}", e))
 }
 
 #[tauri::command]
