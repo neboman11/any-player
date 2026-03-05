@@ -17,6 +17,16 @@ pub struct CustomPlaylist {
     pub updated_at: i64,
     pub track_count: i64,
     pub playlist_type: String, // "standard" or "union"
+    pub is_distinct: bool,
+}
+
+/// App-owned preference for a provider-sourced playlist (e.g. Spotify/Jellyfin/Plex).
+/// Stored in the app DB keyed by `(source, playlist_id)` and never mutates provider data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderPlaylistPreference {
+    pub source: String,
+    pub playlist_id: String,
+    pub is_distinct: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,7 +140,15 @@ impl Database {
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 track_count INTEGER DEFAULT 0,
-                playlist_type TEXT DEFAULT 'standard'
+                playlist_type TEXT DEFAULT 'standard',
+                is_distinct INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS provider_playlist_preferences (
+                source TEXT NOT NULL,
+                playlist_id TEXT NOT NULL,
+                is_distinct INTEGER DEFAULT 0,
+                PRIMARY KEY (source, playlist_id)
             );
 
             CREATE TABLE IF NOT EXISTS playlist_tracks (
@@ -192,6 +210,22 @@ impl Database {
             )?;
         }
 
+        // Migration: Add is_distinct column if it doesn't exist (for existing databases)
+        let has_is_distinct: bool = self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('custom_playlists') WHERE name='is_distinct'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0) > 0;
+
+        if !has_is_distinct {
+            self.conn.execute(
+                "ALTER TABLE custom_playlists ADD COLUMN is_distinct INTEGER DEFAULT 0",
+                [],
+            )?;
+        }
+
         Ok(())
     }
 
@@ -203,7 +237,7 @@ impl Database {
         description: Option<String>,
         image_url: Option<String>,
     ) -> Result<CustomPlaylist> {
-        self.create_playlist_with_type(name, description, image_url, "standard".to_string())
+        self.create_playlist_with_type(name, description, image_url, "standard".to_string(), false)
     }
 
     pub fn create_playlist_with_type(
@@ -212,14 +246,16 @@ impl Database {
         description: Option<String>,
         image_url: Option<String>,
         playlist_type: String,
+        is_distinct: bool,
     ) -> Result<CustomPlaylist> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().timestamp();
+        let is_distinct_int: i64 = if is_distinct { 1 } else { 0 };
 
         self.conn.execute(
-            "INSERT INTO custom_playlists (id, name, description, image_url, created_at, updated_at, track_count, playlist_type) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7)",
-            params![id, name, description, image_url, now, now, playlist_type],
+            "INSERT INTO custom_playlists (id, name, description, image_url, created_at, updated_at, track_count, playlist_type, is_distinct) 
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8)",
+            params![id, name, description, image_url, now, now, playlist_type, is_distinct_int],
         )?;
 
         Ok(CustomPlaylist {
@@ -231,18 +267,20 @@ impl Database {
             updated_at: now,
             track_count: 0,
             playlist_type,
+            is_distinct,
         })
     }
 
     pub fn get_all_playlists(&self) -> Result<Vec<CustomPlaylist>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, description, image_url, created_at, updated_at, track_count, playlist_type 
+            "SELECT id, name, description, image_url, created_at, updated_at, track_count, playlist_type, is_distinct 
              FROM custom_playlists 
              ORDER BY updated_at DESC",
         )?;
 
         let playlists = stmt
             .query_map([], |row| {
+                let is_distinct_int: i64 = row.get(8)?;
                 Ok(CustomPlaylist {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -252,6 +290,7 @@ impl Database {
                     updated_at: row.get(5)?,
                     track_count: row.get(6)?,
                     playlist_type: row.get(7)?,
+                    is_distinct: is_distinct_int != 0,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -263,11 +302,12 @@ impl Database {
         let playlist = self
             .conn
             .query_row(
-                "SELECT id, name, description, image_url, created_at, updated_at, track_count, playlist_type 
+                "SELECT id, name, description, image_url, created_at, updated_at, track_count, playlist_type, is_distinct 
                  FROM custom_playlists 
                  WHERE id = ?1",
                 params![playlist_id],
                 |row| {
+                    let is_distinct_int: i64 = row.get(8)?;
                     Ok(CustomPlaylist {
                         id: row.get(0)?,
                         name: row.get(1)?,
@@ -277,6 +317,7 @@ impl Database {
                         updated_at: row.get(5)?,
                         track_count: row.get(6)?,
                         playlist_type: row.get(7)?,
+                        is_distinct: is_distinct_int != 0,
                     })
                 },
             )
@@ -338,6 +379,60 @@ impl Database {
         self.conn.execute(
             "DELETE FROM custom_playlists WHERE id = ?1",
             params![playlist_id],
+        )?;
+        Ok(())
+    }
+
+    /// Set the `is_distinct` flag on a custom or union playlist.
+    /// This is metadata-only; it never touches playlist_tracks or provider data.
+    pub fn set_custom_playlist_distinct(&self, playlist_id: &str, is_distinct: bool) -> Result<()> {
+        let now = Utc::now().timestamp();
+        let is_distinct_int: i64 = if is_distinct { 1 } else { 0 };
+        self.conn.execute(
+            "UPDATE custom_playlists SET is_distinct = ?1, updated_at = ?2 WHERE id = ?3",
+            params![is_distinct_int, now, playlist_id],
+        )?;
+        Ok(())
+    }
+
+    /// Read the app-owned preference for a provider-sourced playlist.
+    /// Returns `None` if no preference has been stored yet (caller should default to `false`).
+    pub fn get_provider_playlist_preference(
+        &self,
+        source: &str,
+        playlist_id: &str,
+    ) -> Result<Option<ProviderPlaylistPreference>> {
+        let result = self
+            .conn
+            .query_row(
+                "SELECT source, playlist_id, is_distinct FROM provider_playlist_preferences WHERE source = ?1 AND playlist_id = ?2",
+                params![source, playlist_id],
+                |row| {
+                    let is_distinct_int: i64 = row.get(2)?;
+                    Ok(ProviderPlaylistPreference {
+                        source: row.get(0)?,
+                        playlist_id: row.get(1)?,
+                        is_distinct: is_distinct_int != 0,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(result)
+    }
+
+    /// Upsert the app-owned distinct preference for a provider-sourced playlist.
+    /// Does not modify any provider data — SAFE-01 compliant.
+    pub fn set_provider_playlist_preference(
+        &self,
+        source: &str,
+        playlist_id: &str,
+        is_distinct: bool,
+    ) -> Result<()> {
+        let is_distinct_int: i64 = if is_distinct { 1 } else { 0 };
+        self.conn.execute(
+            "INSERT INTO provider_playlist_preferences (source, playlist_id, is_distinct) VALUES (?1, ?2, ?3)
+             ON CONFLICT(source, playlist_id) DO UPDATE SET is_distinct = excluded.is_distinct",
+            params![source, playlist_id, is_distinct_int],
         )?;
         Ok(())
     }
@@ -813,5 +908,166 @@ mod tests {
         let reordered = db.get_playlist_tracks(&playlist.id).unwrap();
         assert_eq!(reordered[2].title, "Song 0");
         assert_eq!(reordered[0].title, "Song 1");
+    }
+
+    // ---------- is_distinct tests ----------
+
+    /// Verifies that a playlist created with the new schema has is_distinct defaulting to false.
+    #[test]
+    fn test_distinct_new_playlist_defaults_false() {
+        let db = create_test_db();
+        let playlist = db
+            .create_playlist("Defaults False".to_string(), None, None)
+            .unwrap();
+        assert!(
+            !playlist.is_distinct,
+            "new playlist should default is_distinct to false"
+        );
+
+        let retrieved = db.get_playlist(&playlist.id).unwrap().unwrap();
+        assert!(
+            !retrieved.is_distinct,
+            "retrieved playlist should have is_distinct == false"
+        );
+    }
+
+    /// Simulates the old-schema migration path: inserts a row WITHOUT the is_distinct column
+    /// (as an old DB would have it), then verifies the migration guard adds the column and
+    /// reading via get_playlist returns is_distinct == false (the column default).
+    #[test]
+    fn test_distinct_old_schema_migration_defaults_false() {
+        // Create an in-memory DB and deliberately insert a row without is_distinct to
+        // simulate a pre-migration database row.
+        let db = Database::new(":memory:".into()).unwrap();
+
+        // Drop and recreate the table without is_distinct to simulate an old schema.
+        db.conn
+            .execute_batch(
+                "DROP TABLE IF EXISTS custom_playlists;
+             CREATE TABLE custom_playlists (
+                 id TEXT PRIMARY KEY,
+                 name TEXT NOT NULL,
+                 description TEXT,
+                 image_url TEXT,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL,
+                 track_count INTEGER DEFAULT 0,
+                 playlist_type TEXT DEFAULT 'standard'
+             );
+             INSERT INTO custom_playlists (id, name, created_at, updated_at)
+             VALUES ('old-id-1', 'Old Playlist', 1000, 1000);",
+            )
+            .unwrap();
+
+        // Now run migration guard logic (same as initialize_schema does).
+        let has_is_distinct: bool = db.conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('custom_playlists') WHERE name='is_distinct'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0) > 0;
+
+        if !has_is_distinct {
+            db.conn
+                .execute(
+                    "ALTER TABLE custom_playlists ADD COLUMN is_distinct INTEGER DEFAULT 0",
+                    [],
+                )
+                .unwrap();
+        }
+
+        // The old row should now read as is_distinct == false (integer 0).
+        let retrieved = db.get_playlist("old-id-1").unwrap().unwrap();
+        assert_eq!(retrieved.name, "Old Playlist");
+        assert!(
+            !retrieved.is_distinct,
+            "old-schema row should have is_distinct == false after migration"
+        );
+    }
+
+    /// Verifies that setting is_distinct on a custom playlist persists through re-read.
+    #[test]
+    fn test_distinct_custom_playlist_persist_and_read() {
+        let db = create_test_db();
+        let playlist = db
+            .create_playlist_with_type(
+                "Distinct Playlist".to_string(),
+                None,
+                None,
+                "standard".to_string(),
+                false,
+            )
+            .unwrap();
+
+        assert!(!playlist.is_distinct);
+
+        db.set_custom_playlist_distinct(&playlist.id, true).unwrap();
+
+        let retrieved = db.get_playlist(&playlist.id).unwrap().unwrap();
+        assert!(
+            retrieved.is_distinct,
+            "is_distinct should be true after set"
+        );
+
+        db.set_custom_playlist_distinct(&playlist.id, false)
+            .unwrap();
+        let retrieved2 = db.get_playlist(&playlist.id).unwrap().unwrap();
+        assert!(
+            !retrieved2.is_distinct,
+            "is_distinct should be false after reset"
+        );
+    }
+
+    /// Verifies that provider playlist preferences can be upserted and read by composite key.
+    #[test]
+    fn test_provider_preference_upsert_and_read() {
+        let db = create_test_db();
+
+        // No preference yet — should return None.
+        let pref = db
+            .get_provider_playlist_preference("spotify", "pl-abc")
+            .unwrap();
+        assert!(
+            pref.is_none(),
+            "should be None before any preference is set"
+        );
+
+        // Set preference to true.
+        db.set_provider_playlist_preference("spotify", "pl-abc", true)
+            .unwrap();
+        let pref = db
+            .get_provider_playlist_preference("spotify", "pl-abc")
+            .unwrap()
+            .unwrap();
+        assert_eq!(pref.source, "spotify");
+        assert_eq!(pref.playlist_id, "pl-abc");
+        assert!(pref.is_distinct);
+
+        // Update preference to false (upsert).
+        db.set_provider_playlist_preference("spotify", "pl-abc", false)
+            .unwrap();
+        let pref2 = db
+            .get_provider_playlist_preference("spotify", "pl-abc")
+            .unwrap()
+            .unwrap();
+        assert!(!pref2.is_distinct, "should be false after update");
+
+        // Different source+id keys are independent.
+        db.set_provider_playlist_preference("jellyfin", "pl-abc", true)
+            .unwrap();
+        let spotify_pref = db
+            .get_provider_playlist_preference("spotify", "pl-abc")
+            .unwrap()
+            .unwrap();
+        let jellyfin_pref = db
+            .get_provider_playlist_preference("jellyfin", "pl-abc")
+            .unwrap()
+            .unwrap();
+        assert!(
+            !spotify_pref.is_distinct,
+            "spotify key should still be false"
+        );
+        assert!(jellyfin_pref.is_distinct, "jellyfin key should be true");
     }
 }

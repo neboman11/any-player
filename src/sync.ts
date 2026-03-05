@@ -276,11 +276,13 @@ async function applyRemotePlaylists(playlistsValue: unknown): Promise<boolean> {
               playlist.name,
               playlist.description,
               playlist.image_url,
+              playlist.is_distinct ?? false,
             )
           : await tauriAPI.createCustomPlaylist(
               playlist.name,
               playlist.description,
               playlist.image_url,
+              playlist.is_distinct ?? false,
             );
 
       idMap.set(playlist.id, created.id);

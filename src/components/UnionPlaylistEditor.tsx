@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import { TrackTable } from "./TrackTable";
-import { PlaylistHeader, DeleteConfirmModal, SearchBar } from "./shared";
+import { PlaylistHeader, DeleteConfirmModal, SearchBar, DuplicatesSection } from "./shared";
 import {
   useUnionPlaylistSources,
   useUnionPlaylistTracks,
@@ -11,6 +11,7 @@ import {
   usePlaylistEditor,
 } from "../hooks";
 import { tauriAPI } from "../api";
+import { buildDuplicateGroups } from "../utils/duplicates";
 import { filterTracks } from "../utils/trackFilters";
 import { SERVICE_PROVIDERS, includesSource } from "../providerCatalog";
 import type {
@@ -77,6 +78,8 @@ export function UnionPlaylistEditor({
     Record<string, string>
   >({});
   const [searchQuery, setSearchQuery] = useState("");
+  const [isDistinct, setIsDistinct] = useState(playlist.is_distinct);
+  const [isDistinctSaving, setIsDistinctSaving] = useState(false);
 
   // Load playlists when needed
   useEffect(() => {
@@ -102,6 +105,10 @@ export function UnionPlaylistEditor({
 
     setSourcePlaylistNames(nextNames);
   }, [customPlaylists, providerPlaylists]);
+
+  useEffect(() => {
+    setIsDistinct(playlist.is_distinct);
+  }, [playlist.is_distinct]);
 
   const loadExternalPlaylists = async (): Promise<void> => {
     if (!isProviderPlaylistCacheReady || providerPlaylists.length === 0) {
@@ -197,13 +204,32 @@ export function UnionPlaylistEditor({
 
   const handlePlayFromTrack = async (index: number) => {
     try {
-      // When using filtered tracks, we need to find the original index in the full tracks array
       const trackToPlay = filteredTracks[index];
-      const originalIndex = tracks.findIndex((t) => t.id === trackToPlay.id);
-      await tauriAPI.playPlaylistFromTrack(tracks, originalIndex);
+      if (isDistinct) {
+        await tauriAPI.playCustomPlaylistFromTrack(playlist.id, trackToPlay.id);
+      } else {
+        const originalIndex = tracks.findIndex((t) => t.id === trackToPlay.id);
+        await tauriAPI.playPlaylistFromTrack(tracks, originalIndex);
+      }
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play from track:", err);
+    }
+  };
+
+  const handleDistinctToggle = async (nextValue: boolean) => {
+    const previousValue = isDistinct;
+    setIsDistinct(nextValue);
+    setIsDistinctSaving(true);
+
+    try {
+      await tauriAPI.setCustomPlaylistDistinct(playlist.id, nextValue);
+    } catch (err) {
+      console.error("Failed to persist union distinct toggle:", err);
+      setIsDistinct(previousValue);
+      toast.error("Failed to save distinct preference");
+    } finally {
+      setIsDistinctSaving(false);
     }
   };
 
@@ -238,6 +264,7 @@ export function UnionPlaylistEditor({
 
   // Filter tracks based on search query
   const filteredTracks = filterTracks(tracks, searchQuery);
+  const duplicateGroups = isDistinct ? buildDuplicateGroups(tracks) : [];
 
   const metaInfo = `${sources.length} source playlists • ${tracks.length} total tracks • Created ${new Date(playlist.created_at * 1000).toLocaleDateString()}`;
 
@@ -262,6 +289,17 @@ export function UnionPlaylistEditor({
         <div className="header-actions">
           {!editorState.isEditing && (
             <>
+              <label className="distinct-toggle-control">
+                <input
+                  type="checkbox"
+                  checked={isDistinct}
+                  onChange={(event) =>
+                    void handleDistinctToggle(event.target.checked)
+                  }
+                  disabled={isDistinctSaving}
+                />
+                Distinct
+              </label>
               <button className="play-btn" onClick={handlePlayPlaylist}>
                 ▶ Play All
               </button>
@@ -378,6 +416,9 @@ export function UnionPlaylistEditor({
       <div className="tracks-section">
         <h3>Combined Tracks ({tracks.length})</h3>
         <SearchBar value={searchQuery} onChange={setSearchQuery} />
+        {isDistinct && duplicateGroups.length > 0 && (
+          <DuplicatesSection groups={duplicateGroups} tracks={tracks} isReadOnly />
+        )}
         {tracksLoading ? (
           <div className="loading">Loading tracks...</div>
         ) : tracks.length === 0 ? (

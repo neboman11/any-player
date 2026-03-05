@@ -49,7 +49,20 @@
 
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 0.75rem;
+}
+
+.distinct-toggle-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #ddd;
+  font-size: 0.875rem;
+}
+
+.distinct-toggle-control input {
+  cursor: pointer;
 }
 
 .add-track-btn,
@@ -200,6 +213,82 @@
 
 .tracks-section {
   margin-top: 2rem;
+}
+
+.duplicates-section {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.duplicates-section h3 {
+  margin: 0;
+}
+
+.duplicates-section-subtitle {
+  margin: 0.5rem 0 1rem;
+  color: #aaa;
+  font-size: 0.9rem;
+}
+
+.duplicates-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.duplicate-group {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.duplicate-group-title {
+  color: #fff;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.duplicate-group ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.duplicate-group li {
+  margin-bottom: 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.duplicate-group li:last-child {
+  margin-bottom: 0;
+}
+
+.duplicate-keeper-badge {
+  color: #7bc67e;
+  font-size: 0.75rem;
+  border: 1px solid rgba(123, 198, 126, 0.5);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+}
+
+.duplicate-group .remove-btn {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 0.875rem;
+  padding: 0.25rem 0.5rem;
+  transition: color 0.2s ease;
+}
+
+.duplicate-group .remove-btn:hover {
+  color: #ff4444;
 }
 
 .loading {
