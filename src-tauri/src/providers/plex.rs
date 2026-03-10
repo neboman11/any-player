@@ -4,7 +4,6 @@ use any_player_core::provider_api::ProviderApi;
 use any_player_core::provider_clients::plex::PlexApiClient;
 use async_trait::async_trait;
 use reqwest::Client;
-use serde::Deserialize;
 
 pub struct PlexProvider {
     base_url: String,
@@ -14,53 +13,6 @@ pub struct PlexProvider {
     insecure_client: Client,
     use_insecure_tls: bool,
     api_client: PlexApiClient,
-}
-
-#[derive(Debug, Deserialize)]
-struct PlexResponse {
-    #[serde(rename = "MediaContainer")]
-    media_container: PlexMediaContainer,
-}
-
-#[derive(Debug, Deserialize)]
-struct PlexMediaContainer {
-    #[serde(default, rename = "Metadata")]
-    metadata: Vec<PlexMetadata>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PlexMetadata {
-    #[serde(rename = "ratingKey")]
-    rating_key: Option<String>,
-    #[serde(default)]
-    title: String,
-    #[serde(default)]
-    thumb: Option<String>,
-    #[serde(default)]
-    duration: Option<u64>,
-    #[serde(default, rename = "grandparentTitle")]
-    grandparent_title: Option<String>,
-    #[serde(default, rename = "parentTitle")]
-    parent_title: Option<String>,
-    #[serde(default)]
-    #[serde(rename = "Media")]
-    media: Option<Vec<PlexMedia>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PlexMedia {
-    #[serde(default)]
-    bitrate: Option<u32>,
-    #[serde(default, rename = "audioSamplingRate")]
-    audio_sampling_rate: Option<u32>,
-    #[serde(default, rename = "Part")]
-    part: Option<Vec<PlexPart>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PlexPart {
-    #[serde(default)]
-    key: Option<String>,
 }
 
 impl PlexProvider {
@@ -91,14 +43,6 @@ impl PlexProvider {
             ("url", self.base_url.as_str()),
             ("token", self.token.as_str()),
         ])
-    }
-
-    fn active_client(&self) -> &Client {
-        if self.use_insecure_tls {
-            &self.insecure_client
-        } else {
-            &self.client
-        }
     }
 
     fn is_tls_error(error: &reqwest::Error) -> bool {
@@ -205,102 +149,6 @@ impl PlexProvider {
         } else {
             format!("{}/{}?X-Plex-Token={}", self.base_url, path, self.token)
         }
-    }
-
-    fn parse_json_response<T: for<'de> Deserialize<'de>>(body: &str) -> Result<T, ProviderError> {
-        serde_json::from_str::<T>(body)
-            .map_err(|e| ProviderError(format!("Failed to parse Plex response: {}", e)))
-    }
-
-    fn image_url_from_path(&self, maybe_path: &Option<String>) -> Option<String> {
-        maybe_path.as_ref().map(|path| {
-            let path = path.trim_start_matches('/');
-            format!("{}/{}?X-Plex-Token={}", self.base_url, path, self.token)
-        })
-    }
-
-    fn track_from_metadata(&self, item: PlexMetadata) -> Option<Track> {
-        let id = item.rating_key?;
-
-        let artist = item
-            .grandparent_title
-            .unwrap_or_else(|| "Unknown Artist".to_string());
-        let album = item
-            .parent_title
-            .unwrap_or_else(|| "Unknown Album".to_string());
-        let image_url = self.image_url_from_path(&item.thumb);
-
-        let stream_key = item
-            .media
-            .as_ref()
-            .and_then(|medias| medias.first())
-            .and_then(|media| media.part.as_ref())
-            .and_then(|parts| parts.first())
-            .and_then(|part| part.key.as_ref())
-            .cloned();
-
-        let stream_url = stream_key.map(|key| {
-            let key = key.trim_start_matches('/');
-            format!("{}/{}?X-Plex-Token={}", self.base_url, key, self.token)
-        });
-
-        let bitrate_kbps = item
-            .media
-            .as_ref()
-            .and_then(|medias| medias.first())
-            .and_then(|media| media.bitrate);
-
-        let sample_rate_hz = item
-            .media
-            .as_ref()
-            .and_then(|medias| medias.first())
-            .and_then(|media| media.audio_sampling_rate);
-
-        Some(Track {
-            id,
-            title: item.title,
-            artist,
-            album,
-            duration_ms: item.duration.unwrap_or(0),
-            image_url,
-            source: Source::Plex,
-            url: stream_url,
-            bitrate_kbps,
-            sample_rate_hz,
-            auth_headers: None,
-            enriched: false,
-        })
-    }
-
-    async fn get_tracks_from_endpoint(&self, endpoint: &str) -> Result<Vec<Track>, ProviderError> {
-        let response = self
-            .active_client()
-            .get(self.authed_url(endpoint))
-            .header("Accept", "application/json")
-            .send()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to fetch Plex tracks: {}", e)))?;
-
-        if !response.status().is_success() {
-            return Err(ProviderError(format!(
-                "Plex track request failed: HTTP {}",
-                response.status()
-            )));
-        }
-
-        let body = response
-            .text()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to read Plex response body: {}", e)))?;
-
-        let parsed = Self::parse_json_response::<PlexResponse>(&body)?;
-
-        Ok(parsed
-            .media_container
-            .metadata
-            .into_iter()
-            .filter_map(|item| self.track_from_metadata(item))
-            .collect())
     }
 }
 
@@ -472,13 +320,9 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        let mut tracks = self
-            .get_tracks_from_endpoint("hubs/home/recentlyPlayed?type=10")
-            .await?;
-        if tracks.len() > limit {
-            tracks.truncate(limit);
-        }
-        Ok(tracks)
+        self.api_client
+            .get_recently_played(&self.session_request(), limit)
+            .await
     }
 
     async fn disconnect(&mut self) -> Result<(), ProviderError> {
