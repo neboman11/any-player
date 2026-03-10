@@ -4,6 +4,7 @@ use any_player_core::provider_api::ProviderApi;
 use any_player_core::provider_clients::plex::PlexApiClient;
 use async_trait::async_trait;
 use reqwest::Client;
+use tracing::debug;
 
 pub struct PlexProvider {
     base_url: String,
@@ -39,10 +40,13 @@ impl PlexProvider {
     }
 
     fn session_request(&self) -> ProviderAuthRequest {
-        ProviderAuthRequest::from_pairs([
+        let session = ProviderAuthRequest::from_pairs([
             ("url", self.base_url.as_str()),
             ("token", self.token.as_str()),
-        ])
+        ]);
+        debug!("Plex session_request: url={}, token=***", self.base_url);
+        debug!("  session keys: {:?}", session.as_map().keys().collect::<Vec<_>>());
+        session
     }
 
     fn is_tls_error(error: &reqwest::Error) -> bool {
@@ -246,8 +250,11 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
+        debug!("Plex get_playlist: id={}", id);
+        let session = self.session_request();
+        debug!("  shooting get_playlist request to Plex");
         self.api_client
-            .get_playlist(&self.session_request(), id)
+            .get_playlist(&session, id)
             .await
     }
 
