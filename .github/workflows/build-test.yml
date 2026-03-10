@@ -333,7 +333,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [frontend-build, backend-test]
     if: ${{ always() && !cancelled() && needs.frontend-build.result == 'success' && (needs.backend-test.result == 'success' || needs.backend-test.result == 'skipped') && contains(inputs.build_platforms || 'linux,macos,windows', 'linux') }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -417,7 +417,7 @@ jobs:
     runs-on: macos-latest
     needs: [frontend-build, backend-test]
     if: ${{ always() && !cancelled() && needs.frontend-build.result == 'success' && (needs.backend-test.result == 'success' || needs.backend-test.result == 'skipped') && contains(inputs.build_platforms || 'linux,macos,windows', 'macos') }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -485,7 +485,7 @@ jobs:
     runs-on: windows-latest
     needs: [frontend-build, backend-test]
     if: ${{ always() && !cancelled() && needs.frontend-build.result == 'success' && (needs.backend-test.result == 'success' || needs.backend-test.result == 'skipped') && contains(inputs.build_platforms || 'linux,macos,windows', 'windows') }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
