@@ -241,10 +241,15 @@ export class TauriAPI {
   }
 
   // Jellyfin commands
-  async authenticateJellyfin(url: string, apiKey: string): Promise<void> {
+  async authenticateJellyfin(
+    url: string,
+    apiKey: string,
+    pageSize?: number,
+  ): Promise<void> {
     return invoke<void>("authenticate_jellyfin", {
       url,
       apiKey: apiKey,
+      pageSize: pageSize || 300,
     });
   }
 
@@ -289,10 +294,15 @@ export class TauriAPI {
   }
 
   // Plex commands
-  async authenticatePlex(url: string, token: string): Promise<void> {
+  async authenticatePlex(
+    url: string,
+    token: string,
+    pageSize?: number,
+  ): Promise<void> {
     return invoke<void>("authenticate_plex", {
       url,
       token,
+      pageSize: pageSize || 300,
     });
   }
 

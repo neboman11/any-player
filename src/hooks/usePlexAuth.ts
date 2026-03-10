@@ -67,7 +67,7 @@ export function usePlexAuth() {
   }, []);
 
   const connect = useCallback(
-    async (url: string, token: string) => {
+    async (url: string, token: string, pageSize?: number) => {
       if (!url || !token) {
         setError("Please enter both URL and token");
         return;
@@ -76,7 +76,7 @@ export function usePlexAuth() {
       try {
         setIsLoading(true);
         setError(null);
-        await tauriAPI.authenticatePlex(url, token);
+        await tauriAPI.authenticatePlex(url, token, pageSize);
 
         const authenticated = await checkAuthStatus();
         if (!authenticated) {
