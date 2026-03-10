@@ -15,8 +15,6 @@ pub struct PlexProvider {
     api_client: PlexApiClient,
 }
 
-
-
 impl PlexProvider {
     pub fn new(base_url: String, token: String) -> Self {
         let insecure_client = Client::builder()
@@ -46,7 +44,6 @@ impl PlexProvider {
             ("token", self.token.as_str()),
         ])
     }
-
 
     fn is_tls_error(error: &reqwest::Error) -> bool {
         let message = error.to_string().to_lowercase();
