@@ -144,6 +144,7 @@ pub async fn start_ws_server(
         let handle_clone = app_handle.clone();
 
         tokio::spawn(async move {
+            #[allow(clippy::result_large_err)]
             let ws_stream = match accept_hdr_async(stream, |req: &Request, response: Response| {
                 // Validate that the connection is from localhost
                 // Check Origin header if present
