@@ -150,12 +150,6 @@ impl PlexProvider {
             format!("{}/{}?X-Plex-Token={}", self.base_url, path, self.token)
         }
     }
-
-    async fn get_tracks_from_endpoint(&self, endpoint: &str) -> Result<Vec<Track>, ProviderError> {
-        self.api_client
-            .get_all_tracks_from_endpoint(&self.base_url, &self.token, endpoint)
-            .await
-    }
 }
 
 #[async_trait]
@@ -326,13 +320,9 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        let mut tracks = self
-            .get_tracks_from_endpoint("hubs/home/recentlyPlayed?type=10")
-            .await?;
-        if tracks.len() > limit {
-            tracks.truncate(limit);
-        }
-        Ok(tracks)
+        self.api_client
+            .get_recently_played(&self.session_request(), limit)
+            .await
     }
 
     async fn disconnect(&mut self) -> Result<(), ProviderError> {
