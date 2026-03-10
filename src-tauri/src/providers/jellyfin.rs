@@ -12,6 +12,7 @@ use serde_json::Value;
 pub struct JellyfinProvider {
     base_url: String,
     api_key: String,
+    playlist_page_size: u32,
     authenticated: bool,
     user_id: Option<String>,
     client: Client,
@@ -101,6 +102,7 @@ impl JellyfinProvider {
         Self {
             base_url,
             api_key,
+            playlist_page_size: 300,
             authenticated: false,
             user_id: None,
             client: Client::new(),
@@ -116,6 +118,7 @@ impl JellyfinProvider {
         if let Some(user_id) = &self.user_id {
             request.insert("user_id", user_id.clone());
         }
+        request.insert("page_size", self.playlist_page_size.to_string());
         request
     }
 
@@ -141,6 +144,15 @@ impl JellyfinProvider {
 
         self.base_url = url.to_string();
         self.api_key = api_key.to_string();
+
+        if let Some(page_size_str) = request.get("page_size") {
+            if let Ok(size) = page_size_str.parse::<u32>() {
+                if size >= 1 {
+                    self.playlist_page_size = size;
+                }
+            }
+        }
+
         Ok(())
     }
 

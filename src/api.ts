@@ -246,10 +246,17 @@ export class TauriAPI {
     apiKey: string,
     pageSize?: number,
   ): Promise<void> {
+    const sanitizedPageSize =
+      typeof pageSize === "number" &&
+      Number.isFinite(pageSize) &&
+      pageSize >= 1
+        ? Math.floor(pageSize)
+        : 300;
+
     return invoke<void>("authenticate_jellyfin", {
       url,
       apiKey: apiKey,
-      pageSize: pageSize || 300,
+      pageSize: sanitizedPageSize,
     });
   }
 
@@ -299,10 +306,17 @@ export class TauriAPI {
     token: string,
     pageSize?: number,
   ): Promise<void> {
+    const sanitizedPageSize =
+      typeof pageSize === "number" &&
+      Number.isFinite(pageSize) &&
+      pageSize >= 1
+        ? Math.floor(pageSize)
+        : 300;
+
     return invoke<void>("authenticate_plex", {
       url,
       token,
-      pageSize: pageSize || 300,
+      pageSize: sanitizedPageSize,
     });
   }
 
