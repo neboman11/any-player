@@ -296,7 +296,10 @@ export function Settings() {
       setJellyfinApiKey("");
       setShowApiKey(false);
     } else {
-      const pageSize = parseInt(jellyfinPlaylistPageSize, 10) || 300;
+      const parsedJellyfinPageSize = parseInt(jellyfinPlaylistPageSize, 10);
+      const pageSize = Number.isFinite(parsedJellyfinPageSize)
+        ? Math.min(Math.max(parsedJellyfinPageSize, 1), 1000)
+        : 300;
       await jellyfin.connect(jellyfinUrl, jellyfinApiKey, pageSize);
       // Reload playlists after successfully connecting
       setTimeout(async () => {
@@ -327,7 +330,10 @@ export function Settings() {
       setPlexToken("");
       setShowPlexToken(false);
     } else {
-      const pageSize = parseInt(plexPlaylistPageSize, 10) || 300;
+      const parsedPlexPageSize = parseInt(plexPlaylistPageSize, 10);
+      const pageSize = Number.isFinite(parsedPlexPageSize)
+        ? Math.min(Math.max(parsedPlexPageSize, 1), 1000)
+        : 300;
       await plex.connect(plexUrl, plexToken, pageSize);
       setTimeout(async () => {
         try {

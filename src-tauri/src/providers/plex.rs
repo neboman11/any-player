@@ -4,11 +4,11 @@ use any_player_core::provider_api::ProviderApi;
 use any_player_core::provider_clients::plex::PlexApiClient;
 use async_trait::async_trait;
 use reqwest::Client;
-use tracing::debug;
 
 pub struct PlexProvider {
     base_url: String,
     token: String,
+    playlist_page_size: u32,
     authenticated: bool,
     client: Client,
     insecure_client: Client,
@@ -31,6 +31,7 @@ impl PlexProvider {
         Self {
             base_url,
             token,
+            playlist_page_size: 300,
             authenticated: false,
             client: Client::new(),
             insecure_client,
@@ -40,12 +41,11 @@ impl PlexProvider {
     }
 
     fn session_request(&self) -> ProviderAuthRequest {
-        let session = ProviderAuthRequest::from_pairs([
+        let mut session = ProviderAuthRequest::from_pairs([
             ("url", self.base_url.as_str()),
             ("token", self.token.as_str()),
         ]);
-        debug!("Plex session_request: url={}, token=***", self.base_url);
-        debug!("  session keys: {:?}", session.as_map().keys().collect::<Vec<_>>());
+        session.insert("page_size", self.playlist_page_size.to_string());
         session
     }
 
@@ -143,6 +143,15 @@ impl PlexProvider {
         self.base_url = normalized_url;
         self.token = token.to_string();
         self.use_insecure_tls = false;
+
+        if let Some(page_size_str) = request.get("page_size") {
+            if let Ok(size) = page_size_str.parse::<u32>() {
+                if size >= 1 {
+                    self.playlist_page_size = size;
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -250,11 +259,8 @@ impl MusicProvider for PlexProvider {
             return Err(ProviderError("Not authenticated".to_string()));
         }
 
-        debug!("Plex get_playlist: id={}", id);
-        let session = self.session_request();
-        debug!("  shooting get_playlist request to Plex");
         self.api_client
-            .get_playlist(&session, id)
+            .get_playlist(&self.session_request(), id)
             .await
     }
 
