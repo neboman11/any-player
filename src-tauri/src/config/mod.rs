@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub const PROVIDER_DEFAULT_PAGE_SIZE: u32 = 300;
+pub const PROVIDER_MAX_PAGE_SIZE: u32 = 1000;
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
