@@ -146,7 +146,7 @@ impl PlexProvider {
 
         if let Some(page_size_str) = request.get("page_size") {
             if let Ok(size) = page_size_str.parse::<u32>() {
-                if size >= 1 {
+                if size >= 1 && size <= 1000 {
                     self.playlist_page_size = size;
                 }
             }
