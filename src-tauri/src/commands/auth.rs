@@ -245,11 +245,9 @@ pub async fn authenticate_jellyfin(
 ) -> Result<(), String> {
     let mut providers = state.providers.lock().await;
 
-    let mut auth_request = ProviderAuthRequest::from_pairs([
-        ("url", url.clone()),
-        ("api_key", api_key.clone()),
-    ]);
-    
+    let mut auth_request =
+        ProviderAuthRequest::from_pairs([("url", url.clone()), ("api_key", api_key.clone())]);
+
     if let Some(size) = page_size {
         auth_request.insert("page_size".to_string(), size.to_string());
     }
@@ -331,11 +329,9 @@ pub async fn authenticate_plex(
 ) -> Result<(), String> {
     let mut providers = state.providers.lock().await;
 
-    let mut auth_request = ProviderAuthRequest::from_pairs([
-        ("url", url.clone()),
-        ("token", token.clone()),
-    ]);
-    
+    let mut auth_request =
+        ProviderAuthRequest::from_pairs([("url", url.clone()), ("token", token.clone())]);
+
     if let Some(size) = page_size {
         auth_request.insert("page_size".to_string(), size.to_string());
     }
