@@ -873,6 +873,7 @@ export function Settings() {
               onChange={(e) => setJellyfinPlaylistPageSize(e.target.value)}
               min="1"
               max="1000"
+              disabled={jellyfin.isConnected}
             />
             <button
               id="jellyfin-connect-btn"
@@ -963,6 +964,7 @@ export function Settings() {
               onChange={(e) => setPlexPlaylistPageSize(e.target.value)}
               min="1"
               max="1000"
+              disabled={plex.isConnected}
             />
             <button
               id="plex-connect-btn"

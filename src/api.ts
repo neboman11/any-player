@@ -16,6 +16,9 @@ import type {
   ProviderPlaylistPreference,
 } from "./types";
 
+const PAGE_SIZE_DEFAULT = 300;
+const PAGE_SIZE_MAX = 1000;
+
 declare global {
   interface Window {
     __TAURI__: {
@@ -250,8 +253,8 @@ export class TauriAPI {
       typeof pageSize === "number" &&
       Number.isFinite(pageSize) &&
       pageSize >= 1
-        ? Math.floor(pageSize)
-        : 300;
+        ? Math.min(Math.floor(pageSize), PAGE_SIZE_MAX)
+        : PAGE_SIZE_DEFAULT;
 
     return invoke<void>("authenticate_jellyfin", {
       url,
@@ -310,8 +313,8 @@ export class TauriAPI {
       typeof pageSize === "number" &&
       Number.isFinite(pageSize) &&
       pageSize >= 1
-        ? Math.floor(pageSize)
-        : 300;
+        ? Math.min(Math.floor(pageSize), PAGE_SIZE_MAX)
+        : PAGE_SIZE_DEFAULT;
 
     return invoke<void>("authenticate_plex", {
       url,
