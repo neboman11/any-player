@@ -4,6 +4,9 @@ use rspotify::Token;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+pub const PROVIDER_DEFAULT_PAGE_SIZE: u32 = 300;
+pub const PROVIDER_MAX_PAGE_SIZE: u32 = 1000;
+
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -52,6 +55,9 @@ pub struct JellyfinConfig {
     pub username: Option<String>,
     /// User ID (populated after authentication)
     pub user_id: Option<String>,
+    /// Playlist page size for pagination
+    #[serde(default = "default_page_size")]
+    pub playlist_page_size: u32,
 }
 
 /// Plex-specific configuration
@@ -61,6 +67,9 @@ pub struct PlexConfig {
     pub server_url: String,
     /// Plex API token
     pub token: String,
+    /// Playlist page size for pagination
+    #[serde(default = "default_page_size")]
+    pub playlist_page_size: u32,
 }
 
 /// Token storage using platform-specific secure storage
@@ -354,6 +363,11 @@ impl Config {
 
         Ok(())
     }
+}
+
+/// Helper function for serde default values
+fn default_page_size() -> u32 {
+    PROVIDER_DEFAULT_PAGE_SIZE
 }
 
 #[cfg(test)]

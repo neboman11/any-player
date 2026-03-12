@@ -6,7 +6,7 @@ import {
   usePlaylists,
 } from "../hooks";
 import { save } from "@tauri-apps/plugin-dialog";
-import { tauriAPI } from "../api";
+import { tauriAPI, PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from "../api";
 import { LoadingSpinner } from "./shared/LoadingSpinner";
 import {
   getSyncSettings,
@@ -151,11 +151,22 @@ function AuthModal({ authUrl, onClose }: AuthModalProps) {
   );
 }
 
+function parsePageSize(value: string): number {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed)
+    ? Math.min(Math.max(parsed, 1), PAGE_SIZE_MAX)
+    : PAGE_SIZE_DEFAULT;
+}
+
 export function Settings() {
   const [jellyfinUrl, setJellyfinUrl] = useState<string>("");
   const [jellyfinApiKey, setJellyfinApiKey] = useState<string>("");
+  const [jellyfinPlaylistPageSize, setJellyfinPlaylistPageSize] =
+    useState<string>(String(PAGE_SIZE_DEFAULT));
   const [plexUrl, setPlexUrl] = useState<string>("");
   const [plexToken, setPlexToken] = useState<string>("");
+  const [plexPlaylistPageSize, setPlexPlaylistPageSize] =
+    useState<string>(String(PAGE_SIZE_DEFAULT));
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [showPlexToken, setShowPlexToken] = useState<boolean>(false);
   const [autoplay, setAutoplay] = useState<boolean>(false);
@@ -292,7 +303,11 @@ export function Settings() {
       setJellyfinApiKey("");
       setShowApiKey(false);
     } else {
-      await jellyfin.connect(jellyfinUrl, jellyfinApiKey);
+      await jellyfin.connect(
+        jellyfinUrl,
+        jellyfinApiKey,
+        parsePageSize(jellyfinPlaylistPageSize)
+      );
       // Reload playlists after successfully connecting
       setTimeout(async () => {
         try {
@@ -305,7 +320,14 @@ export function Settings() {
         }
       }, 1000);
     }
-  }, [jellyfin, jellyfinUrl, jellyfinApiKey, clearCache, loadPlaylists]);
+  }, [
+    jellyfin,
+    jellyfinUrl,
+    jellyfinApiKey,
+    jellyfinPlaylistPageSize,
+    clearCache,
+    loadPlaylists,
+  ]);
 
   const handlePlexConnect = useCallback(async () => {
     if (plex.isConnected) {
@@ -315,7 +337,7 @@ export function Settings() {
       setPlexToken("");
       setShowPlexToken(false);
     } else {
-      await plex.connect(plexUrl, plexToken);
+      await plex.connect(plexUrl, plexToken, parsePageSize(plexPlaylistPageSize));
       setTimeout(async () => {
         try {
           const isAuth = await tauriAPI.isPlexAuthenticated();
@@ -327,7 +349,14 @@ export function Settings() {
         }
       }, 1000);
     }
-  }, [plex, plexUrl, plexToken, clearCache, loadPlaylists]);
+  }, [
+    plex,
+    plexUrl,
+    plexToken,
+    plexPlaylistPageSize,
+    clearCache,
+    loadPlaylists,
+  ]);
 
   const handleExportConfig = useCallback(async () => {
     setIsExportingConfig(true);
@@ -838,6 +867,17 @@ export function Settings() {
                 </button>
               )}
             </div>
+            <input
+              type="number"
+              id="jellyfin-page-size"
+              placeholder="Playlist Page Size (default: 300)"
+              className="setting-input"
+              value={jellyfinPlaylistPageSize}
+              onChange={(e) => setJellyfinPlaylistPageSize(e.target.value)}
+              min="1"
+              max="1000"
+              disabled={jellyfin.isConnected}
+            />
             <button
               id="jellyfin-connect-btn"
               className="btn-primary"
@@ -918,6 +958,17 @@ export function Settings() {
                 </button>
               )}
             </div>
+            <input
+              type="number"
+              id="plex-page-size"
+              placeholder="Playlist Page Size (default: 300)"
+              className="setting-input"
+              value={plexPlaylistPageSize}
+              onChange={(e) => setPlexPlaylistPageSize(e.target.value)}
+              min="1"
+              max="1000"
+              disabled={plex.isConnected}
+            />
             <button
               id="plex-connect-btn"
               className="btn-primary"

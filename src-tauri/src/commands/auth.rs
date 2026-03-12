@@ -241,14 +241,19 @@ pub async fn authenticate_jellyfin(
     state: State<'_, AppState>,
     url: String,
     api_key: String,
+    page_size: Option<u32>,
 ) -> Result<(), String> {
     let mut providers = state.providers.lock().await;
 
+    let mut auth_request =
+        ProviderAuthRequest::from_pairs([("url", url.clone()), ("api_key", api_key.clone())]);
+
+    if let Some(size) = page_size {
+        auth_request.insert("page_size".to_string(), size.to_string());
+    }
+
     providers
-        .complete_auth(
-            Source::Jellyfin,
-            ProviderAuthRequest::from_pairs([("url", url.clone()), ("api_key", api_key.clone())]),
-        )
+        .complete_auth(Source::Jellyfin, auth_request)
         .await
         .map_err(|e| format!("Failed to authenticate Jellyfin: {}", e))?;
     drop(providers);
@@ -320,14 +325,19 @@ pub async fn authenticate_plex(
     state: State<'_, AppState>,
     url: String,
     token: String,
+    page_size: Option<u32>,
 ) -> Result<(), String> {
     let mut providers = state.providers.lock().await;
 
+    let mut auth_request =
+        ProviderAuthRequest::from_pairs([("url", url.clone()), ("token", token.clone())]);
+
+    if let Some(size) = page_size {
+        auth_request.insert("page_size".to_string(), size.to_string());
+    }
+
     providers
-        .complete_auth(
-            Source::Plex,
-            ProviderAuthRequest::from_pairs([("url", url.clone()), ("token", token.clone())]),
-        )
+        .complete_auth(Source::Plex, auth_request)
         .await
         .map_err(|e| format!("Failed to authenticate Plex: {}", e))?;
     drop(providers);

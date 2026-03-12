@@ -16,6 +16,9 @@ import type {
   ProviderPlaylistPreference,
 } from "./types";
 
+export const PAGE_SIZE_DEFAULT = 300;
+export const PAGE_SIZE_MAX = 1000;
+
 declare global {
   interface Window {
     __TAURI__: {
@@ -241,10 +244,22 @@ export class TauriAPI {
   }
 
   // Jellyfin commands
-  async authenticateJellyfin(url: string, apiKey: string): Promise<void> {
+  async authenticateJellyfin(
+    url: string,
+    apiKey: string,
+    pageSize?: number,
+  ): Promise<void> {
+    const sanitizedPageSize =
+      typeof pageSize === "number" &&
+      Number.isFinite(pageSize) &&
+      pageSize >= 1
+        ? Math.min(Math.floor(pageSize), PAGE_SIZE_MAX)
+        : PAGE_SIZE_DEFAULT;
+
     return invoke<void>("authenticate_jellyfin", {
       url,
       apiKey: apiKey,
+      pageSize: sanitizedPageSize,
     });
   }
 
@@ -289,10 +304,22 @@ export class TauriAPI {
   }
 
   // Plex commands
-  async authenticatePlex(url: string, token: string): Promise<void> {
+  async authenticatePlex(
+    url: string,
+    token: string,
+    pageSize?: number,
+  ): Promise<void> {
+    const sanitizedPageSize =
+      typeof pageSize === "number" &&
+      Number.isFinite(pageSize) &&
+      pageSize >= 1
+        ? Math.min(Math.floor(pageSize), PAGE_SIZE_MAX)
+        : PAGE_SIZE_DEFAULT;
+
     return invoke<void>("authenticate_plex", {
       url,
       token,
+      pageSize: sanitizedPageSize,
     });
   }
 

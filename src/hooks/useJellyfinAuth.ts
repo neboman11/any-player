@@ -47,7 +47,7 @@ export function useJellyfinAuth() {
   }, []);
 
   const connect = useCallback(
-    async (url: string, apiKey: string) => {
+    async (url: string, apiKey: string, pageSize?: number) => {
       if (!url || !apiKey) {
         setError("Please enter both URL and API key");
         return;
@@ -56,7 +56,7 @@ export function useJellyfinAuth() {
       try {
         setIsLoading(true);
         setError(null);
-        await tauriAPI.authenticateJellyfin(url, apiKey);
+        await tauriAPI.authenticateJellyfin(url, apiKey, pageSize);
 
         // Check authentication status after connecting
         const authenticated = await checkAuthStatus();

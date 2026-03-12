@@ -1,4 +1,5 @@
 use super::{MusicProvider, ProviderAuthRequest, ProviderAuthResponse, ProviderError};
+use crate::config::{PROVIDER_DEFAULT_PAGE_SIZE, PROVIDER_MAX_PAGE_SIZE};
 use crate::models::{Playlist, Source, Track};
 use any_player_core::provider_api::ProviderApi;
 use any_player_core::provider_clients::plex::PlexApiClient;
@@ -8,6 +9,7 @@ use reqwest::Client;
 pub struct PlexProvider {
     base_url: String,
     token: String,
+    playlist_page_size: u32,
     authenticated: bool,
     client: Client,
     insecure_client: Client,
@@ -30,6 +32,7 @@ impl PlexProvider {
         Self {
             base_url,
             token,
+            playlist_page_size: PROVIDER_DEFAULT_PAGE_SIZE,
             authenticated: false,
             client: Client::new(),
             insecure_client,
@@ -39,10 +42,12 @@ impl PlexProvider {
     }
 
     fn session_request(&self) -> ProviderAuthRequest {
-        ProviderAuthRequest::from_pairs([
+        let mut session = ProviderAuthRequest::from_pairs([
             ("url", self.base_url.as_str()),
             ("token", self.token.as_str()),
-        ])
+        ]);
+        session.insert("page_size", self.playlist_page_size.to_string());
+        session
     }
 
     fn is_tls_error(error: &reqwest::Error) -> bool {
@@ -139,6 +144,15 @@ impl PlexProvider {
         self.base_url = normalized_url;
         self.token = token.to_string();
         self.use_insecure_tls = false;
+
+        if let Some(page_size_str) = request.get("page_size") {
+            if let Ok(size) = page_size_str.parse::<u32>() {
+                if (1..=PROVIDER_MAX_PAGE_SIZE).contains(&size) {
+                    self.playlist_page_size = size;
+                }
+            }
+        }
+
         Ok(())
     }
 
