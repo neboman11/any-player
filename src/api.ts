@@ -16,8 +16,8 @@ import type {
   ProviderPlaylistPreference,
 } from "./types";
 
-const PAGE_SIZE_DEFAULT = 300;
-const PAGE_SIZE_MAX = 1000;
+export const PAGE_SIZE_DEFAULT = 300;
+export const PAGE_SIZE_MAX = 1000;
 
 declare global {
   interface Window {

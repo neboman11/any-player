@@ -6,7 +6,7 @@ import {
   usePlaylists,
 } from "../hooks";
 import { save } from "@tauri-apps/plugin-dialog";
-import { tauriAPI } from "../api";
+import { tauriAPI, PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX } from "../api";
 import { LoadingSpinner } from "./shared/LoadingSpinner";
 import {
   getSyncSettings,
@@ -151,15 +151,22 @@ function AuthModal({ authUrl, onClose }: AuthModalProps) {
   );
 }
 
+function parsePageSize(value: string): number {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed)
+    ? Math.min(Math.max(parsed, 1), PAGE_SIZE_MAX)
+    : PAGE_SIZE_DEFAULT;
+}
+
 export function Settings() {
   const [jellyfinUrl, setJellyfinUrl] = useState<string>("");
   const [jellyfinApiKey, setJellyfinApiKey] = useState<string>("");
   const [jellyfinPlaylistPageSize, setJellyfinPlaylistPageSize] =
-    useState<string>("300");
+    useState<string>(String(PAGE_SIZE_DEFAULT));
   const [plexUrl, setPlexUrl] = useState<string>("");
   const [plexToken, setPlexToken] = useState<string>("");
   const [plexPlaylistPageSize, setPlexPlaylistPageSize] =
-    useState<string>("300");
+    useState<string>(String(PAGE_SIZE_DEFAULT));
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [showPlexToken, setShowPlexToken] = useState<boolean>(false);
   const [autoplay, setAutoplay] = useState<boolean>(false);
@@ -296,11 +303,11 @@ export function Settings() {
       setJellyfinApiKey("");
       setShowApiKey(false);
     } else {
-      const parsedJellyfinPageSize = parseInt(jellyfinPlaylistPageSize, 10);
-      const pageSize = Number.isFinite(parsedJellyfinPageSize)
-        ? Math.min(Math.max(parsedJellyfinPageSize, 1), 1000)
-        : 300;
-      await jellyfin.connect(jellyfinUrl, jellyfinApiKey, pageSize);
+      await jellyfin.connect(
+        jellyfinUrl,
+        jellyfinApiKey,
+        parsePageSize(jellyfinPlaylistPageSize)
+      );
       // Reload playlists after successfully connecting
       setTimeout(async () => {
         try {
@@ -330,11 +337,7 @@ export function Settings() {
       setPlexToken("");
       setShowPlexToken(false);
     } else {
-      const parsedPlexPageSize = parseInt(plexPlaylistPageSize, 10);
-      const pageSize = Number.isFinite(parsedPlexPageSize)
-        ? Math.min(Math.max(parsedPlexPageSize, 1), 1000)
-        : 300;
-      await plex.connect(plexUrl, plexToken, pageSize);
+      await plex.connect(plexUrl, plexToken, parsePageSize(plexPlaylistPageSize));
       setTimeout(async () => {
         try {
           const isAuth = await tauriAPI.isPlexAuthenticated();

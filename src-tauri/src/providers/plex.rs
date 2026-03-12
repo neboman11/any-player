@@ -1,4 +1,5 @@
 use super::{MusicProvider, ProviderAuthRequest, ProviderAuthResponse, ProviderError};
+use crate::config::{PROVIDER_DEFAULT_PAGE_SIZE, PROVIDER_MAX_PAGE_SIZE};
 use crate::models::{Playlist, Source, Track};
 use any_player_core::provider_api::ProviderApi;
 use any_player_core::provider_clients::plex::PlexApiClient;
@@ -31,7 +32,7 @@ impl PlexProvider {
         Self {
             base_url,
             token,
-            playlist_page_size: 300,
+            playlist_page_size: PROVIDER_DEFAULT_PAGE_SIZE,
             authenticated: false,
             client: Client::new(),
             insecure_client,
@@ -146,7 +147,7 @@ impl PlexProvider {
 
         if let Some(page_size_str) = request.get("page_size") {
             if let Ok(size) = page_size_str.parse::<u32>() {
-                if (1..=1000).contains(&size) {
+                if (1..=PROVIDER_MAX_PAGE_SIZE).contains(&size) {
                     self.playlist_page_size = size;
                 }
             }
