@@ -976,7 +976,7 @@ impl AudioPlayer {
                     .is_paused
                     .store(!snapshot.is_playing, Ordering::SeqCst);
 
-                if snapshot.end_of_track {
+                if snapshot.end_of_track_count > 0 {
                     handle_clone.stop();
                     break;
                 }

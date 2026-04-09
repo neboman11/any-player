@@ -71,9 +71,8 @@ pub async fn clear_cache(filename: &str) -> Result<()> {
         Ok(_) => tracing::debug!("Cleared cache file {}", cache_file.display()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
         Err(err) => {
-            return Err(err).with_context(|| {
-                format!("Failed to remove cache file: {}", cache_file.display())
-            })
+            return Err(err)
+                .with_context(|| format!("Failed to remove cache file: {}", cache_file.display()))
         }
     }
 
