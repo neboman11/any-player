@@ -23,11 +23,15 @@ export function useSearch() {
         );
 
         if (searchType === "tracks") {
-          for (const provider of activeProviders) {
-            try {
-              const providerTracks = await provider.searchTracks(query);
+          const trackResults = await Promise.allSettled(
+            activeProviders.map((provider) => provider.searchTracks(query)),
+          );
+
+          for (let i = 0; i < trackResults.length; i++) {
+            const result = trackResults[i];
+            if (result.status === "fulfilled") {
               searchResults.push(
-                ...providerTracks.map((track) => ({
+                ...result.value.map((track) => ({
                   id: track.id,
                   name: track.title,
                   artist: track.artist,
@@ -35,21 +39,23 @@ export function useSearch() {
                   source: track.source,
                 })),
               );
-            } catch (err) {
-              console.error(`${provider.label} search error:`, err);
+            } else {
+              console.error(`${activeProviders[i].label} search error:`, result.reason);
             }
           }
         } else {
-          // Playlists
-          for (const provider of activeProviders) {
-            if (!provider.searchPlaylists) {
-              continue;
-            }
+          const playlistProviders = activeProviders.filter(
+            (provider) => provider.searchPlaylists,
+          );
+          const playlistResults = await Promise.allSettled(
+            playlistProviders.map((provider) => provider.searchPlaylists!(query)),
+          );
 
-            try {
-              const providerPlaylists = await provider.searchPlaylists(query);
+          for (let i = 0; i < playlistResults.length; i++) {
+            const result = playlistResults[i];
+            if (result.status === "fulfilled") {
               searchResults.push(
-                ...providerPlaylists.map((playlist) => ({
+                ...result.value.map((playlist) => ({
                   id: playlist.id,
                   name: playlist.name,
                   owner: playlist.owner,
@@ -57,8 +63,11 @@ export function useSearch() {
                   source: playlist.source,
                 })),
               );
-            } catch (err) {
-              console.error(`${provider.label} search error:`, err);
+            } else {
+              console.error(
+                `${playlistProviders[i].label} search error:`,
+                result.reason,
+              );
             }
           }
         }

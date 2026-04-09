@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 interface VolumeControlProps {
   volume: number;
@@ -6,13 +6,30 @@ interface VolumeControlProps {
 }
 
 export function VolumeControl({ volume, setVolumeValue }: VolumeControlProps) {
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleVolumeChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = Number(e.target.value);
-      // Update backend volume
-      void setVolumeValue(value);
+
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+
+      debounceRef.current = setTimeout(() => {
+        void setVolumeValue(value);
+      }, 50);
     },
     [setVolumeValue],
+  );
+
+  useEffect(
+    () => () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    },
+    [],
   );
 
   return (
