@@ -245,7 +245,16 @@ export function PlaylistViewer({
   const handlePlayPlaylist = async () => {
     try {
       const source = isCustom ? "custom" : (playlist as Playlist).source;
-      await tauriAPI.playPlaylist(playlist.id, source);
+      if (!isCustom && regularTracks.length > 0) {
+        // Use already-loaded tracks (may come from disk cache on restart) so the
+        // provider doesn't need to be re-fetched when cached data is available.
+        const tracksToPlay = isDistinct
+          ? buildDistinctTracks(regularTracks)
+          : regularTracks;
+        await tauriAPI.playTracksImmediate(tracksToPlay);
+      } else {
+        await tauriAPI.playPlaylist(playlist.id, source);
+      }
       await playback.updateStatus();
     } catch (err) {
       console.error("Failed to play playlist:", err);
