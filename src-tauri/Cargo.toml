@@ -29,7 +29,7 @@ async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 
 # Spotify integration - rspotify for Web API, librespot for full song streaming
-rspotify = "0.12"
+rspotify = { version = "0.16", default-features = false, features = ["client-reqwest", "reqwest-rustls-tls"] }
 librespot-core = { version = "0.8", default-features = false, features = [
     "rustls-tls-webpki-roots",
 ] }
@@ -45,7 +45,7 @@ librespot-oauth = { version = "0.8", default-features = false, features = [
 ] }
 
 # HTTP and async
-reqwest = { version = "0.11", features = ["json", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
 
 # JSON and serialization
 toml = "0.8"
