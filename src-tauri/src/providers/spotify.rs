@@ -150,11 +150,10 @@ impl SpotifyProvider {
             .await
             .map_err(|e| ProviderError(format!("Failed to fetch user profile: {}", e)))?;
 
-        let is_premium = user.product.is_some();
+        // Spotify removed the `product` field from their API; assume premium.
+        tracing::info!("Fetched Spotify user profile for: {:?}", user.display_name);
 
-        tracing::info!("Spotify user subscription type: {:?}", user.product);
-
-        Ok(is_premium)
+        Ok(true)
     }
 
     /// Check and update premium status from Spotify API
@@ -576,7 +575,7 @@ impl MusicProvider for SpotifyProvider {
                     .display_name
                     .unwrap_or_else(|| item.owner.id.to_string()),
                 image_url: item.images.first().map(|img| img.url.clone()),
-                track_count: item.tracks.total as usize,
+                track_count: item.items.total as usize,
                 tracks: Vec::new(),
                 source: Source::Spotify,
             });
@@ -620,7 +619,7 @@ impl MusicProvider for SpotifyProvider {
                 Ok(item) => {
                     consecutive_errors = 0; // Reset error counter on success
 
-                    if let Some(rspotify::model::PlayableItem::Track(t)) = item.track {
+                    if let Some(rspotify::model::PlayableItem::Track(t)) = item.item {
                         let duration_ms = t.duration.num_milliseconds() as u64;
                         // Premium playback only - return spotify:track: URI for librespot
                         let url = t.id.as_ref().map(|id| format!("spotify:track:{}", id));
