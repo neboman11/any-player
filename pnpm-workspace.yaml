@@ -4,4 +4,3 @@ overrides:
   flatted: "3.4.2"
   "brace-expansion@^1": "1.1.13"
   "brace-expansion@^2": "2.0.3"
-  esbuild: "0.28.1"
