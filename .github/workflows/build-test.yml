@@ -43,7 +43,7 @@ permissions:
   pull-requests: write
 
 env:
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
   RUST_VERSION: "stable"
   SHARED_RUST_REPOSITORY: "neboman11/any-player-shared-rust"
 
