@@ -923,12 +923,15 @@ fn spawn_spotify_connect_poller(
                 // Detect end-of-track: playback transitioned from playing to
                 // stopped while progress was at or near the end of the track,
                 // meaning the Connect device finished the track rather than
-                // the user pausing mid-way.  The `was_playing` guard ensures
-                // the signal fires at most once per track completion so the
-                // queue advances by exactly one step.  Mirror what the HTTP
-                // path does at line ~1367.
+                // the user pausing mid-way. Require the track to be
+                // meaningfully longer than one poll interval - otherwise a
+                // pause anywhere in a very short track (duration <= poll
+                // interval) would always fall within the "near the end"
+                // window and be misread as completion. The `was_playing`
+                // guard ensures the signal fires at most once per track
+                // completion so the queue advances by exactly one step.
                 let progress_ms = info.position_ms;
-                let at_end = duration_ms > 0
+                let at_end = duration_ms > SPOTIFY_CONNECT_POLL_INTERVAL_MS
                     && progress_ms
                         >= duration_ms.saturating_sub(SPOTIFY_CONNECT_POLL_INTERVAL_MS);
                 if was_playing && !context.is_playing && at_end {
@@ -1454,11 +1457,45 @@ impl PlaybackManager {
         };
 
         if source == Some(crate::models::Source::Spotify) {
-            if let Err(error) = self.spotify_connect.resume().await {
-                tracing::warn!("Failed to resume Spotify Connect playback: {}", error);
+            match self.spotify_connect.resume().await {
+                Ok(()) => {
+                    let mut info = self.info.lock().await;
+                    info.state = PlaybackState::Playing;
+                }
+                Err(error) => {
+                    // Nothing to resume (e.g. no active Connect device yet - the
+                    // common case right after a restore, which only restores
+                    // `current_track`/`position_ms` without starting Connect
+                    // playback). Start the track fresh and seek back to the
+                    // saved position, mirroring the non-Spotify fallback below.
+                    tracing::warn!(
+                        "Failed to resume Spotify Connect playback, starting track fresh: {}",
+                        error
+                    );
+                    let (current_track, position_ms) = {
+                        let info = self.info.lock().await;
+                        (info.current_track.clone(), info.position_ms)
+                    };
+
+                    if let Some(track) = current_track {
+                        self.play_track(track).await;
+                        if position_ms > 0 {
+                            if let Err(error) =
+                                self.spotify_connect.seek(position_ms as i64).await
+                            {
+                                tracing::warn!(
+                                    "Failed to seek restored Spotify track: {}",
+                                    error
+                                );
+                            }
+                            let mut info = self.info.lock().await;
+                            info.position_ms = position_ms;
+                        }
+                    } else {
+                        tracing::warn!("No active Spotify playback and no current track to play");
+                    }
+                }
             }
-            let mut info = self.info.lock().await;
-            info.state = PlaybackState::Playing;
             return;
         }
 
@@ -1530,16 +1567,13 @@ impl PlaybackManager {
         };
 
         if source == Some(crate::models::Source::Spotify) {
-            let result = match new_state {
-                PlaybackState::Playing => self.spotify_connect.resume().await,
-                PlaybackState::Paused => self.spotify_connect.pause().await,
-                PlaybackState::Stopped => Ok(()),
-            };
-            if let Err(error) = result {
-                tracing::warn!("Failed to toggle Spotify Connect playback: {}", error);
+            // `new_state` above is only ever Playing or Paused (Stopped always
+            // maps to Playing), so delegate to `play`/`pause`, which already
+            // handle the Spotify resume-fallback and state bookkeeping.
+            match new_state {
+                PlaybackState::Playing => self.play().await,
+                PlaybackState::Paused | PlaybackState::Stopped => self.pause().await,
             }
-            let mut info = info_arc.lock().await;
-            info.state = new_state;
             return;
         }
 
