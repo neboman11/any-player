@@ -6,11 +6,7 @@ use tokio::sync::Mutex;
 
 /// Delay between API calls when eagerly enriching queued tracks (in milliseconds)
 /// This prevents overwhelming external APIs with rapid consecutive requests
-const TRACK_ENRICHMENT_DELAY_MS: u64 = 50;
-
-/// Number of nearest upcoming tracks to enrich immediately without throttle delay.
-/// This helps ensure metadata is ready before those songs begin playback.
-const PRIORITY_PRELOAD_COUNT: usize = 3;
+const TRACK_ENRICHMENT_DELAY_MS: u64 = 150;
 
 /// Eagerly enrich queued tracks with full details (URLs, auth headers, etc.)
 /// Prioritizes tracks near the current playback position and loads them immediately
@@ -68,7 +64,7 @@ pub async fn enrich_queued_tracks_eager(
     // Now fetch track details without holding the registry lock
     let mut enriched_tracks = Vec::new();
 
-    for (position, (track_idx, track_id, source)) in tracks_to_enrich.into_iter().enumerate() {
+    for (track_idx, track_id, source) in tracks_to_enrich {
         // Get the provider handle, then release the registry lock before fetching
         let provider_handle = {
             let providers_lock = providers.lock().await;
@@ -106,13 +102,13 @@ pub async fn enrich_queued_tracks_eager(
             // Track is already marked as enriched, no need to update
         }
 
-        // Delay only for non-priority tracks to keep immediate upcoming songs enriched faster.
-        if position + 1 > PRIORITY_PRELOAD_COUNT {
-            tokio::time::sleep(tokio::time::Duration::from_millis(
-                TRACK_ENRICHMENT_DELAY_MS,
-            ))
-            .await;
-        }
+        // Throttle every request evenly (no zero-delay burst) to stay well under
+        // provider rate limits; the on-disk track cache means repeat plays of the
+        // same queue skip the network call (and this delay) entirely.
+        tokio::time::sleep(tokio::time::Duration::from_millis(
+            TRACK_ENRICHMENT_DELAY_MS,
+        ))
+        .await;
     }
 
     // Update all enriched tracks in a single lock acquisition

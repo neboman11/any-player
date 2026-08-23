@@ -3,6 +3,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { spotifyWebPlayback } from "./spotifyWebPlayback";
 import type {
   PlaybackStatus,
   Playlist,
@@ -40,14 +41,23 @@ export class TauriAPI {
   }
 
   async play(): Promise<void> {
+    if (spotifyWebPlayback.isActive()) {
+      return spotifyWebPlayback.resume();
+    }
     return invoke<void>("play");
   }
 
   async pause(): Promise<void> {
+    if (spotifyWebPlayback.isActive()) {
+      return spotifyWebPlayback.pause();
+    }
     return invoke<void>("pause");
   }
 
   async togglePlayPause(): Promise<void> {
+    if (spotifyWebPlayback.isActive()) {
+      return spotifyWebPlayback.togglePlay();
+    }
     return invoke<void>("toggle_play_pause");
   }
 
@@ -64,11 +74,35 @@ export class TauriAPI {
   }
 
   async seek(position: number): Promise<void> {
+    if (spotifyWebPlayback.isActive()) {
+      return spotifyWebPlayback.seek(position);
+    }
     return invoke<void>("seek", { position });
   }
 
   async setVolume(volume: number): Promise<void> {
+    // Volume is always persisted/normalized on the backend (needed for restore and
+    // for other sources), and mirrored into the SDK when it's the active audio path.
+    if (spotifyWebPlayback.isActive()) {
+      await spotifyWebPlayback.setVolume(volume);
+    }
     return invoke<void>("set_volume", { volume });
+  }
+
+  async getSpotifyAccessToken(): Promise<string> {
+    return invoke<string>("get_spotify_access_token");
+  }
+
+  async reportSpotifyPlaybackState(
+    positionMs: number,
+    durationMs: number,
+    isPlaying: boolean,
+  ): Promise<void> {
+    return invoke<void>("report_spotify_playback_state", {
+      positionMs,
+      durationMs,
+      isPlaying,
+    });
   }
 
   async getAudioNormalizationSettings(): Promise<AudioNormalizationSettings> {

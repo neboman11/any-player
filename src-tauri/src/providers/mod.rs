@@ -253,9 +253,29 @@ impl ProviderRegistry {
     }
 
     pub async fn get_track(&self, source: Source, id: &str) -> Result<Track, ProviderError> {
+        // Track metadata is effectively immutable, so cache it to disk to cut
+        // down on repeat enrichment calls to rate-limited provider APIs
+        // (esp. Spotify). Scoped to Spotify only: Jellyfin/Plex track URLs
+        // embed session-scoped auth tokens that shouldn't be persisted.
+        if source == Source::Spotify {
+            match crate::cache::read_track_metadata_cache("spotify", id).await {
+                Ok(Some(cached)) => return Ok(cached),
+                Ok(None) => {}
+                Err(e) => tracing::warn!("Failed to read track metadata cache: {e}"),
+            }
+        }
+
         let provider = self.require_provider(source)?;
         let provider = provider.lock().await;
-        provider.get_track(id).await
+        let track = provider.get_track(id).await?;
+
+        if source == Source::Spotify {
+            if let Err(e) = crate::cache::write_track_metadata_cache("spotify", id, &track).await {
+                tracing::warn!("Failed to write track metadata cache: {e}");
+            }
+        }
+
+        Ok(track)
     }
 
     pub async fn search_tracks(

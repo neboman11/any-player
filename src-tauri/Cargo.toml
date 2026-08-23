@@ -29,7 +29,7 @@ async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 
 # Spotify integration - rspotify for Web API, librespot for full song streaming
-rspotify = { version = "0.16", default-features = false, features = ["client-reqwest", "reqwest-rustls-tls"] }
+rspotify = { version = "0.16", default-features = false, features = ["client-reqwest", "reqwest-rustls-tls", "reqwest-middleware"] }
 librespot-core = { version = "0.8", default-features = false, features = [
     "rustls-tls-webpki-roots",
 ] }
@@ -78,6 +78,8 @@ any_player_core = { path = "../../any-player-shared-rust/crates/any_player_core"
 
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }
+reqwest-middleware = { version = "=0.4.0", features = ["json"] }
+reqwest-retry = "0.7"
 
 [dev-dependencies]
 serial_test = "3.2"
@@ -90,3 +92,9 @@ serial_test = "3.2"
 [patch.crates-io]
 vergen-gitcl = { git = "https://github.com/rustyhorde/vergen.git", tag = "vergen_lib_0.1.6" }
 vergen-lib = { git = "https://github.com/rustyhorde/vergen.git", tag = "vergen_lib_0.1.6" }
+
+# any_player_spotify_engine relies on librespot-core APIs (e.g.
+# Login5Manager::inject_bearer_token) that only exist in the vendored patch
+# in any-player-shared-rust, not stock crates.io. Without this, desktop
+# silently links a different librespot-core than the shared engine crate.
+librespot-core = { path = "../../any-player-shared-rust/patches/librespot-core" }

@@ -55,6 +55,17 @@ pub async fn is_spotify_authenticated(state: State<'_, AppState>) -> Result<bool
     Ok(authenticated)
 }
 
+/// Get the current Spotify access token for use by the Web Playback SDK
+/// running in the frontend (`getOAuthToken` callback).
+#[tauri::command]
+pub async fn get_spotify_access_token(state: State<'_, AppState>) -> Result<String, String> {
+    let providers = state.providers.lock().await;
+    providers
+        .get_access_token(Source::Spotify)
+        .await
+        .ok_or_else(|| "No Spotify access token available".to_string())
+}
+
 /// Check if user has Spotify Premium
 ///
 /// Returns true if authenticated user has Spotify Premium, false otherwise

@@ -220,6 +220,39 @@ pub async fn clear_provider_playlists_cache() -> Result<usize> {
     .map_err(|err| anyhow!("Failed to join provider playlist cache clear task: {err}"))?
 }
 
+const TRACK_METADATA_CACHE_PREFIX: &str = "track_metadata_";
+
+fn track_cache_filename(source: &str, track_id: &str) -> String {
+    // Defensively restrict to filesystem-safe characters; provider track IDs
+    // are alphanumeric in practice but this avoids any path-traversal risk.
+    let safe_id: String = track_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect();
+    format!("{}{}_{}.json", TRACK_METADATA_CACHE_PREFIX, source, safe_id)
+}
+
+/// Read cached track metadata. Kept indefinitely (no TTL) — track metadata
+/// (title/artist/album/duration/art) is effectively immutable, so a stored
+/// entry stays valid until explicitly cleared.
+pub async fn read_track_metadata_cache(
+    source: &str,
+    track_id: &str,
+) -> Result<Option<crate::models::Track>> {
+    let filename = track_cache_filename(source, track_id);
+    read_cache(&filename).await
+}
+
+/// Write track metadata to the cache. No expiry is stored or checked.
+pub async fn write_track_metadata_cache(
+    source: &str,
+    track_id: &str,
+    track: &crate::models::Track,
+) -> Result<()> {
+    let filename = track_cache_filename(source, track_id);
+    write_cache(&filename, track).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

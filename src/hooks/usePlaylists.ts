@@ -58,13 +58,8 @@ async function loadFromDiskCache(): Promise<Playlist[] | null> {
       return null;
     }
 
-    // Optional: Check if cache is too old (e.g., older than 24 hours)
-    const MAX_CACHE_AGE = 24 * 60 * 60 * 1000; // 24 hours
-    if (Date.now() - cacheData.timestamp > MAX_CACHE_AGE) {
-      console.log("Disk cache expired, will refresh");
-      // Don't remove it yet, we can still use it while loading fresh data
-    }
-
+    // No max-age check: cached playlists are kept indefinitely until the
+    // user explicitly refreshes or the cache version changes.
     console.log(
       `Loaded ${cacheData.playlists.length} playlists from disk cache`,
     );

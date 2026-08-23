@@ -3,14 +3,37 @@ use crate::models::{Playlist, Source, Track};
 use async_trait::async_trait;
 use chrono::{Duration as ChronoDuration, Utc};
 use futures::stream::StreamExt;
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use rspotify::{prelude::*, scopes, AuthCodePkceSpotify, Credentials, OAuth, Token};
 use std::path::PathBuf;
 
-/// Public Spotify Client ID - used across the application
+/// Retry policy applied to every Spotify Web API request (rspotify's HTTP
+/// client). Handles 429/5xx responses automatically, honoring the
+/// `Retry-After` header Spotify sends when rate limiting, so we don't need
+/// bespoke retry logic scattered across every provider method.
+fn spotify_retry_middleware() -> RetryTransientMiddleware<ExponentialBackoff> {
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(5);
+    RetryTransientMiddleware::new_with_policy(retry_policy)
+}
+
+/// Spotify Client ID used across the application.
+///
+/// This is our own self-registered dev-portal app, currently in Spotify's
+/// restricted "default" quota mode (not the `spotify-player`-CLI-borrowed ID
+/// this previously pointed at, which has extended quota mode). Default quota
+/// has much tighter rate limits and may 429 under normal use, and its spclient
+/// private streaming endpoints (e.g. extended-metadata) may return
+/// `403 RBAC: access denied` regardless of OAuth scopes granted, since only
+/// client IDs Spotify has separately granted "extended quota mode" can use
+/// them. Swap back to `65b708073fc0480ea92a077233ca87bd` if this proves
+/// unworkable.
 pub const SPOTIFY_CLIENT_ID: &str = "243bb6667db04143b6586d8598aed48b";
 
-/// Default OAuth redirect URI - must be localhost with specific port for Spotify
-const DEFAULT_REDIRECT_URI: &str = "http://127.0.0.1:8989/callback";
+/// Default OAuth redirect URI. Must exactly match the redirect URI
+/// registered for `SPOTIFY_CLIENT_ID` above in the Spotify developer
+/// dashboard for that app — Spotify's authorization server rejects any
+/// non-matching redirect_uri.
+const DEFAULT_REDIRECT_URI: &str = "http://127.0.0.1:8989/login";
 
 /// Maximum consecutive errors allowed when streaming playlist items
 /// before giving up. Allows for transient network issues.
@@ -20,7 +43,6 @@ const MAX_CONSECUTIVE_ERRORS: u32 = 3;
 pub struct SpotifyProvider {
     client: Option<AuthCodePkceSpotify>,
     is_authenticated: bool,
-    is_premium: bool,
     access_token: Option<String>,
 }
 
@@ -36,7 +58,6 @@ impl SpotifyProvider {
         Self {
             client: None,
             is_authenticated: false,
-            is_premium: false,
             access_token: None,
         }
     }
@@ -53,6 +74,8 @@ impl SpotifyProvider {
                 "playlist-modify-public",
                 "playlist-modify-private",
                 "streaming",
+                "user-modify-playback-state",
+                "user-read-playback-state",
                 "user-read-private",
                 "user-read-email",
                 "user-library-read",
@@ -68,12 +91,12 @@ impl SpotifyProvider {
     /// Create a new Spotify provider with default OAuth configuration (PKCE - no secrets needed)
     pub fn with_default_oauth() -> Self {
         let (credentials, oauth) = Self::default_oauth_config();
-        let client = AuthCodePkceSpotify::new(credentials, oauth);
+        let client =
+            AuthCodePkceSpotify::new(credentials, oauth).with_middleware(spotify_retry_middleware());
 
         Self {
             client: Some(client),
             is_authenticated: false,
-            is_premium: false,
             access_token: None,
         }
     }
@@ -81,7 +104,8 @@ impl SpotifyProvider {
     /// Create a new Spotify provider with default OAuth and configured cache path
     pub fn with_default_oauth_and_cache(cache_path: PathBuf) -> Self {
         let (credentials, oauth) = Self::default_oauth_config();
-        let mut client = AuthCodePkceSpotify::new(credentials, oauth);
+        let mut client =
+            AuthCodePkceSpotify::new(credentials, oauth).with_middleware(spotify_retry_middleware());
 
         // Configure token cache
         client.config.token_cached = true;
@@ -90,7 +114,6 @@ impl SpotifyProvider {
         Self {
             client: Some(client),
             is_authenticated: false,
-            is_premium: false,
             access_token: None,
         }
     }
@@ -106,6 +129,8 @@ impl SpotifyProvider {
                 "playlist-modify-public",
                 "playlist-modify-private",
                 "streaming",
+                "user-modify-playback-state",
+                "user-read-playback-state",
                 "user-read-private",
                 "user-read-email",
                 "user-library-read",
@@ -116,12 +141,12 @@ impl SpotifyProvider {
             ..Default::default()
         };
 
-        let client = AuthCodePkceSpotify::new(credentials, oauth);
+        let client =
+            AuthCodePkceSpotify::new(credentials, oauth).with_middleware(spotify_retry_middleware());
 
         Self {
             client: Some(client),
             is_authenticated: false,
-            is_premium: false,
             access_token: None,
         }
     }
@@ -136,47 +161,6 @@ impl SpotifyProvider {
                     .map_err(|e| ProviderError(e.to_string()))
             })
             .ok_or_else(|| ProviderError("Client not configured".to_string()))?
-    }
-
-    /// Fetch current user profile and check premium status
-    async fn get_current_user_profile(&mut self) -> Result<bool, ProviderError> {
-        let client = self
-            .client
-            .as_ref()
-            .ok_or_else(|| ProviderError("Client not configured".to_string()))?;
-
-        let user = client
-            .current_user()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to fetch user profile: {}", e)))?;
-
-        // Spotify removed the `product` field from their API; assume premium.
-        tracing::info!("Fetched Spotify user profile for: {:?}", user.display_name);
-
-        Ok(true)
-    }
-
-    /// Check and update premium status from Spotify API
-    pub async fn check_and_update_premium_status(&mut self) -> Result<(), ProviderError> {
-        match self.get_current_user_profile().await {
-            Ok(is_premium) => {
-                self.is_premium = is_premium;
-                if !is_premium {
-                    tracing::warn!(
-                        "Premium required for full Spotify playback. User has free tier account."
-                    );
-                }
-                Ok(())
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to check premium status: {}. Defaulting to free tier.",
-                    e
-                );
-                self.is_premium = false;
-                Err(e)
-            }
-        }
     }
 
     /// Complete the authentication flow with an authorization code
@@ -213,25 +197,6 @@ impl SpotifyProvider {
                     "Failed to acquire Spotify token mutex during authentication: {:?}",
                     err
                 );
-            }
-        }
-
-        // Check premium status
-        match self.get_current_user_profile().await {
-            Ok(is_premium) => {
-                self.is_premium = is_premium;
-                if !is_premium {
-                    tracing::warn!(
-                        "Premium required for full Spotify playback. User has free tier account."
-                    );
-                }
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to check premium status: {}. Defaulting to free tier.",
-                    e
-                );
-                self.is_premium = false;
             }
         }
 
@@ -296,14 +261,6 @@ impl SpotifyProvider {
                             self.is_authenticated = true;
                             drop(token_guard);
 
-                            // Ensure premium status is updated based on the refreshed token
-                            if let Err(err) = self.check_and_update_premium_status().await {
-                                tracing::warn!(
-                                    "Failed to update premium status after token refresh: {}",
-                                    err
-                                );
-                            }
-
                             return Ok(());
                         } else {
                             return Err(ProviderError(
@@ -343,16 +300,6 @@ impl SpotifyProvider {
         self.access_token = Some(access_token);
         self.is_authenticated = true;
 
-        // Ensure premium status is updated based on the new token
-        if let Err(err) = self.check_and_update_premium_status().await {
-            tracing::warn!(
-                "Failed to update premium status after setting token: {}",
-                err
-            );
-            // Don't fail the whole operation if premium check fails
-            // The token is still valid for basic operations
-        }
-
         Ok(())
     }
 
@@ -366,9 +313,9 @@ impl SpotifyProvider {
         self.is_authenticated
     }
 
-    /// Check if user has Spotify Premium
+    /// Spotify no longer exposes account tier via the API; assume Premium.
     pub fn is_premium(&self) -> bool {
-        self.is_premium
+        true
     }
 
     /// Get the current access token for Spotify API
@@ -495,13 +442,6 @@ impl SpotifyProvider {
         self.access_token = Some(refreshed_token.access_token.clone());
         self.is_authenticated = true;
 
-        if let Err(error) = self.check_and_update_premium_status().await {
-            tracing::warn!(
-                "Spotify token refresh succeeded but premium status refresh failed: {}",
-                error
-            );
-        }
-
         Ok(())
     }
 }
@@ -535,7 +475,10 @@ impl MusicProvider for SpotifyProvider {
     ) -> Result<ProviderAuthResponse, ProviderError> {
         if self.client.is_none() {
             let (credentials, oauth) = Self::default_oauth_config();
-            self.client = Some(AuthCodePkceSpotify::new(credentials, oauth));
+            self.client = Some(
+                AuthCodePkceSpotify::new(credentials, oauth)
+                    .with_middleware(spotify_retry_middleware()),
+            );
         }
 
         let auth_url = self.get_auth_url()?;
@@ -758,14 +701,6 @@ impl MusicProvider for SpotifyProvider {
             track_id
         };
 
-        // Verify user is premium
-        if !self.is_premium {
-            tracing::warn!("Premium required for track playback. User has free tier account.");
-            return Err(ProviderError(
-                "Premium required for full Spotify playback".to_string(),
-            ));
-        }
-
         let spotify_uri = format!("spotify:track:{}", clean_id);
         tracing::info!(
             "Returning spotify URI for premium playback: {}",
@@ -873,7 +808,6 @@ impl MusicProvider for SpotifyProvider {
     async fn disconnect(&mut self) -> Result<(), ProviderError> {
         self.client = None;
         self.is_authenticated = false;
-        self.is_premium = false;
         self.access_token = None;
         Ok(())
     }

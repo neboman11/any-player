@@ -93,6 +93,7 @@ pub fn run() {
             commands::skip_to_queue_index,
             commands::seek,
             commands::set_volume,
+            commands::report_spotify_playback_state,
             commands::get_audio_normalization_settings,
             commands::set_audio_normalization_settings,
             commands::toggle_shuffle,
@@ -107,6 +108,7 @@ pub fn run() {
             commands::play_custom_playlist_from_track,
             // Spotify commands
             commands::get_spotify_auth_url,
+            commands::get_spotify_access_token,
             commands::authenticate_spotify,
             commands::is_spotify_authenticated,
             commands::check_spotify_premium,

@@ -68,6 +68,11 @@ export default function App() {
   useEffect(() => {
     mountedRef.current = true;
 
+    // Captured locally so this run's checks always see its own controller
+    // even if a concurrent effect re-run (StrictMode, dep change) replaces
+    // the shared ref before this run's finally block clears it.
+    const controller = new AbortController();
+
     const initializePlaylists = async () => {
       try {
         let authRetryOccurred = false;
@@ -77,8 +82,7 @@ export default function App() {
         setShowRetryButton(false);
         setShowCancelButton(false);
 
-        // Create abort controller for cancellation
-        abortControllerRef.current = new AbortController();
+        abortControllerRef.current = controller;
 
         const syncSettings = getSyncSettings();
         if (syncSettings.serverTarget.trim()) {
@@ -127,7 +131,7 @@ export default function App() {
                 `Retrying authentication check (${retryNumber} of ${MAX_AUTH_RETRIES} retries)...`,
               );
             },
-            signal: abortControllerRef.current.signal,
+            signal: controller.signal,
           }),
           withTimeoutAndRetry({
             promiseFactory: () =>
@@ -148,7 +152,7 @@ export default function App() {
                 `Retrying authentication check (${retryNumber} of ${MAX_AUTH_RETRIES} retries)...`,
               );
             },
-            signal: abortControllerRef.current.signal,
+            signal: controller.signal,
           }),
           withTimeoutAndRetry({
             promiseFactory: () =>
@@ -169,14 +173,14 @@ export default function App() {
                 `Retrying authentication check (${retryNumber} of ${MAX_AUTH_RETRIES} retries)...`,
               );
             },
-            signal: abortControllerRef.current.signal,
+            signal: controller.signal,
           }),
         ]);
 
         setShowCancelButton(false); // Auth checks complete, hide cancel button
 
         // Check if operation was cancelled
-        if (abortControllerRef.current.signal.aborted) {
+        if (controller.signal.aborted) {
           console.log("Startup initialization cancelled by user");
           return;
         }
@@ -204,7 +208,7 @@ export default function App() {
           );
           // Only show retry button when auth checks actually retried/failed.
           // If no retries occurred, providers are likely just not connected yet.
-          if (!abortControllerRef.current.signal.aborted && authRetryOccurred) {
+          if (!controller.signal.aborted && authRetryOccurred) {
             setShowRetryButton(true);
             setStartupMessage(
               "Unable to connect to Spotify, Jellyfin, or Plex. You can retry or continue without them.",
@@ -225,7 +229,9 @@ export default function App() {
           setStartupLoading(false);
         }
         setShowCancelButton(false);
-        abortControllerRef.current = null;
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
       }
     };
 
@@ -234,9 +240,7 @@ export default function App() {
     return () => {
       mountedRef.current = false;
       // Cancel any ongoing retries when component unmounts
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
+      controller.abort();
     };
   }, [loadPlaylists, refreshCustomPlaylists]);
 

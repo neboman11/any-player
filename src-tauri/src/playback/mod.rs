@@ -5,7 +5,6 @@ use any_player_core::audio_normalization::{
     effective_output_volume, AdaptiveNormalizationState, AudioNormalizationSettings,
     AudioNormalizationSource, INTERNAL_NORMALIZATION_TARGET,
 };
-use any_player_spotify_engine::LibrespotPlayer as SharedLibrespotPlayer;
 use rodio::{Decoder, OutputStream, Sink, Source};
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
@@ -13,8 +12,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex};
-
-// Shared Spotify playback engine for premium streaming via librespot.
 
 pub mod spotify_session;
 pub use spotify_session::SpotifySessionManager;
@@ -156,8 +153,6 @@ impl Default for PlaybackHandle {
 #[derive(Clone)]
 pub struct AudioPlayer {
     current_handle: Arc<Mutex<Option<PlaybackHandle>>>,
-    /// Store the active shared Spotify player to keep it alive during playback
-    active_player: Arc<Mutex<Option<Arc<SharedLibrespotPlayer>>>>,
 }
 
 /// Queue for managing playback
@@ -415,7 +410,6 @@ impl AudioPlayer {
     pub fn new() -> Self {
         Self {
             current_handle: Arc::new(Mutex::new(None)),
-            active_player: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -443,13 +437,6 @@ impl AudioPlayer {
                 old_handle.stop();
             }
             *current = Some(handle.clone());
-        }
-
-        {
-            let mut active = self.active_player.lock().await;
-            if let Some(player) = active.take() {
-                player.disconnect().await;
-            }
         }
 
         // Spawn a background task to play audio without blocking
@@ -801,206 +788,7 @@ impl AudioPlayer {
         Ok(())
     }
 
-    /// Extract track ID from spotify: URI
-    ///
-    /// Handles formats like "spotify:track:3n3Ppam7vgaVa1iaRUc9Lp"
-    /// Returns the base62 track ID if valid, None otherwise
-    #[allow(dead_code)]
-    fn extract_track_id(uri: &str) -> Option<String> {
-        if uri.starts_with("spotify:track:") {
-            uri.split(':').next_back().map(|s| s.to_string())
-        } else if uri.contains('/') && uri.contains("track") {
-            uri.split('/').next_back().map(|s| s.to_string())
-        } else if !uri.contains(':') && !uri.contains('/') && uri.len() == 22 {
-            // Likely a raw track ID
-            Some(uri.to_string())
-        } else {
-            None
-        }
-    }
-
-    /// Play a Spotify track via the shared Spotify engine using provider token auth.
-    ///
-    /// This implements full-track Spotify playback:
-    /// 1. Fetch track metadata from Web API via rspotify
-    /// 2. Retrieve OAuth token from the Spotify provider
-    /// 3. Stream audio through `any_player_spotify_engine::LibrespotPlayer`
-    async fn play_spotify_track(
-        &self,
-        track_id: &str,
-        handle: &PlaybackHandle,
-        providers: Arc<Mutex<ProviderRegistry>>,
-        volume: u32,
-    ) -> Result<(), String> {
-        // Extract clean track ID, stripping all spotify:track: prefixes
-        let mut clean_id = track_id.trim_start_matches("spotify:track:").to_string();
-
-        // Handle URL format
-        if clean_id.contains("/track/") {
-            clean_id = clean_id
-                .split('/')
-                .next_back()
-                .unwrap_or(&clean_id)
-                .to_string();
-        }
-
-        tracing::info!(
-            "Starting Spotify track playback via shared engine: {}",
-            clean_id
-        );
-
-        let handle_clone = handle.clone();
-        let providers_clone = providers.clone();
-        let track_id_for_fetch = clean_id.clone();
-        let audio_player_clone = self.clone();
-
-        tokio::spawn(async move {
-            #[allow(clippy::redundant_closure_call)]
-            let result = (|| async {
-                // Get the Spotify provider handle, then drop the registry lock
-                let spotify_provider = {
-                    let providers_locked = providers_clone.lock().await;
-                    providers_locked
-                        .get(crate::models::Source::Spotify)
-                        .ok_or("Spotify provider not initialized".to_string())?
-                };
-
-                // Lock the provider to fetch track info
-                let provider_locked = spotify_provider.lock().await;
-                let track = provider_locked
-                    .get_track(&track_id_for_fetch)
-                    .await
-                    .map_err(|e| format!("Failed to fetch track info: {}", e))?;
-
-                tracing::info!("Track fetched: {} by {}", track.title, track.artist);
-
-                // Set duration from track metadata
-                if track.duration_ms > 0 {
-                    handle_clone.set_duration(track.duration_ms);
-                    tracing::info!("Track duration: {}ms", track.duration_ms);
-                }
-
-                // Get the OAuth access token from the provider
-                let access_token = provider_locked
-                    .get_access_token()
-                    .await
-                    .ok_or("No Spotify access token available".to_string())?;
-
-                drop(provider_locked); // Release lock before async operations
-
-                tracing::info!("Retrieved OAuth token for Spotify playback");
-
-                Self::play_spotify_with_librespot(
-                    &audio_player_clone,
-                    &track_id_for_fetch,
-                    &handle_clone,
-                    &access_token,
-                    volume,
-                )
-                .await?;
-
-                Ok::<(), String>(())
-            })();
-            match result.await {
-                Ok(()) => {
-                    tracing::info!("Spotify track playback completed");
-                }
-                Err(e) => {
-                    tracing::error!("Spotify playback error: {}", e);
-                }
-            }
-        });
-
-        Ok(())
-    }
-
-    /// Play a Spotify track using the shared Spotify engine player.
-    async fn play_spotify_with_librespot(
-        audio_player: &AudioPlayer,
-        track_id: &str,
-        handle: &PlaybackHandle,
-        access_token: &str,
-        volume: u32,
-    ) -> Result<(), String> {
-        tracing::info!("Starting shared Spotify engine playback for: {}", track_id);
-        let initial_position_ms = handle.get_position();
-        let normalized_track_id = track_id.trim_start_matches("spotify:track:").to_string();
-        if normalized_track_id.is_empty() {
-            return Err("Invalid Spotify track ID".to_string());
-        }
-
-        let player = Arc::new(SharedLibrespotPlayer::new());
-
-        player.disconnect().await;
-        player
-            .connect(access_token, SPOTIFY_CLIENT_ID)
-            .await
-            .map_err(|error| format!("Failed to connect Spotify player: {}", error.message))?;
-
-        player
-            .start_queue(&[normalized_track_id], 0)
-            .await
-            .map_err(|error| format!("Failed to start Spotify queue: {}", error.message))?;
-
-        if let Err(error) = player.set_volume(volume.min(100) as u8).await {
-            tracing::warn!("Failed to set Spotify volume: {}", error.message);
-        }
-
-        if initial_position_ms > 0 {
-            if let Err(error) = player.seek(initial_position_ms).await {
-                tracing::warn!("Failed to seek Spotify track on start: {}", error.message);
-            }
-        }
-
-        if handle.is_paused() {
-            let _ = player.pause().await;
-        }
-
-        {
-            let mut active = audio_player.active_player.lock().await;
-            *active = Some(Arc::clone(&player));
-        }
-
-        let active_player = audio_player.active_player.clone();
-        let handle_clone = handle.clone();
-        tokio::spawn(async move {
-            loop {
-                if handle_clone.should_stop() {
-                    let _ = player.pause().await;
-                    break;
-                }
-
-                let snapshot = player.snapshot().await;
-                handle_clone.set_position(snapshot.progress_ms);
-                handle_clone
-                    .is_paused
-                    .store(!snapshot.is_playing, Ordering::SeqCst);
-
-                if snapshot.end_of_track_count > 0 {
-                    handle_clone.stop();
-                    break;
-                }
-
-                tokio::time::sleep(Duration::from_millis(100)).await;
-            }
-
-            let mut active = active_player.lock().await;
-            *active = None;
-            player.disconnect().await;
-            tracing::info!("Shared Spotify player cleaned up");
-        });
-
-        Ok(())
-    }
-
     pub async fn pause(&self) -> Result<(), String> {
-        if let Some(player) = self.active_player.lock().await.clone() {
-            player
-                .pause()
-                .await
-                .map_err(|error| format!("Failed to pause Spotify playback: {}", error.message))?;
-        }
-
         if let Some(handle) = &*self.current_handle.lock().await {
             handle.pause();
             tracing::info!("Pausing playback");
@@ -1011,13 +799,6 @@ impl AudioPlayer {
     }
 
     pub async fn resume(&self) -> Result<(), String> {
-        if let Some(player) = self.active_player.lock().await.clone() {
-            player
-                .play()
-                .await
-                .map_err(|error| format!("Failed to resume Spotify playback: {}", error.message))?;
-        }
-
         if let Some(handle) = &*self.current_handle.lock().await {
             handle.resume();
             tracing::info!("Resuming playback");
@@ -1028,13 +809,6 @@ impl AudioPlayer {
     }
 
     pub async fn stop(&self) -> Result<(), String> {
-        {
-            let mut active = self.active_player.lock().await;
-            if let Some(player) = active.take() {
-                player.disconnect().await;
-            }
-        }
-
         if let Some(handle) = self.current_handle.lock().await.take() {
             handle.stop();
             tracing::info!("Stopping playback");
@@ -1045,13 +819,6 @@ impl AudioPlayer {
     }
 
     pub async fn seek(&self, position_ms: u64) -> Result<(), String> {
-        if let Some(player) = self.active_player.lock().await.clone() {
-            player
-                .seek(position_ms)
-                .await
-                .map_err(|error| format!("Failed to seek Spotify playback: {}", error.message))?;
-        }
-
         if let Some(handle) = &*self.current_handle.lock().await {
             handle.set_position(position_ms);
             Ok(())
@@ -1061,15 +828,6 @@ impl AudioPlayer {
     }
 
     pub async fn set_volume(&self, volume: u32) -> Result<(), String> {
-        if let Some(player) = self.active_player.lock().await.clone() {
-            player
-                .set_volume(volume.min(100) as u8)
-                .await
-                .map_err(|error| {
-                    format!("Failed to set Spotify playback volume: {}", error.message)
-                })?;
-        }
-
         if let Some(handle) = &*self.current_handle.lock().await {
             handle.set_volume(volume);
             Ok(())
@@ -1411,99 +1169,14 @@ impl PlaybackManager {
 
         // Attempt to play the audio
         if let Some(url) = &track.url {
-            // Check if this is a Spotify URI requiring shared-engine playback
+            // Spotify tracks are played by the frontend via the Web Playback SDK
+            // (see `report_spotify_playback_state` command) rather than the
+            // in-process shared-engine/librespot path, which is no longer usable
+            // due to Spotify's spclient RBAC restrictions on non-approved client IDs.
+            // `info.current_track`/`state`/`position_ms` were already set above;
+            // the frontend now owns position/state updates for this track.
             if url.starts_with("spotify:track:") {
-                tracing::info!("Playing Spotify track via shared engine: {}", url);
-                let track_complete_tx = self.track_complete_tx.clone();
-                let monitoring_abort = self.monitoring_task_abort.clone();
-                let state_save_tx = self.state_save_tx.clone();
-                let adaptive_normalization = self.adaptive_normalization.clone();
-                let track_source = track.source;
-
-                // Get current volume and apply normalization settings
-                let base_volume = {
-                    let info = self.info.lock().await;
-                    info.volume
-                };
-                let volume = self
-                    .effective_output_volume(base_volume, Some(crate::models::Source::Spotify))
-                    .await;
-
-                match self.play_spotify_track(url, volume).await {
-                    Ok(handle) => {
-                        // Spawn a task to update playback position from the audio player
-                        let info_arc = self.info.clone();
-                        let _queue_arc = self.queue.clone();
-
-                        let task = tokio::spawn(async move {
-                            tracing::debug!("Spotify monitoring task started");
-                            let mut last_state_save = std::time::Instant::now();
-                            loop {
-                                let position = handle.get_position();
-                                let duration = handle.get_duration();
-                                let should_stop = handle.should_stop();
-                                let is_paused = handle.is_paused();
-
-                                {
-                                    let mut info = info_arc.lock().await;
-                                    info.position_ms = position;
-                                    if duration > 0 && info.current_track.is_some() {
-                                        info.current_track.as_mut().unwrap().duration_ms = duration;
-                                    }
-
-                                    // Update playback state based on pause status
-                                    if is_paused {
-                                        info.state = PlaybackState::Paused;
-                                    } else if !should_stop {
-                                        info.state = PlaybackState::Playing;
-                                    }
-                                }
-
-                                // Request state save periodically (every 5 seconds)
-                                if last_state_save.elapsed().as_secs() >= 5 {
-                                    let _ = state_save_tx.send(());
-                                    last_state_save = std::time::Instant::now();
-                                }
-
-                                // When track completes, send event to advance to next track
-                                if should_stop {
-                                    tracing::debug!(
-                                        "Spotify monitoring task detected should_stop=true"
-                                    );
-                                    if let Some(gain) = handle.get_normalization_gain() {
-                                        let source_key = PlaybackManager::source_key(track_source);
-                                        let mut adaptive = adaptive_normalization.lock().await;
-                                        adaptive.push_gain(&source_key, gain);
-                                    }
-                                    {
-                                        let mut info = info_arc.lock().await;
-                                        info.state = PlaybackState::Stopped;
-                                    }
-
-                                    tracing::info!(
-                                        "Spotify track completed, sending auto-advance event"
-                                    );
-                                    let _ = track_complete_tx.send(());
-                                    break;
-                                }
-
-                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                            }
-                        });
-
-                        // Store the abort handle immediately to prevent race conditions
-                        // This ensures the task can be aborted before completion
-                        {
-                            let mut abort_handle = monitoring_abort.lock().await;
-                            *abort_handle = Some(task.abort_handle());
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to play Spotify track: {}", e);
-                        let mut info = self.info.lock().await;
-                        info.state = PlaybackState::Stopped;
-                    }
-                }
+                tracing::info!("Playing Spotify track via Web Playback SDK: {}", url);
             } else {
                 // HTTP URL - play as normal
                 let track_complete_tx = self.track_complete_tx.clone();
@@ -1921,46 +1594,29 @@ impl PlaybackManager {
         self.spotify_session.is_initialized().await
     }
 
-    /// Play a Spotify track via the shared Spotify engine.
-    ///
-    /// Returns a PlaybackHandle to control playback.
-    pub async fn play_spotify_track(
+    /// Report playback state for the currently active Spotify track, as observed by
+    /// the frontend's Web Playback SDK instance. This is pure bookkeeping (no audio
+    /// side effects) so that `get_playback_status`/the `playback-status` websocket
+    /// broadcast keep reflecting Spotify playback even though the frontend, not this
+    /// struct, now owns actual audio decode/output for Spotify tracks.
+    pub async fn report_spotify_playback_state(
         &self,
-        track_id: &str,
-        volume: u32,
-    ) -> Result<PlaybackHandle, String> {
-        let handle = PlaybackHandle::new();
-        let track_id = track_id.to_string();
-
-        // Store the handle
-        {
-            let mut current = self.audio_player.current_handle.lock().await;
-            if let Some(old_handle) = current.take() {
-                old_handle.stop();
+        position_ms: u64,
+        duration_ms: u64,
+        is_playing: bool,
+    ) {
+        let mut info = self.info.lock().await;
+        info.position_ms = position_ms;
+        if duration_ms > 0 {
+            if let Some(track) = info.current_track.as_mut() {
+                track.duration_ms = duration_ms;
             }
-            *current = Some(handle.clone());
         }
-
-        // Spawn task to play spotify track
-        let handle_for_spawn = handle.clone();
-        let audio_player = self.audio_player.clone();
-        let providers = self.providers.clone();
-        tokio::spawn(async move {
-            let result = audio_player
-                .play_spotify_track(&track_id, &handle_for_spawn, providers, volume)
-                .await;
-
-            match result {
-                Ok(()) => {
-                    tracing::info!("Spotify track playback completed");
-                }
-                Err(e) => {
-                    tracing::error!("Spotify playback error: {}", e);
-                }
-            }
-        });
-
-        Ok(handle)
+        info.state = if is_playing {
+            PlaybackState::Playing
+        } else {
+            PlaybackState::Paused
+        };
     }
 
     /// Close warm-up Spotify session state.
@@ -2091,134 +1747,12 @@ impl PlaybackManager {
 
             // Actually load the track into the player so it's ready to play
             if let Some(url) = &track.url {
-                // For Spotify tracks, preload through the shared engine path
+                // Spotify tracks are resumed by the frontend Web Playback SDK on
+                // reconnect (position/state already restored into `info` above);
+                // no in-process preload/playback is spawned here.
                 if url.starts_with("spotify:track:") {
                     tracing::info!(
-                        "Pre-loading Spotify track for restored session at position {}ms",
-                        position
-                    );
-
-                    // Create a new PlaybackHandle and pre-configure it with the restored position/pause state
-                    let handle = PlaybackHandle::new();
-                    if position > 0 {
-                        handle.set_position(position);
-                    }
-                    handle.pause(); // Start paused for restore
-
-                    // Store the handle before spawning playback
-                    {
-                        let mut current = self.audio_player.current_handle.lock().await;
-                        if let Some(old_handle) = current.take() {
-                            old_handle.stop();
-                        }
-                        *current = Some(handle.clone());
-                    }
-
-                    // Now start Spotify playback with the pre-configured handle
-                    let track_id = url.to_string();
-                    let handle_for_spawn = handle.clone();
-                    let audio_player = self.audio_player.clone();
-                    let providers = self.providers.clone();
-                    let volume = self
-                        .effective_output_volume(
-                            saved_state.volume,
-                            Some(crate::models::Source::Spotify),
-                        )
-                        .await;
-
-                    tokio::spawn(async move {
-                        let result = audio_player
-                            .play_spotify_track(&track_id, &handle_for_spawn, providers, volume)
-                            .await;
-
-                        match result {
-                            Ok(()) => {
-                                tracing::info!("Spotify track restore playback completed");
-                            }
-                            Err(e) => {
-                                tracing::error!("Spotify restore playback error: {}", e);
-                            }
-                        }
-                    });
-
-                    // Update the info position
-                    {
-                        let mut info = self.info.lock().await;
-                        info.position_ms = position;
-                        info.state = PlaybackState::Paused;
-                    }
-
-                    // Spawn monitoring task to sync position to info
-                    let info_arc = self.info.clone();
-                    let _queue_arc = self.queue.clone();
-                    let track_complete_tx = self.track_complete_tx.clone();
-                    let monitoring_abort = self.monitoring_task_abort.clone();
-                    let state_save_tx = self.state_save_tx.clone();
-                    let adaptive_normalization = self.adaptive_normalization.clone();
-                    let track_source = track.source;
-
-                    let task = tokio::spawn(async move {
-                        tracing::debug!("Spotify monitoring task started (restore)");
-                        let mut last_state_save = std::time::Instant::now();
-                        loop {
-                            let position = handle.get_position();
-                            let duration = handle.get_duration();
-                            let should_stop = handle.should_stop();
-                            let is_paused = handle.is_paused();
-
-                            {
-                                let mut info = info_arc.lock().await;
-                                info.position_ms = position;
-                                if duration > 0 && info.current_track.is_some() {
-                                    info.current_track.as_mut().unwrap().duration_ms = duration;
-                                }
-
-                                // Update playback state based on pause status
-                                if is_paused {
-                                    info.state = PlaybackState::Paused;
-                                } else if !should_stop {
-                                    info.state = PlaybackState::Playing;
-                                }
-                            }
-
-                            // Request state save periodically (every 5 seconds)
-                            if last_state_save.elapsed().as_secs() >= 5 {
-                                let _ = state_save_tx.send(());
-                                last_state_save = std::time::Instant::now();
-                            }
-
-                            if should_stop {
-                                tracing::debug!(
-                                    "Spotify monitoring task detected should_stop=true"
-                                );
-                                if let Some(gain) = handle.get_normalization_gain() {
-                                    let source_key = PlaybackManager::source_key(track_source);
-                                    let mut adaptive = adaptive_normalization.lock().await;
-                                    adaptive.push_gain(&source_key, gain);
-                                }
-                                {
-                                    let mut info = info_arc.lock().await;
-                                    info.state = PlaybackState::Stopped;
-                                }
-                                tracing::info!(
-                                    "Spotify track completed, sending auto-advance event"
-                                );
-                                let _ = track_complete_tx.send(());
-                                break;
-                            }
-
-                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                        }
-                    });
-
-                    // Store the abort handle
-                    {
-                        let mut abort_handle = monitoring_abort.lock().await;
-                        *abort_handle = Some(task.abort_handle());
-                    }
-
-                    tracing::info!(
-                        "Spotify track pre-loaded and ready at position {}ms",
+                        "Spotify track restored at position {}ms; frontend Web Playback SDK will resume playback",
                         position
                     );
                 } else {
