@@ -110,23 +110,6 @@ pub async fn pause(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
-/// Report playback state for the currently active Spotify track, as observed by the
-/// frontend's Web Playback SDK instance (`player_state_changed`). Pure bookkeeping,
-/// no audio side effects.
-#[tauri::command]
-pub async fn report_spotify_playback_state(
-    state: State<'_, AppState>,
-    position_ms: u64,
-    duration_ms: u64,
-    is_playing: bool,
-) -> Result<(), String> {
-    let playback = { state.playback.lock().await };
-    playback
-        .report_spotify_playback_state(position_ms, duration_ms, is_playing)
-        .await;
-    Ok(())
-}
-
 /// Toggle play/pause
 #[tauri::command]
 pub async fn toggle_play_pause(state: State<'_, AppState>) -> Result<(), String> {

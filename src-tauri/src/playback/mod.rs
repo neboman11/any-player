@@ -13,7 +13,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex};
 
+pub mod spotify_connect;
 pub mod spotify_session;
+pub use spotify_connect::SpotifyConnectBridge;
 pub use spotify_session::SpotifySessionManager;
 
 /// Shared playback state for the current audio stream
@@ -854,11 +856,72 @@ struct PreloadedHttpTrack {
 }
 
 /// Playback manager - handles playback state and queue
+/// Poll interval for Spotify Connect playback state - matches the Android
+/// app's `SpotifyConnectBridge`. A poll only samples periodically, unlike the
+/// old in-webview SDK, which reported state changes as they happened.
+const SPOTIFY_CONNECT_POLL_INTERVAL_MS: u64 = 2_000;
+
+/// Periodically refreshes `info` from the Spotify Connect API while the
+/// current track is a Spotify track, so `get_info()`/the `playback-status`
+/// broadcast keep reflecting playback that may be happening on any Connect
+/// device (including changes made from the official Spotify app/other
+/// devices), the same way the Android app's poll loop does.
+fn spawn_spotify_connect_poller(
+    info: Arc<Mutex<PlaybackInfo>>,
+    spotify_connect: Arc<SpotifyConnectBridge>,
+) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(SPOTIFY_CONNECT_POLL_INTERVAL_MS)).await;
+
+            let is_spotify_track = {
+                let info = info.lock().await;
+                info.current_track.as_ref().map(|track| track.source)
+                    == Some(crate::models::Source::Spotify)
+            };
+            if !is_spotify_track {
+                continue;
+            }
+
+            let Some(context) = spotify_connect.playback_state().await else {
+                continue;
+            };
+
+            let mut info = info.lock().await;
+            // Discard stale polls that raced past a track change/stop.
+            if info.current_track.as_ref().map(|track| track.source)
+                != Some(crate::models::Source::Spotify)
+            {
+                continue;
+            }
+
+            info.position_ms = context
+                .progress
+                .map(|position| position.num_milliseconds().max(0) as u64)
+                .unwrap_or(info.position_ms);
+            info.state = if context.is_playing {
+                PlaybackState::Playing
+            } else {
+                PlaybackState::Paused
+            };
+            if let Some(rspotify::model::PlayableItem::Track(track)) = &context.item {
+                let duration_ms = track.duration.num_milliseconds().max(0) as u64;
+                if duration_ms > 0 {
+                    if let Some(current_track) = info.current_track.as_mut() {
+                        current_track.duration_ms = duration_ms;
+                    }
+                }
+            }
+        }
+    });
+}
+
 pub struct PlaybackManager {
     queue: Arc<Mutex<PlaybackQueue>>,
     info: Arc<Mutex<PlaybackInfo>>,
     audio_player: Arc<AudioPlayer>,
     spotify_session: Arc<SpotifySessionManager>,
+    spotify_connect: Arc<SpotifyConnectBridge>,
     providers: Arc<Mutex<ProviderRegistry>>,
     track_complete_tx: mpsc::UnboundedSender<()>,
     track_complete_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
@@ -878,11 +941,16 @@ impl PlaybackManager {
         // Create a channel for state save requests
         let (state_save_tx, state_save_rx) = mpsc::unbounded_channel::<()>();
 
+        let info = Arc::new(Mutex::new(PlaybackInfo::default()));
+        let spotify_connect = Arc::new(SpotifyConnectBridge::new(providers.clone()));
+        spawn_spotify_connect_poller(info.clone(), spotify_connect.clone());
+
         Self {
             queue: Arc::new(Mutex::new(PlaybackQueue::new())),
-            info: Arc::new(Mutex::new(PlaybackInfo::default())),
+            info,
             audio_player: Arc::new(AudioPlayer::new()),
             spotify_session: Arc::new(SpotifySessionManager::new(SPOTIFY_CLIENT_ID.to_string())),
+            spotify_connect,
             providers,
             track_complete_tx,
             track_complete_rx: Arc::new(Mutex::new(Some(track_complete_rx))),
@@ -1169,14 +1237,21 @@ impl PlaybackManager {
 
         // Attempt to play the audio
         if let Some(url) = &track.url {
-            // Spotify tracks are played by the frontend via the Web Playback SDK
-            // (see `report_spotify_playback_state` command) rather than the
-            // in-process shared-engine/librespot path, which is no longer usable
-            // due to Spotify's spclient RBAC restrictions on non-approved client IDs.
-            // `info.current_track`/`state`/`position_ms` were already set above;
-            // the frontend now owns position/state updates for this track.
-            if url.starts_with("spotify:track:") {
-                tracing::info!("Playing Spotify track via Web Playback SDK: {}", url);
+            // Spotify tracks are driven via the Web API's Connect endpoints
+            // (`/v1/me/player/*`), targeting whichever Connect device is active
+            // on the account - auto-launching the local Spotify desktop app to
+            // register one if none is - rather than an in-process decoder or
+            // in-webview SDK. `info.current_track`/`state`/`position_ms` were
+            // already set above; the poll loop started in `new()` keeps them in
+            // sync with the Connect device going forward.
+            if let Some(track_id) = url.strip_prefix("spotify:track:") {
+                let track_id = track_id.to_string();
+                let spotify_connect = self.spotify_connect.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = spotify_connect.play_uri(&track_id).await {
+                        tracing::warn!("Failed to start Spotify Connect playback: {}", error);
+                    }
+                });
             } else {
                 // HTTP URL - play as normal
                 let track_complete_tx = self.track_complete_tx.clone();
@@ -1349,6 +1424,20 @@ impl PlaybackManager {
 
     /// Play a track (start playback)
     pub async fn play(&self) {
+        let source = {
+            let info = self.info.lock().await;
+            info.current_track.as_ref().map(|track| track.source)
+        };
+
+        if source == Some(crate::models::Source::Spotify) {
+            if let Err(error) = self.spotify_connect.resume().await {
+                tracing::warn!("Failed to resume Spotify Connect playback: {}", error);
+            }
+            let mut info = self.info.lock().await;
+            info.state = PlaybackState::Playing;
+            return;
+        }
+
         // Try to resume existing playback first
         match self.audio_player.resume().await {
             Ok(_) => {
@@ -1379,9 +1468,21 @@ impl PlaybackManager {
 
     /// Pause playback
     pub async fn pause(&self) {
+        let source = {
+            let info = self.info.lock().await;
+            info.current_track.as_ref().map(|track| track.source)
+        };
+
         let mut info = self.info.lock().await;
         info.state = PlaybackState::Paused;
         drop(info);
+
+        if source == Some(crate::models::Source::Spotify) {
+            if let Err(error) = self.spotify_connect.pause().await {
+                tracing::warn!("Failed to pause Spotify Connect playback: {}", error);
+            }
+            return;
+        }
 
         // Pause audio playback
         if let Err(e) = self.audio_player.pause().await {
@@ -1395,13 +1496,28 @@ impl PlaybackManager {
         let player = self.audio_player.clone();
 
         // Determine new state based on current state
-        let new_state = {
+        let (new_state, source) = {
             let info = info_arc.lock().await;
-            match info.state {
+            let new_state = match info.state {
                 PlaybackState::Playing => PlaybackState::Paused,
                 PlaybackState::Paused | PlaybackState::Stopped => PlaybackState::Playing,
-            }
+            };
+            (new_state, info.current_track.as_ref().map(|track| track.source))
         };
+
+        if source == Some(crate::models::Source::Spotify) {
+            let result = match new_state {
+                PlaybackState::Playing => self.spotify_connect.resume().await,
+                PlaybackState::Paused => self.spotify_connect.pause().await,
+                PlaybackState::Stopped => Ok(()),
+            };
+            if let Err(error) = result {
+                tracing::warn!("Failed to toggle Spotify Connect playback: {}", error);
+            }
+            let mut info = info_arc.lock().await;
+            info.state = new_state;
+            return;
+        }
 
         // Update audio player
         match new_state {
@@ -1491,7 +1607,15 @@ impl PlaybackManager {
     pub async fn seek(&self, position_ms: u64) {
         let mut info = self.info.lock().await;
         info.position_ms = position_ms;
+        let source = info.current_track.as_ref().map(|track| track.source);
         drop(info);
+
+        if source == Some(crate::models::Source::Spotify) {
+            if let Err(error) = self.spotify_connect.seek(position_ms as i64).await {
+                tracing::warn!("Failed to seek Spotify Connect playback: {}", error);
+            }
+            return;
+        }
 
         if let Err(error) = self.audio_player.seek(position_ms).await {
             tracing::warn!("Failed to seek active playback: {}", error);
@@ -1504,6 +1628,14 @@ impl PlaybackManager {
         info.volume = volume.min(100);
         let source = info.current_track.as_ref().map(|track| track.source);
         drop(info);
+
+        if source == Some(crate::models::Source::Spotify) {
+            if let Err(error) = self.spotify_connect.set_volume(volume.min(100) as u8).await {
+                tracing::warn!("Failed to set Spotify Connect volume: {}", error);
+            }
+            self.request_state_save();
+            return;
+        }
 
         let effective_volume = self.effective_output_volume(volume, source).await;
 
@@ -1592,31 +1724,6 @@ impl PlaybackManager {
     /// Check whether warm-up Spotify session state is initialized.
     pub async fn is_spotify_session_ready(&self) -> bool {
         self.spotify_session.is_initialized().await
-    }
-
-    /// Report playback state for the currently active Spotify track, as observed by
-    /// the frontend's Web Playback SDK instance. This is pure bookkeeping (no audio
-    /// side effects) so that `get_playback_status`/the `playback-status` websocket
-    /// broadcast keep reflecting Spotify playback even though the frontend, not this
-    /// struct, now owns actual audio decode/output for Spotify tracks.
-    pub async fn report_spotify_playback_state(
-        &self,
-        position_ms: u64,
-        duration_ms: u64,
-        is_playing: bool,
-    ) {
-        let mut info = self.info.lock().await;
-        info.position_ms = position_ms;
-        if duration_ms > 0 {
-            if let Some(track) = info.current_track.as_mut() {
-                track.duration_ms = duration_ms;
-            }
-        }
-        info.state = if is_playing {
-            PlaybackState::Playing
-        } else {
-            PlaybackState::Paused
-        };
     }
 
     /// Close warm-up Spotify session state.
@@ -1747,12 +1854,13 @@ impl PlaybackManager {
 
             // Actually load the track into the player so it's ready to play
             if let Some(url) = &track.url {
-                // Spotify tracks are resumed by the frontend Web Playback SDK on
-                // reconnect (position/state already restored into `info` above);
-                // no in-process preload/playback is spawned here.
+                // Spotify tracks aren't resumed automatically on restore (matching
+                // HTTP tracks, which are only pre-loaded, not played) - position/state
+                // were already restored into `info` above, and playback will resume
+                // via the Connect API on the next explicit play/resume command.
                 if url.starts_with("spotify:track:") {
                     tracing::info!(
-                        "Spotify track restored at position {}ms; frontend Web Playback SDK will resume playback",
+                        "Spotify track restored at position {}ms; will resume via Spotify Connect on next play",
                         position
                     );
                 } else {

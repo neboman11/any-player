@@ -7,10 +7,8 @@ import {
   useContext,
 } from "react";
 import type { ReactNode } from "react";
-import toast from "react-hot-toast";
 import { tauriAPI } from "../api";
 import { backendSocket } from "../websocket";
-import { spotifyWebPlayback } from "../spotifyWebPlayback";
 import type { PlaybackStatus, RepeatMode, Track } from "../types";
 
 type TrackSource = Track["source"];
@@ -66,7 +64,6 @@ function usePlaybackState() {
     string | null
   >(null);
 
-  const lastSpotifySdkTrackId = useRef<string | null>(null);
   const lastCheckedSource = useRef<TrackSource | null>(null);
   const lastAuthResult = useRef<boolean | null>(null);
   const lastAuthCheckTime = useRef<number>(0);
@@ -320,47 +317,6 @@ function usePlaybackState() {
       clearInterval(fallbackInterval);
     };
   }, [updateStatus, updatePlaybackAvailability]);
-
-  // Whenever the backend's current track changes to a Spotify track, hand playback
-  // off to the frontend's Web Playback SDK (the backend no longer decodes/plays
-  // Spotify audio itself). Deduped on track id so this only fires on real track
-  // changes, not every playback-status update.
-  useEffect(() => {
-    const track = playbackStatus?.current_track;
-
-    if (!track || track.source !== "spotify") {
-      lastSpotifySdkTrackId.current = null;
-      spotifyWebPlayback.deactivate();
-      return;
-    }
-
-    if (track.id === lastSpotifySdkTrackId.current) {
-      return;
-    }
-    lastSpotifySdkTrackId.current = track.id;
-
-    if (!track.url) {
-      console.error("Spotify track is missing its url, cannot start Web Playback SDK playback", track);
-      return;
-    }
-
-    spotifyWebPlayback.playUris([track.url]).catch((error) => {
-      console.error("Failed to start Spotify Web Playback SDK playback:", error);
-    });
-  }, [playbackStatus]);
-
-  useEffect(() => {
-    return spotifyWebPlayback.onError((type, message) => {
-      if (type === "account_error") {
-        toast.error(
-          "Spotify playback requires a Premium account. Free accounts can't use Spotify streaming.",
-        );
-        return;
-      }
-      console.error(`Spotify Web Playback SDK ${type}:`, message);
-      toast.error("Spotify playback error - see console for details");
-    });
-  }, []);
 
   return {
     playbackStatus,
