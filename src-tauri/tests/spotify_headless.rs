@@ -3,6 +3,7 @@ use any_player_lib::providers::spotify::{SpotifyProvider, SPOTIFY_CLIENT_ID};
 use any_player_spotify_engine::LibrespotPlayer;
 
 #[tokio::test]
+#[ignore = "requires real Spotify token in keyring and an active playback device"]
 async fn headless_spotify_playback() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)

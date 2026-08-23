@@ -869,8 +869,14 @@ const SPOTIFY_CONNECT_POLL_INTERVAL_MS: u64 = 2_000;
 fn spawn_spotify_connect_poller(
     info: Arc<Mutex<PlaybackInfo>>,
     spotify_connect: Arc<SpotifyConnectBridge>,
+    track_complete_tx: mpsc::UnboundedSender<()>,
 ) {
     tauri::async_runtime::spawn(async move {
+        // Track whether the previous poll saw active playback so that the
+        // end-of-track signal fires at most once per track (on the first poll
+        // that observes playback stopped at the end, not on every subsequent
+        // poll while the Connect device is between tracks).
+        let mut was_playing = false;
         loop {
             tokio::time::sleep(Duration::from_millis(SPOTIFY_CONNECT_POLL_INTERVAL_MS)).await;
 
@@ -880,6 +886,7 @@ fn spawn_spotify_connect_poller(
                     == Some(crate::models::Source::Spotify)
             };
             if !is_spotify_track {
+                was_playing = false;
                 continue;
             }
 
@@ -892,6 +899,7 @@ fn spawn_spotify_connect_poller(
             if info.current_track.as_ref().map(|track| track.source)
                 != Some(crate::models::Source::Spotify)
             {
+                was_playing = false;
                 continue;
             }
 
@@ -911,7 +919,23 @@ fn spawn_spotify_connect_poller(
                         current_track.duration_ms = duration_ms;
                     }
                 }
+
+                // Detect end-of-track: playback transitioned from playing to
+                // stopped while progress was at or near the end of the track,
+                // meaning the Connect device finished the track rather than
+                // the user pausing mid-way.  The `was_playing` guard ensures
+                // the signal fires at most once per track completion so the
+                // queue advances by exactly one step.  Mirror what the HTTP
+                // path does at line ~1367.
+                let progress_ms = info.position_ms;
+                let at_end = duration_ms > 0
+                    && progress_ms
+                        >= duration_ms.saturating_sub(SPOTIFY_CONNECT_POLL_INTERVAL_MS);
+                if was_playing && !context.is_playing && at_end {
+                    let _ = track_complete_tx.send(());
+                }
             }
+            was_playing = context.is_playing;
         }
     });
 }
@@ -943,7 +967,7 @@ impl PlaybackManager {
 
         let info = Arc::new(Mutex::new(PlaybackInfo::default()));
         let spotify_connect = Arc::new(SpotifyConnectBridge::new(providers.clone()));
-        spawn_spotify_connect_poller(info.clone(), spotify_connect.clone());
+        spawn_spotify_connect_poller(info.clone(), spotify_connect.clone(), track_complete_tx.clone());
 
         Self {
             queue: Arc::new(Mutex::new(PlaybackQueue::new())),
