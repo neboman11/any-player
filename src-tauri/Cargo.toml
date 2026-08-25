@@ -69,7 +69,6 @@ url = "2.4"
 http = "1.0"
 rand = "0.8"
 tokio-tungstenite = "0.28"
-any_player_spotify_engine = { path = "../../any-player-shared-rust/crates/any_player_spotify_engine" }
 any_player_core = { path = "../../any-player-shared-rust/crates/any_player_core" }
 
 # Database
@@ -81,8 +80,7 @@ reqwest-retry = "0.7"
 serial_test = "3.2"
 
 [patch.crates-io]
-# any_player_spotify_engine relies on librespot-core APIs (e.g.
+# Desktop relies on librespot-core APIs (e.g.
 # Login5Manager::inject_bearer_token) that only exist in the vendored patch
-# in any-player-shared-rust, not stock crates.io. Without this, desktop
-# silently links a different librespot-core than the shared engine crate.
+# in any-player-shared-rust, not stock crates.io.
 librespot-core = { path = "../../any-player-shared-rust/patches/librespot-core" }
