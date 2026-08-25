@@ -8,6 +8,10 @@ use tokio::sync::Mutex;
 /// This prevents overwhelming external APIs with rapid consecutive requests
 const TRACK_ENRICHMENT_DELAY_MS: u64 = 150;
 
+/// Number of nearest upcoming tracks to enrich immediately without the throttle
+/// delay, so metadata is ready before those songs begin playback.
+const PRIORITY_PRELOAD_COUNT: usize = 3;
+
 /// Eagerly enrich queued tracks with full details (URLs, auth headers, etc.)
 /// Prioritizes tracks near the current playback position and loads them immediately
 pub async fn enrich_queued_tracks_eager(
@@ -64,7 +68,7 @@ pub async fn enrich_queued_tracks_eager(
     // Now fetch track details without holding the registry lock
     let mut enriched_tracks = Vec::new();
 
-    for (track_idx, track_id, source) in tracks_to_enrich {
+    for (position, (track_idx, track_id, source)) in tracks_to_enrich.into_iter().enumerate() {
         // Get the provider handle, then release the registry lock before fetching
         let provider_handle = {
             let providers_lock = providers.lock().await;
@@ -102,13 +106,15 @@ pub async fn enrich_queued_tracks_eager(
             // Track is already marked as enriched, no need to update
         }
 
-        // Throttle every request evenly (no zero-delay burst) to stay well under
-        // provider rate limits; the on-disk track cache means repeat plays of the
+        // Delay only for non-priority tracks to keep immediate upcoming songs
+        // enriched faster. The on-disk track cache means repeat plays of the
         // same queue skip the network call (and this delay) entirely.
-        tokio::time::sleep(tokio::time::Duration::from_millis(
-            TRACK_ENRICHMENT_DELAY_MS,
-        ))
-        .await;
+        if position + 1 > PRIORITY_PRELOAD_COUNT {
+            tokio::time::sleep(tokio::time::Duration::from_millis(
+                TRACK_ENRICHMENT_DELAY_MS,
+            ))
+            .await;
+        }
     }
 
     // Update all enriched tracks in a single lock acquisition

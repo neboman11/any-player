@@ -1149,6 +1149,18 @@ impl PlaybackManager {
         )
     }
 
+    /// Effective output volume (post-normalization) for Spotify Connect,
+    /// clamped to the 0-100 range the Connect API accepts.
+    async fn spotify_playback_volume(&self) -> u8 {
+        let base_volume = {
+            let info = self.info.lock().await;
+            info.volume
+        };
+        self.effective_output_volume(base_volume, Some(crate::models::Source::Spotify))
+            .await
+            .min(100) as u8
+    }
+
     pub async fn get_audio_normalization_settings(&self) -> AudioNormalizationSettings {
         self.audio_normalization.lock().await.clone()
     }
@@ -1274,8 +1286,9 @@ impl PlaybackManager {
             if let Some(track_id) = url.strip_prefix("spotify:track:") {
                 let track_id = track_id.to_string();
                 let spotify_connect = self.spotify_connect.clone();
+                let volume = self.spotify_playback_volume().await;
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = spotify_connect.play_uri(&track_id).await {
+                    if let Err(error) = spotify_connect.play_uri(&track_id, None, Some(volume)).await {
                         tracing::warn!("Failed to start Spotify Connect playback: {}", error);
                     }
                 });
@@ -1466,8 +1479,10 @@ impl PlaybackManager {
                     // Nothing to resume (e.g. no active Connect device yet - the
                     // common case right after a restore, which only restores
                     // `current_track`/`position_ms` without starting Connect
-                    // playback). Start the track fresh and seek back to the
-                    // saved position, mirroring the non-Spotify fallback below.
+                    // playback). Start the track fresh at the saved position -
+                    // passed as part of the same start request rather than a
+                    // separate seek call, since the device isn't ready to accept
+                    // commands until playback has actually started.
                     tracing::warn!(
                         "Failed to resume Spotify Connect playback, starting track fresh: {}",
                         error
@@ -1477,22 +1492,35 @@ impl PlaybackManager {
                         (info.current_track.clone(), info.position_ms)
                     };
 
-                    if let Some(track) = current_track {
-                        self.play_track(track).await;
-                        if position_ms > 0 {
-                            if let Err(error) =
-                                self.spotify_connect.seek(position_ms as i64).await
-                            {
-                                tracing::warn!(
-                                    "Failed to seek restored Spotify track: {}",
-                                    error
-                                );
-                            }
-                            let mut info = self.info.lock().await;
-                            info.position_ms = position_ms;
-                        }
-                    } else {
+                    let Some(track) = current_track else {
                         tracing::warn!("No active Spotify playback and no current track to play");
+                        return;
+                    };
+                    let Some(track_id) = track
+                        .url
+                        .as_deref()
+                        .and_then(|url| url.strip_prefix("spotify:track:"))
+                    else {
+                        tracing::warn!("Current Spotify track has no spotify:track: URI to restart");
+                        return;
+                    };
+
+                    let volume = self.spotify_playback_volume().await;
+                    let position = (position_ms > 0).then_some(position_ms as i64);
+                    match self
+                        .spotify_connect
+                        .play_uri(track_id, position, Some(volume))
+                        .await
+                    {
+                        Ok(()) => {
+                            let mut info = self.info.lock().await;
+                            info.state = PlaybackState::Playing;
+                        }
+                        Err(error) => {
+                            tracing::warn!("Failed to start Spotify Connect playback: {}", error);
+                            let mut info = self.info.lock().await;
+                            info.state = PlaybackState::Stopped;
+                        }
                     }
                 }
             }

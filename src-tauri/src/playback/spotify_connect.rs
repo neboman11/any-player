@@ -122,7 +122,17 @@ impl SpotifyConnectBridge {
 
     /// Start playback of a single `spotify:track:...` id, auto-launching the
     /// local Spotify app to register a Connect device if none is active.
-    pub async fn play_uri(&self, track_id: &str) -> Result<(), SpotifyConnectError> {
+    ///
+    /// `position_ms` and `volume_percent` are applied as part of the same
+    /// start request (rather than via separate seek/volume calls afterward),
+    /// since the device may not be ready to accept commands until playback
+    /// has actually started.
+    pub async fn play_uri(
+        &self,
+        track_id: &str,
+        position_ms: Option<i64>,
+        volume_percent: Option<u8>,
+    ) -> Result<(), SpotifyConnectError> {
         let device_id = self.resolve_device_id().await?;
         let handle = self.provider_handle().await?;
         let provider = handle.lock().await;
@@ -131,9 +141,21 @@ impl SpotifyConnectBridge {
             .downcast_ref::<SpotifyProvider>()
             .ok_or(SpotifyConnectError::NotAuthenticated)?;
         spotify
-            .connect_start_playback(&[track_id.to_string()], Some(device_id.as_str()))
+            .connect_start_playback(
+                &[track_id.to_string()],
+                Some(device_id.as_str()),
+                position_ms,
+            )
             .await
-            .map_err(|e| SpotifyConnectError::Api(e.to_string()))
+            .map_err(|e| SpotifyConnectError::Api(e.to_string()))?;
+
+        if let Some(volume_percent) = volume_percent {
+            if let Err(error) = spotify.connect_set_volume(volume_percent, Some(device_id.as_str())).await {
+                tracing::warn!("Failed to set Spotify Connect volume on playback start: {}", error);
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn resume(&self) -> Result<(), SpotifyConnectError> {
@@ -162,32 +184,6 @@ impl SpotifyConnectBridge {
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
 
-    pub async fn next(&self) -> Result<(), SpotifyConnectError> {
-        let handle = self.provider_handle().await?;
-        let provider = handle.lock().await;
-        let spotify = provider
-            .as_any()
-            .downcast_ref::<SpotifyProvider>()
-            .ok_or(SpotifyConnectError::NotAuthenticated)?;
-        spotify
-            .connect_next(None)
-            .await
-            .map_err(|e| SpotifyConnectError::Api(e.to_string()))
-    }
-
-    pub async fn previous(&self) -> Result<(), SpotifyConnectError> {
-        let handle = self.provider_handle().await?;
-        let provider = handle.lock().await;
-        let spotify = provider
-            .as_any()
-            .downcast_ref::<SpotifyProvider>()
-            .ok_or(SpotifyConnectError::NotAuthenticated)?;
-        spotify
-            .connect_previous(None)
-            .await
-            .map_err(|e| SpotifyConnectError::Api(e.to_string()))
-    }
-
     pub async fn seek(&self, position_ms: i64) -> Result<(), SpotifyConnectError> {
         let handle = self.provider_handle().await?;
         let provider = handle.lock().await;
@@ -210,35 +206,6 @@ impl SpotifyConnectBridge {
             .ok_or(SpotifyConnectError::NotAuthenticated)?;
         spotify
             .connect_set_volume(volume_percent, None)
-            .await
-            .map_err(|e| SpotifyConnectError::Api(e.to_string()))
-    }
-
-    pub async fn set_shuffle(&self, enabled: bool) -> Result<(), SpotifyConnectError> {
-        let handle = self.provider_handle().await?;
-        let provider = handle.lock().await;
-        let spotify = provider
-            .as_any()
-            .downcast_ref::<SpotifyProvider>()
-            .ok_or(SpotifyConnectError::NotAuthenticated)?;
-        spotify
-            .connect_set_shuffle(enabled, None)
-            .await
-            .map_err(|e| SpotifyConnectError::Api(e.to_string()))
-    }
-
-    pub async fn set_repeat(
-        &self,
-        mode: rspotify::model::RepeatState,
-    ) -> Result<(), SpotifyConnectError> {
-        let handle = self.provider_handle().await?;
-        let provider = handle.lock().await;
-        let spotify = provider
-            .as_any()
-            .downcast_ref::<SpotifyProvider>()
-            .ok_or(SpotifyConnectError::NotAuthenticated)?;
-        spotify
-            .connect_set_repeat(mode, None)
             .await
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }

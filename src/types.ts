@@ -160,7 +160,7 @@ export type RepeatMode = "off" | "one" | "all";
 
 // ---------------------------------------------------------------------------
 // Dedup contract types
-// Mirrors Rust DuplicateOccurrence / DuplicateGroup / DeduplicateResult.
+// Mirrors Rust DuplicateOccurrence / DuplicateGroup.
 // Uses PlaylistTrack (not Track) to match the desktop custom-playlist surface.
 // ---------------------------------------------------------------------------
 

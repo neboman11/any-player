@@ -7929,13 +7929,3 @@ dependencies = [
  "syn 2.0.114",
  "winnow 0.7.14",
 ]
-
-[[patch.unused]]
-name = "vergen-gitcl"
-version = "1.0.3"
-source = "git+https://github.com/rustyhorde/vergen.git?tag=vergen_lib_0.1.6#37a0730f00ba3ebd3e317ecdc4dac03fb9931b66"
-
-[[patch.unused]]
-name = "vergen-lib"
-version = "0.1.6"
-source = "git+https://github.com/rustyhorde/vergen.git?tag=vergen_lib_0.1.6#37a0730f00ba3ebd3e317ecdc4dac03fb9931b66"

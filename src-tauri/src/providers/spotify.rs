@@ -487,11 +487,13 @@ impl SpotifyProvider {
             .map_err(|e| ProviderError(format!("Failed to get Spotify Connect playback state: {}", e)))
     }
 
-    /// Start playback of one or more `spotify:track:...` ids on `device_id`.
+    /// Start playback of one or more `spotify:track:...` ids on `device_id`,
+    /// optionally seeking to `position_ms` as part of the same request.
     pub async fn connect_start_playback(
         &self,
         track_ids: &[String],
         device_id: Option<&str>,
+        position_ms: Option<i64>,
     ) -> Result<(), ProviderError> {
         let uris: Vec<rspotify::model::PlayableId> = track_ids
             .iter()
@@ -505,7 +507,12 @@ impl SpotifyProvider {
         }
 
         self.connect_client()?
-            .start_uris_playback(uris, device_id, None, None)
+            .start_uris_playback(
+                uris,
+                device_id,
+                None,
+                position_ms.map(chrono::Duration::milliseconds),
+            )
             .await
             .map_err(|e| ProviderError(format!("Failed to start Spotify Connect playback: {}", e)))
     }
@@ -522,25 +529,6 @@ impl SpotifyProvider {
             .pause_playback(device_id)
             .await
             .map_err(|e| ProviderError(format!("Failed to pause Spotify Connect playback: {}", e)))
-    }
-
-    pub async fn connect_next(&self, device_id: Option<&str>) -> Result<(), ProviderError> {
-        self.connect_client()?
-            .next_track(device_id)
-            .await
-            .map_err(|e| ProviderError(format!("Failed to skip Spotify Connect playback: {}", e)))
-    }
-
-    pub async fn connect_previous(&self, device_id: Option<&str>) -> Result<(), ProviderError> {
-        self.connect_client()?
-            .previous_track(device_id)
-            .await
-            .map_err(|e| {
-                ProviderError(format!(
-                    "Failed to rewind Spotify Connect playback: {}",
-                    e
-                ))
-            })
     }
 
     pub async fn connect_seek(
@@ -570,37 +558,6 @@ impl SpotifyProvider {
             })
     }
 
-    pub async fn connect_set_shuffle(
-        &self,
-        enabled: bool,
-        device_id: Option<&str>,
-    ) -> Result<(), ProviderError> {
-        self.connect_client()?
-            .shuffle(enabled, device_id)
-            .await
-            .map_err(|e| {
-                ProviderError(format!(
-                    "Failed to set Spotify Connect playback shuffle: {}",
-                    e
-                ))
-            })
-    }
-
-    pub async fn connect_set_repeat(
-        &self,
-        state: rspotify::model::RepeatState,
-        device_id: Option<&str>,
-    ) -> Result<(), ProviderError> {
-        self.connect_client()?
-            .repeat(state, device_id)
-            .await
-            .map_err(|e| {
-                ProviderError(format!(
-                    "Failed to set Spotify Connect repeat mode: {}",
-                    e
-                ))
-            })
-    }
 }
 
 #[async_trait]
