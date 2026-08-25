@@ -861,7 +861,10 @@ impl MusicProvider for SpotifyProvider {
                         duration_ms,
                         image_url,
                         source: Source::Spotify,
-                        url: track.external_urls.get("spotify").cloned(),
+                        // Must be a `spotify:track:` URI, not the web link in
+                        // `external_urls` - playback routing keys off this
+                        // prefix to send the track through Spotify Connect.
+                        url: track.id.as_ref().map(|id| format!("spotify:track:{}", id)),
                         bitrate_kbps: None,
                         sample_rate_hz: None,
                         auth_headers: None,

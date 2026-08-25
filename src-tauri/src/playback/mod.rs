@@ -1054,29 +1054,7 @@ impl PlaybackManager {
         queue: &Arc<Mutex<PlaybackQueue>>,
         audio_normalization: &Arc<Mutex<AudioNormalizationSettings>>,
     ) {
-        use crate::state::PersistentPlaybackState;
-
-        let info_locked = info.lock().await;
-        let queue_locked = queue.lock().await;
-        let normalization_settings = audio_normalization.lock().await.clone();
-
-        let state = PersistentPlaybackState {
-            current_track: info_locked.current_track.clone(),
-            queue: queue_locked.tracks.clone(),
-            current_index: queue_locked.current_index,
-            position_ms: info_locked.position_ms,
-            shuffle: info_locked.shuffle,
-            repeat_mode: info_locked.repeat_mode,
-            volume: info_locked.volume,
-            audio_normalization_enabled: normalization_settings.enabled,
-            audio_normalization_target: normalization_settings.target,
-            audio_normalization_strict_mode: normalization_settings.strict_mode,
-            shuffle_order: queue_locked.shuffle_order.clone(),
-            state: info_locked.state,
-        };
-
-        drop(info_locked);
-        drop(queue_locked);
+        let state = Self::build_persistent_state_from(info, queue, audio_normalization).await;
 
         if let Err(e) = state.save().await {
             tracing::error!("Failed to save state: {}", e);
@@ -1368,7 +1346,6 @@ impl PlaybackManager {
                     Ok(handle) => {
                         // Spawn a task to update playback position from the audio player
                         let info_arc = self.info.clone();
-                        let _queue_arc = self.queue.clone();
 
                         let task = tokio::spawn(async move {
                             tracing::debug!("HTTP monitoring task started");
@@ -1740,7 +1717,8 @@ impl PlaybackManager {
         drop(info);
 
         if source == Some(crate::models::Source::Spotify) {
-            if let Err(error) = self.spotify_connect.set_volume(volume.min(100) as u8).await {
+            let effective_volume = self.spotify_playback_volume().await;
+            if let Err(error) = self.spotify_connect.set_volume(effective_volume).await {
                 tracing::warn!("Failed to set Spotify Connect volume: {}", error);
             }
             self.request_state_save();
@@ -1846,11 +1824,22 @@ impl PlaybackManager {
 
     /// Build persistent state from current playback info and queue
     async fn build_persistent_state(&self) -> crate::state::PersistentPlaybackState {
+        Self::build_persistent_state_from(&self.info, &self.queue, &self.audio_normalization).await
+    }
+
+    /// Shared by `build_persistent_state` (instance-held state) and
+    /// `perform_state_save` (debounced background task, which only has Arc
+    /// handles) so the persisted-state shape only needs to be kept in one place.
+    async fn build_persistent_state_from(
+        info: &Arc<Mutex<PlaybackInfo>>,
+        queue: &Arc<Mutex<PlaybackQueue>>,
+        audio_normalization: &Arc<Mutex<AudioNormalizationSettings>>,
+    ) -> crate::state::PersistentPlaybackState {
         use crate::state::PersistentPlaybackState;
 
-        let info = self.info.lock().await;
-        let queue = self.queue.lock().await;
-        let normalization = self.audio_normalization.lock().await;
+        let info = info.lock().await;
+        let queue = queue.lock().await;
+        let normalization = audio_normalization.lock().await;
 
         PersistentPlaybackState {
             current_track: info.current_track.clone(),
@@ -2067,7 +2056,6 @@ impl PlaybackManager {
 
                     // Spawn monitoring task for HTTP restore path
                     let info_arc = self.info.clone();
-                    let _queue_arc = self.queue.clone();
                     let track_complete_tx = self.track_complete_tx.clone();
                     let monitoring_abort = self.monitoring_task_abort.clone();
                     let state_save_tx = self.state_save_tx.clone();
