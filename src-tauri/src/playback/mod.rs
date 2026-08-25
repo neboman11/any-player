@@ -1,6 +1,6 @@
 /// Playback management
 use crate::models::{PlaybackInfo, PlaybackState, RepeatMode, Track};
-use crate::providers::{spotify::SPOTIFY_CLIENT_ID, ProviderRegistry};
+use crate::providers::ProviderRegistry;
 use any_player_core::audio_normalization::{
     effective_output_volume, AdaptiveNormalizationState, AudioNormalizationSettings,
     AudioNormalizationSource, INTERNAL_NORMALIZATION_TARGET,
@@ -14,9 +14,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, Mutex};
 
 pub mod spotify_connect;
-pub mod spotify_session;
 pub use spotify_connect::SpotifyConnectBridge;
-pub use spotify_session::SpotifySessionManager;
 
 /// Shared playback state for the current audio stream
 #[derive(Clone)]
@@ -947,7 +945,6 @@ pub struct PlaybackManager {
     queue: Arc<Mutex<PlaybackQueue>>,
     info: Arc<Mutex<PlaybackInfo>>,
     audio_player: Arc<AudioPlayer>,
-    spotify_session: Arc<SpotifySessionManager>,
     spotify_connect: Arc<SpotifyConnectBridge>,
     providers: Arc<Mutex<ProviderRegistry>>,
     track_complete_tx: mpsc::UnboundedSender<()>,
@@ -958,6 +955,13 @@ pub struct PlaybackManager {
     preloaded_http_tracks: Arc<Mutex<HashMap<String, PreloadedHttpTrack>>>,
     state_save_tx: mpsc::UnboundedSender<()>,
     state_save_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
+    /// Tracks whether a Spotify OAuth token has been handed to the warm-up
+    /// commands. Playback itself is driven entirely through
+    /// `spotify_connect` and doesn't depend on this flag - it exists only so
+    /// the compatibility commands (`initialize_spotify_session` et al.) and
+    /// the `spotify-auth-status` websocket event have something meaningful
+    /// to report.
+    spotify_session_ready: Arc<AtomicBool>,
 }
 
 impl PlaybackManager {
@@ -976,7 +980,6 @@ impl PlaybackManager {
             queue: Arc::new(Mutex::new(PlaybackQueue::new())),
             info,
             audio_player: Arc::new(AudioPlayer::new()),
-            spotify_session: Arc::new(SpotifySessionManager::new(SPOTIFY_CLIENT_ID.to_string())),
             spotify_connect,
             providers,
             track_complete_tx,
@@ -987,6 +990,7 @@ impl PlaybackManager {
             preloaded_http_tracks: Arc::new(Mutex::new(HashMap::new())),
             state_save_tx,
             state_save_rx: Arc::new(Mutex::new(Some(state_save_rx))),
+            spotify_session_ready: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1284,6 +1288,13 @@ impl PlaybackManager {
             // already set above; the poll loop started in `new()` keeps them in
             // sync with the Connect device going forward.
             if let Some(track_id) = url.strip_prefix("spotify:track:") {
+                // Stop any HTTP-backed playback left over from a previous
+                // track so it doesn't keep playing alongside the new
+                // Spotify Connect device audio.
+                if let Err(error) = self.audio_player.stop().await {
+                    tracing::warn!("Failed to stop HTTP playback before Spotify track: {}", error);
+                }
+
                 let track_id = track_id.to_string();
                 let spotify_connect = self.spotify_connect.clone();
                 let volume = self.spotify_playback_volume().await;
@@ -1293,6 +1304,16 @@ impl PlaybackManager {
                     }
                 });
             } else {
+                // Stop any active Spotify Connect playback left over from a
+                // previous track so it doesn't keep playing alongside the
+                // new HTTP-backed audio.
+                if let Err(error) = self.spotify_connect.pause().await {
+                    tracing::debug!(
+                        "No active Spotify Connect playback to stop before HTTP track: {}",
+                        error
+                    );
+                }
+
                 // HTTP URL - play as normal
                 let track_complete_tx = self.track_complete_tx.clone();
                 let monitoring_abort = self.monitoring_task_abort.clone();
@@ -1802,19 +1823,22 @@ impl PlaybackManager {
     /// This is kept for compatibility with existing command flows and startup restore.
     /// Active playback now obtains token from the provider and uses the shared engine path.
     pub async fn initialize_spotify_session(&self, access_token: &str) -> Result<(), String> {
-        self.spotify_session
-            .initialize_with_oauth_token(access_token)
-            .await
+        if access_token.is_empty() {
+            return Err("Access token is empty".to_string());
+        }
+        self.spotify_session_ready.store(true, Ordering::Relaxed);
+        Ok(())
     }
 
     /// Check whether warm-up Spotify session state is initialized.
     pub async fn is_spotify_session_ready(&self) -> bool {
-        self.spotify_session.is_initialized().await
+        self.spotify_session_ready.load(Ordering::Relaxed)
     }
 
     /// Close warm-up Spotify session state.
     pub async fn close_spotify_session(&self) -> Result<(), String> {
-        self.spotify_session.close_session().await
+        self.spotify_session_ready.store(false, Ordering::Relaxed);
+        Ok(())
     }
 
     /// Build persistent state from current playback info and queue
