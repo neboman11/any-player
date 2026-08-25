@@ -606,14 +606,13 @@ mod tests {
         let result = registry.restore_session(Source::Spotify).await;
 
         // Note: This test will likely fail because the token is fake and
-        // check_and_update_premium_status will fail when it tries to make an API call.
+        // restoring will attempt a real API call to validate/refresh it.
         // In a real test environment, we'd mock the Spotify API.
         // For now, we're just verifying the code path doesn't panic.
 
         // Clean up
         let _ = Config::clear_tokens();
 
-        // The result will be Ok(true) if token was set, even if premium check fails
         assert!(result.is_ok() || result.is_err());
     }
 

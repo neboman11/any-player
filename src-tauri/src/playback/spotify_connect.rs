@@ -123,10 +123,12 @@ impl SpotifyConnectBridge {
     /// Start playback of a single `spotify:track:...` id, auto-launching the
     /// local Spotify app to register a Connect device if none is active.
     ///
-    /// `position_ms` and `volume_percent` are applied as part of the same
-    /// start request (rather than via separate seek/volume calls afterward),
-    /// since the device may not be ready to accept commands until playback
-    /// has actually started.
+    /// `position_ms` is folded into the start-playback request itself (rather
+    /// than a separate seek call afterward), since the device may not be
+    /// ready to accept commands until playback has actually started.
+    /// `volume_percent`, if given, is applied via a follow-up call once
+    /// playback has started (failures there are logged and otherwise
+    /// ignored, since playback already started successfully).
     pub async fn play_uri(
         &self,
         track_id: &str,
