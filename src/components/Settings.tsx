@@ -479,18 +479,15 @@ export function Settings() {
       return "Spotify not connected";
     }
 
-    const tier =
-      spotify.isPremium === true
-        ? "Premium"
-        : spotify.isPremium === false
-          ? "Free"
-          : "Unknown tier";
+    // Spotify's API no longer exposes account tier, so playback status is
+    // the only thing that can be reported reliably here - claiming a tier
+    // would be a guess, not a fact.
     const playback = spotify.sessionReady
       ? "Playback ready"
       : "Playback session not initialized";
 
-    return `Spotify connected • ${tier} • ${playback}`;
-  }, [spotify.isConnected, spotify.isPremium, spotify.sessionReady]);
+    return `Spotify connected • ${playback}`;
+  }, [spotify.isConnected, spotify.sessionReady]);
 
   const jellyfinTabTooltip = jellyfin.isConnected
     ? `Jellyfin connected${jellyfinUrl ? ` • ${jellyfinUrl}` : ""}`

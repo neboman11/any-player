@@ -1298,9 +1298,12 @@ impl PlaybackManager {
                 let track_id = track_id.to_string();
                 let spotify_connect = self.spotify_connect.clone();
                 let volume = self.spotify_playback_volume().await;
+                let info_arc = self.info.clone();
                 tauri::async_runtime::spawn(async move {
                     if let Err(error) = spotify_connect.play_uri(&track_id, None, Some(volume)).await {
                         tracing::warn!("Failed to start Spotify Connect playback: {}", error);
+                        let mut info = info_arc.lock().await;
+                        info.state = PlaybackState::Stopped;
                     }
                 });
             } else {

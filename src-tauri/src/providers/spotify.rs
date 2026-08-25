@@ -453,27 +453,26 @@ impl SpotifyProvider {
     // in-process/SDK-based playback, which is no longer usable for this client
     // ID (see the module docs above).
 
-    fn connect_client(&self) -> Result<&AuthCodePkceSpotify, ProviderError> {
+    /// Clone the underlying rspotify client out from behind the provider's
+    /// lock. `AuthCodePkceSpotify` is cheap to clone (its token and HTTP
+    /// client are internally `Arc`-shared), so callers holding a provider
+    /// lock (e.g. `SpotifyConnectBridge`) can grab an owned client and drop
+    /// the lock *before* making the actual (potentially multi-retry) HTTP
+    /// request, instead of holding the lock for the request's full duration.
+    pub fn connect_client(&self) -> Result<AuthCodePkceSpotify, ProviderError> {
         self.client
-            .as_ref()
+            .clone()
             .ok_or_else(|| ProviderError("Not authenticated".to_string()))
     }
 
     /// List the user's available Spotify Connect devices.
     pub async fn connect_devices(&self) -> Result<Vec<rspotify::model::Device>, ProviderError> {
-        self.connect_client()?
-            .device()
-            .await
-            .map_err(|e| ProviderError(format!("Failed to list Spotify Connect devices: {}", e)))
+        spotify_connect_devices(&self.connect_client()?).await
     }
 
     /// The id of the currently active Connect device, if any.
     pub async fn connect_active_device_id(&self) -> Result<Option<String>, ProviderError> {
-        let devices = self.connect_devices().await?;
-        Ok(devices
-            .into_iter()
-            .find(|device| device.is_active)
-            .and_then(|device| device.id))
+        spotify_connect_active_device_id(&self.connect_client()?).await
     }
 
     /// Get the account's current Connect playback state (device, position,
@@ -481,10 +480,7 @@ impl SpotifyProvider {
     pub async fn connect_playback_state(
         &self,
     ) -> Result<Option<rspotify::model::CurrentPlaybackContext>, ProviderError> {
-        self.connect_client()?
-            .current_playback(None, None::<Vec<&rspotify::model::AdditionalType>>)
-            .await
-            .map_err(|e| ProviderError(format!("Failed to get Spotify Connect playback state: {}", e)))
+        spotify_connect_playback_state(&self.connect_client()?).await
     }
 
     /// Start playback of one or more `spotify:track:...` ids on `device_id`,
@@ -495,40 +491,16 @@ impl SpotifyProvider {
         device_id: Option<&str>,
         position_ms: Option<i64>,
     ) -> Result<(), ProviderError> {
-        let uris: Vec<rspotify::model::PlayableId> = track_ids
-            .iter()
-            .filter_map(|id| rspotify::model::TrackId::from_id(id.as_str()).ok())
-            .map(rspotify::model::PlayableId::Track)
-            .collect();
-        if uris.is_empty() {
-            return Err(ProviderError(
-                "No valid Spotify track ids to play".to_string(),
-            ));
-        }
-
-        self.connect_client()?
-            .start_uris_playback(
-                uris,
-                device_id,
-                None,
-                position_ms.map(chrono::Duration::milliseconds),
-            )
+        spotify_connect_start_playback(&self.connect_client()?, track_ids, device_id, position_ms)
             .await
-            .map_err(|e| ProviderError(format!("Failed to start Spotify Connect playback: {}", e)))
     }
 
     pub async fn connect_resume(&self, device_id: Option<&str>) -> Result<(), ProviderError> {
-        self.connect_client()?
-            .resume_playback(device_id, None)
-            .await
-            .map_err(|e| ProviderError(format!("Failed to resume Spotify Connect playback: {}", e)))
+        spotify_connect_resume(&self.connect_client()?, device_id).await
     }
 
     pub async fn connect_pause(&self, device_id: Option<&str>) -> Result<(), ProviderError> {
-        self.connect_client()?
-            .pause_playback(device_id)
-            .await
-            .map_err(|e| ProviderError(format!("Failed to pause Spotify Connect playback: {}", e)))
+        spotify_connect_pause(&self.connect_client()?, device_id).await
     }
 
     pub async fn connect_seek(
@@ -536,10 +508,7 @@ impl SpotifyProvider {
         position_ms: i64,
         device_id: Option<&str>,
     ) -> Result<(), ProviderError> {
-        self.connect_client()?
-            .seek_track(chrono::Duration::milliseconds(position_ms), device_id)
-            .await
-            .map_err(|e| ProviderError(format!("Failed to seek Spotify Connect playback: {}", e)))
+        spotify_connect_seek(&self.connect_client()?, position_ms, device_id).await
     }
 
     pub async fn connect_set_volume(
@@ -547,17 +516,132 @@ impl SpotifyProvider {
         volume_percent: u8,
         device_id: Option<&str>,
     ) -> Result<(), ProviderError> {
-        self.connect_client()?
-            .volume(volume_percent.min(100), device_id)
-            .await
-            .map_err(|e| {
-                ProviderError(format!(
-                    "Failed to set Spotify Connect playback volume: {}",
-                    e
-                ))
-            })
+        spotify_connect_set_volume(&self.connect_client()?, volume_percent, device_id).await
+    }
+}
+
+/// List the user's available Spotify Connect devices using an already-cloned
+/// client, without needing to hold any provider lock for the request.
+pub async fn spotify_connect_devices(
+    client: &AuthCodePkceSpotify,
+) -> Result<Vec<rspotify::model::Device>, ProviderError> {
+    client
+        .device()
+        .await
+        .map_err(|e| ProviderError(format!("Failed to list Spotify Connect devices: {}", e)))
+}
+
+/// The id of the currently active Connect device, if any.
+pub async fn spotify_connect_active_device_id(
+    client: &AuthCodePkceSpotify,
+) -> Result<Option<String>, ProviderError> {
+    let devices = spotify_connect_devices(client).await?;
+    Ok(devices
+        .into_iter()
+        .find(|device| device.is_active)
+        .and_then(|device| device.id))
+}
+
+/// Get the account's current Connect playback state (device, position,
+/// track, shuffle/repeat, etc). Returns `None` when nothing is playing.
+pub async fn spotify_connect_playback_state(
+    client: &AuthCodePkceSpotify,
+) -> Result<Option<rspotify::model::CurrentPlaybackContext>, ProviderError> {
+    client
+        .current_playback(None, None::<Vec<&rspotify::model::AdditionalType>>)
+        .await
+        .map_err(|e| ProviderError(format!("Failed to get Spotify Connect playback state: {}", e)))
+}
+
+/// Start playback of one or more `spotify:track:...` ids on `device_id`,
+/// optionally seeking to `position_ms` as part of the same request.
+pub async fn spotify_connect_start_playback(
+    client: &AuthCodePkceSpotify,
+    track_ids: &[String],
+    device_id: Option<&str>,
+    position_ms: Option<i64>,
+) -> Result<(), ProviderError> {
+    let uris: Vec<rspotify::model::PlayableId> = track_ids
+        .iter()
+        .filter_map(|id| rspotify::model::TrackId::from_id(id.as_str()).ok())
+        .map(rspotify::model::PlayableId::Track)
+        .collect();
+    if uris.is_empty() {
+        return Err(ProviderError(
+            "No valid Spotify track ids to play".to_string(),
+        ));
     }
 
+    client
+        .start_uris_playback(
+            uris,
+            device_id,
+            None,
+            position_ms.map(chrono::Duration::milliseconds),
+        )
+        .await
+        .map_err(|e| {
+            let message = e.to_string();
+            // Spotify's Connect API still rejects playback with a
+            // PREMIUM_REQUIRED reason for free-tier accounts even though
+            // the profile endpoint no longer exposes account tier - surface
+            // that case with a clean, actionable message instead of the
+            // raw API error.
+            if message.contains("PREMIUM_REQUIRED") || message.to_lowercase().contains("premium") {
+                ProviderError(
+                    "Premium required for full Spotify playback via Connect".to_string(),
+                )
+            } else {
+                ProviderError(format!("Failed to start Spotify Connect playback: {}", message))
+            }
+        })
+}
+
+pub async fn spotify_connect_resume(
+    client: &AuthCodePkceSpotify,
+    device_id: Option<&str>,
+) -> Result<(), ProviderError> {
+    client
+        .resume_playback(device_id, None)
+        .await
+        .map_err(|e| ProviderError(format!("Failed to resume Spotify Connect playback: {}", e)))
+}
+
+pub async fn spotify_connect_pause(
+    client: &AuthCodePkceSpotify,
+    device_id: Option<&str>,
+) -> Result<(), ProviderError> {
+    client
+        .pause_playback(device_id)
+        .await
+        .map_err(|e| ProviderError(format!("Failed to pause Spotify Connect playback: {}", e)))
+}
+
+pub async fn spotify_connect_seek(
+    client: &AuthCodePkceSpotify,
+    position_ms: i64,
+    device_id: Option<&str>,
+) -> Result<(), ProviderError> {
+    client
+        .seek_track(chrono::Duration::milliseconds(position_ms), device_id)
+        .await
+        .map_err(|e| ProviderError(format!("Failed to seek Spotify Connect playback: {}", e)))
+}
+
+pub async fn spotify_connect_set_volume(
+    client: &AuthCodePkceSpotify,
+    volume_percent: u8,
+    device_id: Option<&str>,
+) -> Result<(), ProviderError> {
+    client
+        .volume(volume_percent.min(100), device_id)
+        .await
+        .map_err(|e| {
+            ProviderError(format!(
+                "Failed to set Spotify Connect playback volume: {}",
+                e
+            ))
+        })
 }
 
 #[async_trait]

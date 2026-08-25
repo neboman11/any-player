@@ -8,7 +8,13 @@
 /// in-process decoder or in-webview SDK. When no device is active, the local
 /// Spotify desktop app is auto-launched so it registers itself as one.
 use crate::models::Source;
-use crate::providers::{spotify::SpotifyProvider, ProviderHandle, ProviderRegistry};
+use crate::providers::spotify::{
+    spotify_connect_active_device_id, spotify_connect_pause, spotify_connect_playback_state,
+    spotify_connect_resume, spotify_connect_seek, spotify_connect_set_volume,
+    spotify_connect_start_playback, SpotifyProvider,
+};
+use crate::providers::{ProviderHandle, ProviderRegistry};
+use rspotify::AuthCodePkceSpotify;
 use std::fmt;
 use std::process::Command;
 use std::sync::Arc;
@@ -82,7 +88,12 @@ impl SpotifyConnectBridge {
             .ok_or(SpotifyConnectError::NotAuthenticated)
     }
 
-    async fn active_device_id(&self) -> Result<Option<String>, SpotifyConnectError> {
+    /// Clone the rspotify client out from behind the provider lock and drop
+    /// the lock immediately, so the actual (potentially multi-retry) HTTP
+    /// request below doesn't hold the provider mutex and block unrelated
+    /// commands (e.g. a poll tick retrying a transient error shouldn't be
+    /// able to stall a user's pause/resume/seek click).
+    async fn client(&self) -> Result<AuthCodePkceSpotify, SpotifyConnectError> {
         let handle = self.provider_handle().await?;
         let provider = handle.lock().await;
         let spotify = provider
@@ -90,7 +101,13 @@ impl SpotifyConnectBridge {
             .downcast_ref::<SpotifyProvider>()
             .ok_or(SpotifyConnectError::NotAuthenticated)?;
         spotify
-            .connect_active_device_id()
+            .connect_client()
+            .map_err(|e| SpotifyConnectError::Api(e.to_string()))
+    }
+
+    async fn active_device_id(&self) -> Result<Option<String>, SpotifyConnectError> {
+        let client = self.client().await?;
+        spotify_connect_active_device_id(&client)
             .await
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
@@ -136,23 +153,20 @@ impl SpotifyConnectBridge {
         volume_percent: Option<u8>,
     ) -> Result<(), SpotifyConnectError> {
         let device_id = self.resolve_device_id().await?;
-        let handle = self.provider_handle().await?;
-        let provider = handle.lock().await;
-        let spotify = provider
-            .as_any()
-            .downcast_ref::<SpotifyProvider>()
-            .ok_or(SpotifyConnectError::NotAuthenticated)?;
-        spotify
-            .connect_start_playback(
-                &[track_id.to_string()],
-                Some(device_id.as_str()),
-                position_ms,
-            )
-            .await
-            .map_err(|e| SpotifyConnectError::Api(e.to_string()))?;
+        let client = self.client().await?;
+        spotify_connect_start_playback(
+            &client,
+            &[track_id.to_string()],
+            Some(device_id.as_str()),
+            position_ms,
+        )
+        .await
+        .map_err(|e| SpotifyConnectError::Api(e.to_string()))?;
 
         if let Some(volume_percent) = volume_percent {
-            if let Err(error) = spotify.connect_set_volume(volume_percent, Some(device_id.as_str())).await {
+            if let Err(error) =
+                spotify_connect_set_volume(&client, volume_percent, Some(device_id.as_str())).await
+            {
                 tracing::warn!("Failed to set Spotify Connect volume on playback start: {}", error);
             }
         }
@@ -161,53 +175,29 @@ impl SpotifyConnectBridge {
     }
 
     pub async fn resume(&self) -> Result<(), SpotifyConnectError> {
-        let handle = self.provider_handle().await?;
-        let provider = handle.lock().await;
-        let spotify = provider
-            .as_any()
-            .downcast_ref::<SpotifyProvider>()
-            .ok_or(SpotifyConnectError::NotAuthenticated)?;
-        spotify
-            .connect_resume(None)
+        let client = self.client().await?;
+        spotify_connect_resume(&client, None)
             .await
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
 
     pub async fn pause(&self) -> Result<(), SpotifyConnectError> {
-        let handle = self.provider_handle().await?;
-        let provider = handle.lock().await;
-        let spotify = provider
-            .as_any()
-            .downcast_ref::<SpotifyProvider>()
-            .ok_or(SpotifyConnectError::NotAuthenticated)?;
-        spotify
-            .connect_pause(None)
+        let client = self.client().await?;
+        spotify_connect_pause(&client, None)
             .await
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
 
     pub async fn seek(&self, position_ms: i64) -> Result<(), SpotifyConnectError> {
-        let handle = self.provider_handle().await?;
-        let provider = handle.lock().await;
-        let spotify = provider
-            .as_any()
-            .downcast_ref::<SpotifyProvider>()
-            .ok_or(SpotifyConnectError::NotAuthenticated)?;
-        spotify
-            .connect_seek(position_ms, None)
+        let client = self.client().await?;
+        spotify_connect_seek(&client, position_ms, None)
             .await
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
 
     pub async fn set_volume(&self, volume_percent: u8) -> Result<(), SpotifyConnectError> {
-        let handle = self.provider_handle().await?;
-        let provider = handle.lock().await;
-        let spotify = provider
-            .as_any()
-            .downcast_ref::<SpotifyProvider>()
-            .ok_or(SpotifyConnectError::NotAuthenticated)?;
-        spotify
-            .connect_set_volume(volume_percent, None)
+        let client = self.client().await?;
+        spotify_connect_set_volume(&client, volume_percent, None)
             .await
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
@@ -216,9 +206,7 @@ impl SpotifyConnectBridge {
     /// on failure and when nothing is playing - callers can't distinguish the
     /// two from this alone, but both mean there's no state to report.
     pub async fn playback_state(&self) -> Option<rspotify::model::CurrentPlaybackContext> {
-        let handle = self.provider_handle().await.ok()?;
-        let provider = handle.lock().await;
-        let spotify = provider.as_any().downcast_ref::<SpotifyProvider>()?;
-        spotify.connect_playback_state().await.ok().flatten()
+        let client = self.client().await.ok()?;
+        spotify_connect_playback_state(&client).await.ok().flatten()
     }
 }
