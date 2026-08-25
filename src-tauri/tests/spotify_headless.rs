@@ -1,5 +1,5 @@
 use any_player_lib::config::Config;
-use any_player_lib::providers::spotify::{SpotifyProvider, SPOTIFY_CLIENT_ID};
+use any_player_lib::providers::spotify::SpotifyProvider;
 use any_player_spotify_engine::LibrespotPlayer;
 
 #[tokio::test]
@@ -21,7 +21,7 @@ async fn headless_spotify_playback() {
 
     let player = LibrespotPlayer::new();
     player
-        .connect(&access_token, SPOTIFY_CLIENT_ID)
+        .connect(&access_token)
         .await
         .expect("connect failed");
 
