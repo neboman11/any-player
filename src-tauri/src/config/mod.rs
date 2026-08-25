@@ -40,8 +40,6 @@ pub struct SpotifyConfig {
     pub client_secret: Option<String>,
     /// Redirect URI for OAuth flow
     pub redirect_uri: Option<String>,
-    /// Enable direct playback via librespot
-    pub enable_streaming: bool,
 }
 
 /// Jellyfin-specific configuration

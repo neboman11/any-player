@@ -167,7 +167,10 @@ impl SpotifyConnectBridge {
             if let Err(error) =
                 spotify_connect_set_volume(&client, volume_percent, Some(device_id.as_str())).await
             {
-                tracing::warn!("Failed to set Spotify Connect volume on playback start: {}", error);
+                tracing::warn!(
+                    "Failed to set Spotify Connect volume on playback start: {}",
+                    error
+                );
             }
         }
 

@@ -45,7 +45,7 @@ Startup includes background session restoration, service warmup, timeout/retry b
 - Frontend: React 18 + TypeScript + Vite
 - Desktop shell: Tauri 2
 - Backend: Rust (Tokio async runtime)
-- Audio: rodio + symphonia + librespot integration for Spotify playback
+- Audio: rodio + symphonia for local playback; Spotify Connect for Spotify playback
 - Storage: SQLite (`rusqlite`) + keyring-backed credential storage
 
 ## Prerequisites

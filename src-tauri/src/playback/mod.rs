@@ -930,8 +930,7 @@ fn spawn_spotify_connect_poller(
                 // completion so the queue advances by exactly one step.
                 let progress_ms = info.position_ms;
                 let at_end = duration_ms > SPOTIFY_CONNECT_POLL_INTERVAL_MS
-                    && progress_ms
-                        >= duration_ms.saturating_sub(SPOTIFY_CONNECT_POLL_INTERVAL_MS);
+                    && progress_ms >= duration_ms.saturating_sub(SPOTIFY_CONNECT_POLL_INTERVAL_MS);
                 if was_playing && !context.is_playing && at_end {
                     let _ = track_complete_tx.send(());
                 }
@@ -974,7 +973,11 @@ impl PlaybackManager {
 
         let info = Arc::new(Mutex::new(PlaybackInfo::default()));
         let spotify_connect = Arc::new(SpotifyConnectBridge::new(providers.clone()));
-        spawn_spotify_connect_poller(info.clone(), spotify_connect.clone(), track_complete_tx.clone());
+        spawn_spotify_connect_poller(
+            info.clone(),
+            spotify_connect.clone(),
+            track_complete_tx.clone(),
+        );
 
         Self {
             queue: Arc::new(Mutex::new(PlaybackQueue::new())),
@@ -1270,7 +1273,10 @@ impl PlaybackManager {
                 // track so it doesn't keep playing alongside the new
                 // Spotify Connect device audio.
                 if let Err(error) = self.audio_player.stop().await {
-                    tracing::warn!("Failed to stop HTTP playback before Spotify track: {}", error);
+                    tracing::warn!(
+                        "Failed to stop HTTP playback before Spotify track: {}",
+                        error
+                    );
                 }
 
                 let track_id = track_id.to_string();
@@ -1278,7 +1284,10 @@ impl PlaybackManager {
                 let volume = self.spotify_playback_volume().await;
                 let info_arc = self.info.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = spotify_connect.play_uri(&track_id, None, Some(volume)).await {
+                    if let Err(error) = spotify_connect
+                        .play_uri(&track_id, None, Some(volume))
+                        .await
+                    {
                         tracing::warn!("Failed to start Spotify Connect playback: {}", error);
                         let mut info = info_arc.lock().await;
                         info.state = PlaybackState::Stopped;
@@ -1502,7 +1511,9 @@ impl PlaybackManager {
                         .as_deref()
                         .and_then(|url| url.strip_prefix("spotify:track:"))
                     else {
-                        tracing::warn!("Current Spotify track has no spotify:track: URI to restart");
+                        tracing::warn!(
+                            "Current Spotify track has no spotify:track: URI to restart"
+                        );
                         return;
                     };
 
@@ -1592,7 +1603,10 @@ impl PlaybackManager {
                 PlaybackState::Playing => PlaybackState::Paused,
                 PlaybackState::Paused | PlaybackState::Stopped => PlaybackState::Playing,
             };
-            (new_state, info.current_track.as_ref().map(|track| track.source))
+            (
+                new_state,
+                info.current_track.as_ref().map(|track| track.source),
+            )
         };
 
         if source == Some(crate::models::Source::Spotify) {

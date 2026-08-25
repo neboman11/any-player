@@ -32,7 +32,6 @@ Before generating code, scan the codebase to identify:
 3. **Library Versions**: Note the exact versions of key libraries and dependencies
    - **Rust Backend**:
      - rspotify: 0.12 (Spotify Web API)
-     - librespot-\*: 0.8.0 (Spotify streaming)
      - rodio: 0.17 (audio playback)
      - symphonia: 0.5 (audio decoding)
      - reqwest: 0.11 (HTTP client)
@@ -74,7 +73,7 @@ This is a **Tauri 2** application with a clear separation between frontend and b
 - **Commands**: [commands.rs](../../src-tauri/src/commands.rs) - Tauri command handlers (API layer between frontend and backend)
 - **Models**: [models/mod.rs](../../src-tauri/src/models/mod.rs) - Core data structures (Track, Playlist, Source, PlaybackState, RepeatMode)
 - **Providers**: [providers/mod.rs](../../src-tauri/src/providers/mod.rs) - Music provider trait and implementations (Spotify, Jellyfin)
-- **Playback**: [playback/mod.rs](../../src-tauri/src/playback/mod.rs) - Audio playback management with rodio and librespot
+- **Playback**: [playback/mod.rs](../../src-tauri/src/playback/mod.rs) - Local audio playback with rodio and Spotify Connect control
 - **Config**: [config/mod.rs](../../src-tauri/src/config/mod.rs) - Configuration and secure token storage using keyring
 
 ### Frontend (TypeScript/React - src/)
@@ -275,7 +274,7 @@ This is a **Tauri 2** application with a clear separation between frontend and b
 
 - PlaybackManager coordinates between providers and audio output
 - Use rodio for local audio playback
-- Use librespot for Spotify premium streaming
+- Use Spotify Connect for Spotify playback control
 - Manage playback state (Playing, Paused, Stopped)
 - Support shuffle and repeat modes (Off, One, All)
 

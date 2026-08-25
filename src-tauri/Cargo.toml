@@ -28,17 +28,8 @@ serde_json = "1"
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 
-# Spotify integration - rspotify for Web API, librespot for full song streaming
+# Spotify integration
 rspotify = { version = "0.16", default-features = false, features = ["client-reqwest", "reqwest-rustls-tls", "reqwest-middleware"] }
-librespot-core = { version = "0.8", default-features = false, features = [
-    "rustls-tls-webpki-roots",
-] }
-librespot-connect = { version = "0.8", default-features = false, features = [
-    "rustls-tls-webpki-roots",
-] }
-librespot-oauth = { version = "0.8", default-features = false, features = [
-    "rustls-tls-webpki-roots",
-] }
 
 # HTTP and async
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
@@ -78,9 +69,3 @@ reqwest-retry = "0.7"
 
 [dev-dependencies]
 serial_test = "3.2"
-
-[patch.crates-io]
-# Desktop relies on librespot-core APIs (e.g.
-# Login5Manager::inject_bearer_token) that only exist in the vendored patch
-# in any-player-shared-rust, not stock crates.io.
-librespot-core = { path = "../../any-player-shared-rust/patches/librespot-core" }

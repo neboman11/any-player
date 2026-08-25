@@ -18,11 +18,11 @@ function getAudioElement(): HTMLAudioElement {
 export function useAudioPlayback() {
   const playAudio = useCallback(async (url: string) => {
     try {
-      // Spotify premium tracks (spotify:track: URIs) are handled by the backend's
-      // librespot integration, not by the frontend audio player
+      // Spotify tracks are handled by the backend's active Spotify Connect device,
+      // not by the frontend audio player.
       if (url.startsWith("spotify:track:")) {
         console.log(
-          "Skipping frontend playback for Spotify URI - handled by backend librespot:",
+          "Skipping frontend playback for Spotify URI - handled by Spotify Connect:",
           url,
         );
         return;

@@ -91,8 +91,8 @@ impl SpotifyProvider {
     /// Create a new Spotify provider with default OAuth configuration (PKCE - no secrets needed)
     pub fn with_default_oauth() -> Self {
         let (credentials, oauth) = Self::default_oauth_config();
-        let client =
-            AuthCodePkceSpotify::new(credentials, oauth).with_middleware(spotify_retry_middleware());
+        let client = AuthCodePkceSpotify::new(credentials, oauth)
+            .with_middleware(spotify_retry_middleware());
 
         Self {
             client: Some(client),
@@ -104,8 +104,8 @@ impl SpotifyProvider {
     /// Create a new Spotify provider with default OAuth and configured cache path
     pub fn with_default_oauth_and_cache(cache_path: PathBuf) -> Self {
         let (credentials, oauth) = Self::default_oauth_config();
-        let mut client =
-            AuthCodePkceSpotify::new(credentials, oauth).with_middleware(spotify_retry_middleware());
+        let mut client = AuthCodePkceSpotify::new(credentials, oauth)
+            .with_middleware(spotify_retry_middleware());
 
         // Configure token cache
         client.config.token_cached = true;
@@ -141,8 +141,8 @@ impl SpotifyProvider {
             ..Default::default()
         };
 
-        let client =
-            AuthCodePkceSpotify::new(credentials, oauth).with_middleware(spotify_retry_middleware());
+        let client = AuthCodePkceSpotify::new(credentials, oauth)
+            .with_middleware(spotify_retry_middleware());
 
         Self {
             client: Some(client),
@@ -550,7 +550,12 @@ pub async fn spotify_connect_playback_state(
     client
         .current_playback(None, None::<Vec<&rspotify::model::AdditionalType>>)
         .await
-        .map_err(|e| ProviderError(format!("Failed to get Spotify Connect playback state: {}", e)))
+        .map_err(|e| {
+            ProviderError(format!(
+                "Failed to get Spotify Connect playback state: {}",
+                e
+            ))
+        })
 }
 
 /// Start playback of one or more `spotify:track:...` ids on `device_id`,
@@ -588,11 +593,12 @@ pub async fn spotify_connect_start_playback(
             // that case with a clean, actionable message instead of the
             // raw API error.
             if message.contains("PREMIUM_REQUIRED") || message.to_lowercase().contains("premium") {
-                ProviderError(
-                    "Premium required for full Spotify playback via Connect".to_string(),
-                )
+                ProviderError("Premium required for full Spotify playback via Connect".to_string())
             } else {
-                ProviderError(format!("Failed to start Spotify Connect playback: {}", message))
+                ProviderError(format!(
+                    "Failed to start Spotify Connect playback: {}",
+                    message
+                ))
             }
         })
 }
@@ -762,7 +768,7 @@ impl MusicProvider for SpotifyProvider {
 
                     if let Some(rspotify::model::PlayableItem::Track(t)) = item.item {
                         let duration_ms = t.duration.num_milliseconds() as u64;
-                        // Premium playback only - return spotify:track: URI for librespot
+                        // Return a Spotify URI for the active Connect device.
                         let url = t.id.as_ref().map(|id| format!("spotify:track:{}", id));
                         tracks.push(Track {
                             id: t.id.map(|id| id.to_string()).unwrap_or_default(),
@@ -934,7 +940,7 @@ impl MusicProvider for SpotifyProvider {
             .map_err(|e| ProviderError(format!("Failed to fetch track: {}", e)))?;
 
         let duration_ms = track.duration.num_milliseconds() as u64;
-        // Return full track URI for premium streaming via librespot
+        // Return the full track URI for playback on the active Connect device.
         let url = Some(format!("spotify:track:{}", clean_id));
 
         Ok(Track {
