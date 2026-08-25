@@ -34,6 +34,8 @@ pub(crate) async fn connect_librespot_session(
             )
         })?;
 
+    session.login5().inject_bearer_token(access_token, 0);
+
     Ok(session)
 }
 
@@ -123,5 +125,19 @@ mod tests {
         let result = manager.close_session().await;
         assert!(result.is_ok());
         assert!(!manager.is_initialized().await);
+    }
+
+    #[tokio::test]
+    async fn injected_bearer_token_skips_login5_exchange() {
+        let session = Session::new(SessionConfig::default(), None);
+
+        session.login5().inject_bearer_token("test-access-token", 0);
+
+        let token = session
+            .login5()
+            .auth_token()
+            .await
+            .expect("injected bearer token should be available without Login5");
+        assert_eq!(token.access_token, "test-access-token");
     }
 }
