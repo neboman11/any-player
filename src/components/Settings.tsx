@@ -172,8 +172,6 @@ export function Settings() {
   const [autoplay, setAutoplay] = useState<boolean>(false);
   const [audioNormalizationEnabled, setAudioNormalizationEnabled] =
     useState<boolean>(false);
-  const [audioNormalizationStrictMode, setAudioNormalizationStrictMode] =
-    useState<boolean>(false);
   const [isExportingConfig, setIsExportingConfig] = useState<boolean>(false);
   const [isClearingProviderCache, setIsClearingProviderCache] =
     useState<boolean>(false);
@@ -258,7 +256,6 @@ export function Settings() {
       try {
         const settings = await tauriAPI.getAudioNormalizationSettings();
         setAudioNormalizationEnabled(settings.enabled);
-        setAudioNormalizationStrictMode(settings.strict_mode);
       } catch (err) {
         console.error("Failed to load audio normalization settings:", err);
       }
@@ -409,12 +406,11 @@ export function Settings() {
   }, [clearCache]);
 
   const handleAudioNormalizationChange = useCallback(
-    async (enabled: boolean, strictMode: boolean) => {
+    async (enabled: boolean) => {
       setAudioNormalizationEnabled(enabled);
-      setAudioNormalizationStrictMode(strictMode);
 
       try {
-        await tauriAPI.setAudioNormalizationSettings(enabled, strictMode);
+        await tauriAPI.setAudioNormalizationSettings(enabled);
       } catch (err) {
         console.error("Failed to save audio normalization settings:", err);
       }
@@ -706,29 +702,10 @@ export function Settings() {
                     id="audio-normalization-checkbox"
                     checked={audioNormalizationEnabled}
                     onChange={(e) =>
-                      void handleAudioNormalizationChange(
-                        e.target.checked,
-                        audioNormalizationStrictMode,
-                      )
+                      void handleAudioNormalizationChange(e.target.checked)
                     }
                   />
                   Normalize Audio Across Providers
-                </label>
-              </div>
-              <div className="setting-item">
-                <label>
-                  <input
-                    type="checkbox"
-                    id="audio-normalization-strict-checkbox"
-                    checked={audioNormalizationStrictMode}
-                    onChange={(e) =>
-                      void handleAudioNormalizationChange(
-                        audioNormalizationEnabled,
-                        e.target.checked,
-                      )
-                    }
-                  />
-                  Strict Normalization (Adaptive Cross-Track + Spotify Offset)
                 </label>
               </div>
             </div>

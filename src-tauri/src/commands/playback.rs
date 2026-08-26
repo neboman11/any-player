@@ -189,7 +189,6 @@ pub async fn get_audio_normalization_settings(
 
     Ok(AudioNormalizationStatus {
         enabled: settings.enabled,
-        strict_mode: settings.strict_mode,
     })
 }
 
@@ -198,12 +197,9 @@ pub async fn get_audio_normalization_settings(
 pub async fn set_audio_normalization_settings(
     state: State<'_, AppState>,
     enabled: bool,
-    strict_mode: bool,
 ) -> Result<(), String> {
     let playback = { state.playback.lock().await };
-    playback
-        .set_audio_normalization_settings(enabled, strict_mode)
-        .await;
+    playback.set_audio_normalization_settings(enabled).await;
     Ok(())
 }
 

@@ -17,7 +17,6 @@ export interface PlaybackStatus {
 
 export interface AudioNormalizationSettings {
   enabled: boolean;
-  strict_mode: boolean;
 }
 
 export interface Track {

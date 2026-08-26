@@ -2,16 +2,16 @@
 use crate::models::{PlaybackInfo, PlaybackState, RepeatMode, Track};
 use crate::providers::ProviderRegistry;
 use any_player_core::audio_normalization::{
-    effective_output_volume, AdaptiveNormalizationState, AudioNormalizationSettings,
-    AudioNormalizationSource, INTERNAL_NORMALIZATION_TARGET,
+    AudioNormalizationSettings, AudioNormalizationSource, INTERNAL_NORMALIZATION_TARGET,
+    effective_output_volume,
 };
 use rodio::{Decoder, OutputStream, Sink, Source};
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 pub mod spotify_connect;
 pub use spotify_connect::SpotifyConnectBridge;
@@ -30,8 +30,6 @@ pub struct PlaybackHandle {
     /// Direct reference to rodio sink for immediate pause/play control
     /// Using Arc<Mutex<Option<...>>> for interior mutability
     sink: Arc<Mutex<Option<Arc<Mutex<Sink>>>>>,
-    /// Last per-track normalization gain applied (NaN when unknown)
-    normalization_gain_bits: Arc<std::sync::atomic::AtomicU32>,
 }
 
 impl PlaybackHandle {
@@ -42,20 +40,7 @@ impl PlaybackHandle {
             duration_ms: Arc::new(AtomicU64::new(0)),
             is_paused: Arc::new(AtomicBool::new(false)),
             sink: Arc::new(Mutex::new(None)),
-            normalization_gain_bits: Arc::new(std::sync::atomic::AtomicU32::new(
-                f32::NAN.to_bits(),
-            )),
         }
-    }
-
-    pub fn set_normalization_gain(&self, gain: f32) {
-        self.normalization_gain_bits
-            .store(gain.to_bits(), Ordering::SeqCst);
-    }
-
-    pub fn get_normalization_gain(&self) -> Option<f32> {
-        let gain = f32::from_bits(self.normalization_gain_bits.load(Ordering::SeqCst));
-        gain.is_finite().then_some(gain)
     }
 
     /// Set the sink handle for direct pause/play control
@@ -421,7 +406,6 @@ impl AudioPlayer {
         volume: u32,
         normalize_enabled: bool,
         normalize_target: u32,
-        normalize_strict_mode: bool,
         source: crate::models::Source,
         preloaded_audio_bytes: Option<Vec<u8>>,
         precomputed_track_gain: Option<f32>,
@@ -455,7 +439,6 @@ impl AudioPlayer {
                         volume,
                         normalize_enabled,
                         normalize_target,
-                        normalize_strict_mode,
                         source,
                         preloaded_audio_bytes,
                         precomputed_track_gain,
@@ -488,7 +471,6 @@ impl AudioPlayer {
         volume: u32,
         normalize_enabled: bool,
         normalize_target: u32,
-        normalize_strict_mode: bool,
         source: crate::models::Source,
         preloaded_audio_bytes: Option<Vec<u8>>,
         precomputed_track_gain: Option<f32>,
@@ -513,7 +495,6 @@ impl AudioPlayer {
             volume,
             normalize_enabled,
             normalize_target,
-            normalize_strict_mode,
             source,
             preloaded_audio_bytes,
             precomputed_track_gain,
@@ -585,7 +566,6 @@ impl AudioPlayer {
         volume: u32,
         normalize_enabled: bool,
         normalize_target: u32,
-        normalize_strict_mode: bool,
         source: crate::models::Source,
         preloaded_audio_bytes: Option<Vec<u8>>,
         precomputed_track_gain: Option<f32>,
@@ -627,8 +607,7 @@ impl AudioPlayer {
             if let Some(precomputed) = precomputed_track_gain {
                 precomputed
             } else {
-                let skip_heavy_analysis =
-                    source == crate::models::Source::Plex && !normalize_strict_mode;
+                let skip_heavy_analysis = source == crate::models::Source::Plex;
                 if skip_heavy_analysis {
                     1.0
                 } else {
@@ -638,8 +617,6 @@ impl AudioPlayer {
         } else {
             1.0
         };
-
-        handle.set_normalization_gain(track_gain);
 
         tracing::debug!(
             "HTTP track normalization settings: enabled={}, runtime_target={}, track_gain={:.3}",
@@ -979,7 +956,6 @@ pub struct PlaybackManager {
     track_complete_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
     monitoring_task_abort: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
     audio_normalization: Arc<Mutex<AudioNormalizationSettings>>,
-    adaptive_normalization: Arc<Mutex<AdaptiveNormalizationState>>,
     preloaded_http_tracks: Arc<Mutex<HashMap<String, PreloadedHttpTrack>>>,
     state_save_tx: mpsc::UnboundedSender<()>,
     state_save_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
@@ -1018,7 +994,6 @@ impl PlaybackManager {
             track_complete_rx: Arc::new(Mutex::new(Some(track_complete_rx))),
             monitoring_task_abort: Arc::new(Mutex::new(None)),
             audio_normalization: Arc::new(Mutex::new(AudioNormalizationSettings::default())),
-            adaptive_normalization: Arc::new(Mutex::new(AdaptiveNormalizationState::default())),
             preloaded_http_tracks: Arc::new(Mutex::new(HashMap::new())),
             state_save_tx,
             state_save_rx: Arc::new(Mutex::new(Some(state_save_rx))),
@@ -1127,39 +1102,16 @@ impl PlaybackManager {
             .retain(|key, _| keep_keys.contains(key));
     }
 
-    async fn strict_source_compensation_gain(
-        &self,
-        source: Option<crate::models::Source>,
-        strict_mode: bool,
-    ) -> f32 {
-        if !strict_mode {
-            return 1.0;
-        }
-
-        let Some(source) = source else {
-            return 1.0;
-        };
-
-        let source_key = Self::source_key(source);
-        let adaptive = self.adaptive_normalization.lock().await;
-        adaptive.strict_compensation_gain(&source_key)
-    }
-
     async fn effective_output_volume(
         &self,
         base_volume: u32,
         source: Option<crate::models::Source>,
     ) -> u32 {
         let normalization = self.audio_normalization.lock().await.clone();
-        let strict_gain = self
-            .strict_source_compensation_gain(source, normalization.strict_mode)
-            .await;
-
         effective_output_volume(
             base_volume,
             Self::normalization_source(source),
             &normalization,
-            strict_gain,
         )
     }
 
@@ -1179,12 +1131,11 @@ impl PlaybackManager {
         self.audio_normalization.lock().await.clone()
     }
 
-    pub async fn set_audio_normalization_settings(&self, enabled: bool, strict_mode: bool) {
+    pub async fn set_audio_normalization_settings(&self, enabled: bool) {
         {
             let mut normalization = self.audio_normalization.lock().await;
             normalization.enabled = enabled;
             normalization.target = INTERNAL_NORMALIZATION_TARGET;
-            normalization.strict_mode = strict_mode;
         }
 
         let base_volume = {
@@ -1342,8 +1293,6 @@ impl PlaybackManager {
                 let track_complete_tx = self.track_complete_tx.clone();
                 let monitoring_abort = self.monitoring_task_abort.clone();
                 let state_save_tx = self.state_save_tx.clone();
-                let adaptive_normalization = self.adaptive_normalization.clone();
-                let track_source = track.source;
                 let preloaded = self.take_preloaded_http_track(&track).await;
                 if preloaded.is_some() {
                     tracing::debug!("Using preloaded audio payload for track {}", track.id);
@@ -1379,7 +1328,6 @@ impl PlaybackManager {
                         volume,
                         normalization.enabled,
                         normalization.target,
-                        normalization.strict_mode,
                         track.source,
                         preloaded_bytes,
                         preloaded_gain,
@@ -1435,11 +1383,6 @@ impl PlaybackManager {
                                     tracing::debug!(
                                         "HTTP monitoring task detected should_stop=true"
                                     );
-                                    if let Some(gain) = handle.get_normalization_gain() {
-                                        let source_key = PlaybackManager::source_key(track_source);
-                                        let mut adaptive = adaptive_normalization.lock().await;
-                                        adaptive.push_gain(&source_key, gain);
-                                    }
                                     {
                                         let mut info = info_arc.lock().await;
                                         info.state = PlaybackState::Stopped;
@@ -1923,7 +1866,6 @@ impl PlaybackManager {
             volume: info.volume,
             audio_normalization_enabled: normalization.enabled,
             audio_normalization_target: normalization.target,
-            audio_normalization_strict_mode: normalization.strict_mode,
             shuffle_order: queue.shuffle_order.clone(),
             state: info.state,
         }
@@ -2000,7 +1942,6 @@ impl PlaybackManager {
             let mut normalization = self.audio_normalization.lock().await;
             normalization.enabled = saved_state.audio_normalization_enabled;
             normalization.target = INTERNAL_NORMALIZATION_TARGET;
-            normalization.strict_mode = saved_state.audio_normalization_strict_mode;
         }
 
         tracing::info!(
@@ -2095,7 +2036,6 @@ impl PlaybackManager {
                                     volume,
                                     normalization.enabled,
                                     normalization.target,
-                                    normalization.strict_mode,
                                     track.source,
                                     None,
                                     None,
@@ -2131,8 +2071,6 @@ impl PlaybackManager {
                     let track_complete_tx = self.track_complete_tx.clone();
                     let monitoring_abort = self.monitoring_task_abort.clone();
                     let state_save_tx = self.state_save_tx.clone();
-                    let adaptive_normalization = self.adaptive_normalization.clone();
-                    let track_source = track.source;
 
                     let task = tokio::spawn(async move {
                         tracing::debug!("HTTP restore monitoring task started");
@@ -2169,11 +2107,6 @@ impl PlaybackManager {
                                 tracing::debug!(
                                     "HTTP restore monitoring task detected should_stop=true"
                                 );
-                                if let Some(gain) = handle.get_normalization_gain() {
-                                    let source_key = PlaybackManager::source_key(track_source);
-                                    let mut adaptive = adaptive_normalization.lock().await;
-                                    adaptive.push_gain(&source_key, gain);
-                                }
                                 {
                                     let mut info = info_arc.lock().await;
                                     info.state = PlaybackState::Stopped;
@@ -2303,9 +2236,8 @@ impl PlaybackManager {
                                     Ok(bytes) => {
                                         let bytes_vec = bytes.to_vec();
                                         let track_gain = if normalization.enabled {
-                                            let skip_heavy_analysis = track.source
-                                                == crate::models::Source::Plex
-                                                && !normalization.strict_mode;
+                                            let skip_heavy_analysis =
+                                                track.source == crate::models::Source::Plex;
                                             if skip_heavy_analysis {
                                                 Some(1.0)
                                             } else {

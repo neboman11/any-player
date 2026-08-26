@@ -77,13 +77,9 @@ export class TauriAPI {
     );
   }
 
-  async setAudioNormalizationSettings(
-    enabled: boolean,
-    strictMode: boolean,
-  ): Promise<void> {
+  async setAudioNormalizationSettings(enabled: boolean): Promise<void> {
     return invoke<void>("set_audio_normalization_settings", {
       enabled,
-      strictMode,
     });
   }
 
