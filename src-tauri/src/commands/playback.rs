@@ -98,24 +98,21 @@ pub async fn get_playback_status(state: State<'_, AppState>) -> Result<PlaybackS
 #[tauri::command]
 pub async fn play(state: State<'_, AppState>) -> Result<(), String> {
     let playback = { state.playback.lock().await };
-    playback.play().await;
-    Ok(())
+    playback.play().await
 }
 
 /// Pause playback
 #[tauri::command]
 pub async fn pause(state: State<'_, AppState>) -> Result<(), String> {
     let playback = { state.playback.lock().await };
-    playback.pause().await;
-    Ok(())
+    playback.pause().await
 }
 
 /// Toggle play/pause
 #[tauri::command]
 pub async fn toggle_play_pause(state: State<'_, AppState>) -> Result<(), String> {
     let playback = { state.playback.lock().await };
-    playback.toggle_play_pause().await;
-    Ok(())
+    playback.toggle_play_pause().await
 }
 
 /// Play next track
@@ -172,16 +169,14 @@ pub async fn skip_to_queue_index(state: State<'_, AppState>, index: usize) -> Re
 #[tauri::command]
 pub async fn seek(state: State<'_, AppState>, position: u64) -> Result<(), String> {
     let playback = { state.playback.lock().await };
-    playback.seek(position).await;
-    Ok(())
+    playback.seek(position).await
 }
 
 /// Set volume (0-100)
 #[tauri::command]
 pub async fn set_volume(state: State<'_, AppState>, volume: u32) -> Result<(), String> {
     let playback = { state.playback.lock().await };
-    playback.set_volume(volume).await;
-    Ok(())
+    playback.set_volume(volume).await
 }
 
 /// Get current audio normalization settings

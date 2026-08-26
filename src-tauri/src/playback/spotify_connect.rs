@@ -177,39 +177,78 @@ impl SpotifyConnectBridge {
         Ok(())
     }
 
+    /// Id of the currently active Connect device, as a clear `NoDevice` error
+    /// (rather than the ambiguous API error `device_id: None` would produce)
+    /// when none is active. Unlike `resolve_device_id`, this never
+    /// auto-launches the local app - these are control actions on playback
+    /// that's assumed to already be under way, not playback-start actions.
+    async fn require_active_device_id(&self) -> Result<String, SpotifyConnectError> {
+        self.active_device_id().await?.ok_or_else(|| {
+            SpotifyConnectError::NoDevice(
+                "No active Spotify Connect device. Press play to start one.".to_string(),
+            )
+        })
+    }
+
     pub async fn resume(&self) -> Result<(), SpotifyConnectError> {
+        let device_id = self.require_active_device_id().await?;
         let client = self.client().await?;
-        spotify_connect_resume(&client, None)
+        spotify_connect_resume(&client, Some(device_id.as_str()))
             .await
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
 
     pub async fn pause(&self) -> Result<(), SpotifyConnectError> {
+        let device_id = self.require_active_device_id().await?;
         let client = self.client().await?;
-        spotify_connect_pause(&client, None)
+        spotify_connect_pause(&client, Some(device_id.as_str()))
             .await
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
 
     pub async fn seek(&self, position_ms: i64) -> Result<(), SpotifyConnectError> {
+        let device_id = self.require_active_device_id().await?;
         let client = self.client().await?;
-        spotify_connect_seek(&client, position_ms, None)
+        spotify_connect_seek(&client, position_ms, Some(device_id.as_str()))
             .await
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
 
     pub async fn set_volume(&self, volume_percent: u8) -> Result<(), SpotifyConnectError> {
+        let device_id = self.require_active_device_id().await?;
         let client = self.client().await?;
-        spotify_connect_set_volume(&client, volume_percent, None)
+        spotify_connect_set_volume(&client, volume_percent, Some(device_id.as_str()))
             .await
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
 
-    /// Poll the account's current Connect playback state. Returns `None` both
-    /// on failure and when nothing is playing - callers can't distinguish the
-    /// two from this alone, but both mean there's no state to report.
-    pub async fn playback_state(&self) -> Option<rspotify::model::CurrentPlaybackContext> {
-        let client = self.client().await.ok()?;
-        spotify_connect_playback_state(&client).await.ok().flatten()
+    /// The Spotify track id of whatever is currently active (playing or
+    /// paused) on the account's Connect device, if any and if it's a track
+    /// (not a podcast episode).
+    ///
+    /// Used to check whether a paused Connect session actually belongs to
+    /// this app's `current_track` before `resume()`-ing it - `resume` has no
+    /// notion of "the track we expect", so blindly resuming can continue
+    /// playback of an unrelated track left paused by another client (e.g.
+    /// the official Spotify app) on the same account.
+    pub async fn active_track_id(&self) -> Result<Option<String>, SpotifyConnectError> {
+        let context = self.playback_state().await?;
+        Ok(context.and_then(|context| match context.item {
+            Some(rspotify::model::PlayableItem::Track(track)) => track.id.map(|id| id.to_string()),
+            _ => None,
+        }))
+    }
+
+    /// Poll the account's current Connect playback state. Returns `Ok(None)`
+    /// when nothing is playing, and `Err` on an actual failure (auth,
+    /// network, API error) so callers can tell the two apart, unlike the
+    /// two-birds-one-`None` shape this used to return.
+    pub async fn playback_state(
+        &self,
+    ) -> Result<Option<rspotify::model::CurrentPlaybackContext>, SpotifyConnectError> {
+        let client = self.client().await?;
+        spotify_connect_playback_state(&client)
+            .await
+            .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
 }

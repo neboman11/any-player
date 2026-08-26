@@ -464,60 +464,6 @@ impl SpotifyProvider {
             .clone()
             .ok_or_else(|| ProviderError("Not authenticated".to_string()))
     }
-
-    /// List the user's available Spotify Connect devices.
-    pub async fn connect_devices(&self) -> Result<Vec<rspotify::model::Device>, ProviderError> {
-        spotify_connect_devices(&self.connect_client()?).await
-    }
-
-    /// The id of the currently active Connect device, if any.
-    pub async fn connect_active_device_id(&self) -> Result<Option<String>, ProviderError> {
-        spotify_connect_active_device_id(&self.connect_client()?).await
-    }
-
-    /// Get the account's current Connect playback state (device, position,
-    /// track, shuffle/repeat, etc). Returns `None` when nothing is playing.
-    pub async fn connect_playback_state(
-        &self,
-    ) -> Result<Option<rspotify::model::CurrentPlaybackContext>, ProviderError> {
-        spotify_connect_playback_state(&self.connect_client()?).await
-    }
-
-    /// Start playback of one or more `spotify:track:...` ids on `device_id`,
-    /// optionally seeking to `position_ms` as part of the same request.
-    pub async fn connect_start_playback(
-        &self,
-        track_ids: &[String],
-        device_id: Option<&str>,
-        position_ms: Option<i64>,
-    ) -> Result<(), ProviderError> {
-        spotify_connect_start_playback(&self.connect_client()?, track_ids, device_id, position_ms)
-            .await
-    }
-
-    pub async fn connect_resume(&self, device_id: Option<&str>) -> Result<(), ProviderError> {
-        spotify_connect_resume(&self.connect_client()?, device_id).await
-    }
-
-    pub async fn connect_pause(&self, device_id: Option<&str>) -> Result<(), ProviderError> {
-        spotify_connect_pause(&self.connect_client()?, device_id).await
-    }
-
-    pub async fn connect_seek(
-        &self,
-        position_ms: i64,
-        device_id: Option<&str>,
-    ) -> Result<(), ProviderError> {
-        spotify_connect_seek(&self.connect_client()?, position_ms, device_id).await
-    }
-
-    pub async fn connect_set_volume(
-        &self,
-        volume_percent: u8,
-        device_id: Option<&str>,
-    ) -> Result<(), ProviderError> {
-        spotify_connect_set_volume(&self.connect_client()?, volume_percent, device_id).await
-    }
 }
 
 /// List the user's available Spotify Connect devices using an already-cloned

@@ -7,6 +7,7 @@ import {
   useContext,
 } from "react";
 import type { ReactNode } from "react";
+import toast from "react-hot-toast";
 import { tauriAPI } from "../api";
 import { backendSocket } from "../websocket";
 import type { PlaybackStatus, RepeatMode, Track } from "../types";
@@ -169,6 +170,8 @@ function usePlaybackState() {
       await updateStatus();
     } catch (error) {
       console.error("Error toggling play/pause:", error);
+      toast.error(typeof error === "string" ? error : "Failed to play/pause");
+      await updateStatus();
     } finally {
       setIsLoading(false);
     }
@@ -241,6 +244,7 @@ function usePlaybackState() {
       setVolume(value);
     } catch (error) {
       console.error("Error setting volume:", error);
+      toast.error(typeof error === "string" ? error : "Failed to set volume");
     }
   }, []);
 
@@ -250,8 +254,10 @@ function usePlaybackState() {
       setPosition(positionMs);
     } catch (error) {
       console.error("Error seeking:", error);
+      toast.error(typeof error === "string" ? error : "Failed to seek");
+      await updateStatus();
     }
-  }, []);
+  }, [updateStatus]);
 
   const playTrack = useCallback(
     async (trackId: string, source: TrackSource) => {
