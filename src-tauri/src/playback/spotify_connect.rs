@@ -11,7 +11,7 @@ use crate::models::Source;
 use crate::providers::spotify::{
     spotify_connect_active_device_id, spotify_connect_pause, spotify_connect_playback_state,
     spotify_connect_resume, spotify_connect_seek, spotify_connect_set_volume,
-    spotify_connect_start_playback, SpotifyProvider,
+    spotify_connect_start_device_id, spotify_connect_start_playback, SpotifyProvider,
 };
 use crate::providers::{ProviderHandle, ProviderRegistry};
 use rspotify::AuthCodePkceSpotify;
@@ -112,10 +112,17 @@ impl SpotifyConnectBridge {
             .map_err(|e| SpotifyConnectError::Api(e.to_string()))
     }
 
-    /// Resolve an active Connect device id, auto-launching the local Spotify
-    /// app and retrying if none is active yet.
+    async fn start_device_id(&self) -> Result<Option<String>, SpotifyConnectError> {
+        let client = self.client().await?;
+        spotify_connect_start_device_id(&client)
+            .await
+            .map_err(|e| SpotifyConnectError::Api(e.to_string()))
+    }
+
+    /// Resolve a Connect device that can receive a start-playback request,
+    /// auto-launching the local Spotify app and retrying if none is available.
     async fn resolve_device_id(&self) -> Result<String, SpotifyConnectError> {
-        if let Some(device_id) = self.active_device_id().await? {
+        if let Some(device_id) = self.start_device_id().await? {
             return Ok(device_id);
         }
 
@@ -127,7 +134,7 @@ impl SpotifyConnectBridge {
 
         for _ in 0..DEVICE_WAIT_ATTEMPTS {
             sleep(Duration::from_millis(DEVICE_WAIT_INTERVAL_MS)).await;
-            if let Some(device_id) = self.active_device_id().await? {
+            if let Some(device_id) = self.start_device_id().await? {
                 return Ok(device_id);
             }
         }

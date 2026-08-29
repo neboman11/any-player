@@ -2,16 +2,16 @@
 use crate::models::{PlaybackInfo, PlaybackState, RepeatMode, Track};
 use crate::providers::ProviderRegistry;
 use any_player_core::audio_normalization::{
-    AudioNormalizationSettings, AudioNormalizationSource, INTERNAL_NORMALIZATION_TARGET,
-    effective_output_volume,
+    effective_output_volume, AudioNormalizationSettings, AudioNormalizationSource,
+    INTERNAL_NORMALIZATION_TARGET,
 };
 use rodio::{Decoder, OutputStream, Sink, Source};
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{mpsc, Mutex};
 
 pub mod spotify_connect;
 pub use spotify_connect::SpotifyConnectBridge;
@@ -836,6 +836,28 @@ struct PreloadedHttpTrack {
 /// old in-webview SDK, which reported state changes as they happened.
 const SPOTIFY_CONNECT_POLL_INTERVAL_MS: u64 = 2_000;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlaybackVolumeTarget {
+    HttpPlayer,
+    SpotifyConnect,
+}
+
+fn playback_volume_target(source: Option<crate::models::Source>) -> PlaybackVolumeTarget {
+    match source {
+        Some(crate::models::Source::Spotify) => PlaybackVolumeTarget::SpotifyConnect,
+        _ => PlaybackVolumeTarget::HttpPlayer,
+    }
+}
+
+fn spotify_poll_track_matches(
+    current_track: Option<&Track>,
+    playback_track_id: Option<&str>,
+) -> bool {
+    current_track
+        .filter(|track| track.source == crate::models::Source::Spotify)
+        .is_some_and(|track| Some(track.id.as_str()) == playback_track_id)
+}
+
 /// Periodically refreshes `info` from the Spotify Connect API while the
 /// current track is a Spotify track, so `get_info()`/the `playback-status`
 /// broadcast keep reflecting playback that may be happening on any Connect
@@ -899,6 +921,21 @@ fn spawn_spotify_connect_poller(
                 continue;
             }
 
+            let playback_track_id = match &context.item {
+                Some(rspotify::model::PlayableItem::Track(track)) => {
+                    track.id.as_ref().map(|id| id.to_string())
+                }
+                _ => None,
+            };
+            if !spotify_poll_track_matches(
+                info.current_track.as_ref(),
+                playback_track_id.as_deref(),
+            ) {
+                was_playing = false;
+                pending_completion = false;
+                continue;
+            }
+
             info.position_ms = context
                 .progress
                 .map(|position| position.num_milliseconds().max(0) as u64)
@@ -946,11 +983,57 @@ fn spawn_spotify_connect_poller(
     });
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{playback_volume_target, spotify_poll_track_matches, PlaybackVolumeTarget};
+    use crate::models::{Source, Track};
+
+    fn spotify_track(id: &str) -> Track {
+        Track {
+            id: id.to_string(),
+            title: "Test track".to_string(),
+            artist: "Test artist".to_string(),
+            album: "Test album".to_string(),
+            duration_ms: 60_000,
+            image_url: None,
+            source: Source::Spotify,
+            url: Some(format!("spotify:track:{id}")),
+            bitrate_kbps: None,
+            sample_rate_hz: None,
+            auth_headers: None,
+            enriched: true,
+        }
+    }
+
+    #[test]
+    fn spotify_poller_ignores_playback_for_a_different_track() {
+        let current_track = spotify_track("current-track");
+
+        assert!(!spotify_poll_track_matches(
+            Some(&current_track),
+            Some("other-track"),
+        ));
+    }
+
+    #[test]
+    fn normalized_spotify_volume_targets_connect() {
+        assert_eq!(
+            playback_volume_target(Some(Source::Spotify)),
+            PlaybackVolumeTarget::SpotifyConnect,
+        );
+        assert_eq!(
+            playback_volume_target(Some(Source::Jellyfin)),
+            PlaybackVolumeTarget::HttpPlayer,
+        );
+    }
+}
+
 pub struct PlaybackManager {
     queue: Arc<Mutex<PlaybackQueue>>,
     info: Arc<Mutex<PlaybackInfo>>,
     audio_player: Arc<AudioPlayer>,
     spotify_connect: Arc<SpotifyConnectBridge>,
+    spotify_command: Arc<Mutex<()>>,
     providers: Arc<Mutex<ProviderRegistry>>,
     track_complete_tx: mpsc::UnboundedSender<()>,
     track_complete_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<()>>>>,
@@ -989,6 +1072,7 @@ impl PlaybackManager {
             info,
             audio_player: Arc::new(AudioPlayer::new()),
             spotify_connect,
+            spotify_command: Arc::new(Mutex::new(())),
             providers,
             track_complete_tx,
             track_complete_rx: Arc::new(Mutex::new(Some(track_complete_rx))),
@@ -1149,8 +1233,20 @@ impl PlaybackManager {
         let effective_volume = self
             .effective_output_volume(base_volume, current_source)
             .await;
+        let result = match playback_volume_target(current_source) {
+            PlaybackVolumeTarget::SpotifyConnect => {
+                let _spotify_command = self.spotify_command.lock().await;
+                self.spotify_connect
+                    .set_volume(effective_volume.min(100) as u8)
+                    .await
+                    .map_err(|error| error.to_string())
+            }
+            PlaybackVolumeTarget::HttpPlayer => {
+                self.audio_player.set_volume(effective_volume).await
+            }
+        };
 
-        if let Err(error) = self.audio_player.set_volume(effective_volume).await {
+        if let Err(error) = result {
             tracing::warn!(
                 "Failed to apply audio normalization settings to active playback: {}",
                 error
@@ -1175,8 +1271,18 @@ impl PlaybackManager {
     }
 
     /// Set current track and start playing
-    pub async fn play_track(&self, track: Track) {
+    pub async fn play_track(&self, track: Track) -> Result<(), String> {
         tracing::info!("play_track called for: {} ({})", track.title, track.id);
+
+        let is_spotify_track = track
+            .url
+            .as_deref()
+            .is_some_and(|url| url.starts_with("spotify:track:"));
+        let _spotify_command = if is_spotify_track {
+            Some(self.spotify_command.lock().await)
+        } else {
+            None
+        };
 
         // Abort any existing monitoring task before starting a new one
         {
@@ -1233,7 +1339,7 @@ impl PlaybackManager {
         let mut info = self.info.lock().await;
         let previous_source = info.current_track.as_ref().map(|track| track.source);
         info.current_track = Some(track.clone());
-        info.state = PlaybackState::Playing;
+        info.state = PlaybackState::Stopped;
         info.position_ms = 0;
         drop(info); // Release the lock
 
@@ -1260,20 +1366,17 @@ impl PlaybackManager {
                     );
                 }
 
-                let track_id = track_id.to_string();
-                let spotify_connect = self.spotify_connect.clone();
                 let volume = self.spotify_playback_volume().await;
-                let info_arc = self.info.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(error) = spotify_connect
-                        .play_uri(&track_id, None, Some(volume))
-                        .await
-                    {
+                self.spotify_connect
+                    .play_uri(track_id, None, Some(volume))
+                    .await
+                    .map_err(|error| {
                         tracing::warn!("Failed to start Spotify Connect playback: {}", error);
-                        let mut info = info_arc.lock().await;
-                        info.state = PlaybackState::Stopped;
-                    }
-                });
+                        error.to_string()
+                    })?;
+                self.info.lock().await.state = PlaybackState::Playing;
+                let _ = self.save_state().await;
+                return Ok(());
             } else {
                 // Stop any active Spotify Connect playback left over from a
                 // previous Spotify track so it doesn't keep playing alongside
@@ -1416,6 +1519,8 @@ impl PlaybackManager {
         } else {
             tracing::warn!("No playback URL available for track: {}", track.title);
         }
+
+        Ok(())
     }
 
     /// Add a track to the queue
@@ -1457,6 +1562,7 @@ impl PlaybackManager {
         };
 
         if source == Some(crate::models::Source::Spotify) {
+            let _spotify_command = self.spotify_command.lock().await;
             let (current_track, position_ms) = {
                 let info = self.info.lock().await;
                 (info.current_track.clone(), info.position_ms)
@@ -1533,8 +1639,7 @@ impl PlaybackManager {
                         track.artist,
                         track.title
                     );
-                    self.play_track(track).await;
-                    Ok(())
+                    self.play_track(track).await
                 } else {
                     let message = "No active playback and no current track to play".to_string();
                     tracing::warn!("{}", message);
@@ -1551,16 +1656,17 @@ impl PlaybackManager {
             info.current_track.as_ref().map(|track| track.source)
         };
 
-        let mut info = self.info.lock().await;
-        info.state = PlaybackState::Paused;
-        drop(info);
-
         if source == Some(crate::models::Source::Spotify) {
-            return self.spotify_connect.pause().await.map_err(|error| {
+            let _spotify_command = self.spotify_command.lock().await;
+            self.spotify_connect.pause().await.map_err(|error| {
                 tracing::warn!("Failed to pause Spotify Connect playback: {}", error);
                 error.to_string()
-            });
+            })?;
+            self.info.lock().await.state = PlaybackState::Paused;
+            return Ok(());
         }
+
+        self.info.lock().await.state = PlaybackState::Paused;
 
         // Pause audio playback
         self.audio_player.pause().await.map_err(|e| {
@@ -1632,7 +1738,9 @@ impl PlaybackManager {
         if let Some(track) = track_opt {
             let track_clone = track.clone();
             drop(queue); // Release the queue lock before calling play_track
-            self.play_track(track_clone.clone()).await;
+            if let Err(error) = self.play_track(track_clone.clone()).await {
+                tracing::warn!("Failed to play queued track: {}", error);
+            }
             Some(track_clone)
         } else {
             None
@@ -1653,7 +1761,9 @@ impl PlaybackManager {
         if let Some(track) = track_opt {
             let track_clone = track.clone();
             drop(queue); // Release the queue lock before calling play_track
-            self.play_track(track_clone.clone()).await;
+            if let Err(error) = self.play_track(track_clone.clone()).await {
+                tracing::warn!("Failed to play queued track: {}", error);
+            }
             Some(track_clone)
         } else {
             None
@@ -1675,7 +1785,9 @@ impl PlaybackManager {
         if let Some(track) = track_opt {
             let track_clone = track.clone();
             drop(queue); // Release the queue lock before calling play_track
-            self.play_track(track_clone.clone()).await;
+            if let Err(error) = self.play_track(track_clone.clone()).await {
+                tracing::warn!("Failed to play queued track: {}", error);
+            }
             Some(track_clone)
         } else {
             None
@@ -1690,6 +1802,7 @@ impl PlaybackManager {
         };
 
         if source == Some(crate::models::Source::Spotify) {
+            let _spotify_command = self.spotify_command.lock().await;
             // Only commit the new position once the Connect device actually
             // confirms it, rather than reporting it optimistically - a failed
             // seek (e.g. no active device) shouldn't make the UI claim a
@@ -1720,7 +1833,8 @@ impl PlaybackManager {
         let source = info.current_track.as_ref().map(|track| track.source);
         drop(info);
 
-        if source == Some(crate::models::Source::Spotify) {
+        if playback_volume_target(source) == PlaybackVolumeTarget::SpotifyConnect {
+            let _spotify_command = self.spotify_command.lock().await;
             let effective_volume = self.spotify_playback_volume().await;
             let result = self
                 .spotify_connect

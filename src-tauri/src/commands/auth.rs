@@ -67,23 +67,6 @@ pub async fn check_spotify_premium(state: State<'_, AppState>) -> Result<bool, S
         .ok_or_else(|| "Spotify not authenticated".to_string())
 }
 
-/// Initialize Spotify playback warm-up state from an access token.
-///
-/// Kept for compatibility with existing frontend flows and startup restore.
-#[tauri::command]
-pub async fn initialize_spotify_session(
-    state: State<'_, AppState>,
-    access_token: String,
-) -> Result<(), String> {
-    let playback = state.playback.lock().await;
-    playback.initialize_spotify_session(&access_token).await?;
-    drop(playback);
-
-    crate::websocket::emit_spotify_status(&state).await;
-
-    Ok(())
-}
-
 /// Initialize Spotify warm-up state using the stored provider access token.
 /// This convenience command lets the frontend ask the backend to initialize
 /// playback warm-up state using the provider-managed OAuth token, avoiding
@@ -199,40 +182,11 @@ pub async fn disconnect_spotify(state: State<'_, AppState>) -> Result<(), String
         .map_err(|e| format!("Failed to disconnect Spotify: {}", e))?;
     drop(providers);
 
+    state.playback.lock().await.close_spotify_session().await?;
+
     crate::websocket::emit_spotify_status(&state).await;
 
     Ok(())
-}
-
-/// Restore Spotify session from saved tokens
-#[tauri::command]
-pub async fn restore_spotify_session(state: State<'_, AppState>) -> Result<bool, String> {
-    let mut providers = state.providers.lock().await;
-
-    let restored = providers
-        .restore_session(Source::Spotify)
-        .await
-        .map_err(|e| format!("Failed to restore Spotify session: {}", e))?;
-    drop(providers);
-
-    crate::websocket::emit_spotify_status(&state).await;
-
-    Ok(restored)
-}
-
-/// Clear saved Spotify session tokens and in-memory Spotify session state
-#[tauri::command]
-pub async fn clear_spotify_session(state: State<'_, AppState>) -> Result<(), String> {
-    use crate::config::Config;
-
-    let mut providers = state.providers.lock().await;
-    providers
-        .disconnect(Source::Spotify)
-        .await
-        .map_err(|e| format!("Failed to disconnect Spotify during session clear: {}", e))?;
-    drop(providers);
-
-    Config::clear_tokens().map_err(|e| format!("Failed to clear tokens: {}", e))
 }
 
 /// Jellyfin authentication and connection

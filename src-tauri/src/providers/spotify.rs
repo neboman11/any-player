@@ -484,8 +484,34 @@ pub async fn spotify_connect_active_device_id(
     let devices = spotify_connect_devices(client).await?;
     Ok(devices
         .into_iter()
-        .find(|device| device.is_active)
+        .find(|device| device.is_active && !device.is_restricted && device.id.is_some())
         .and_then(|device| device.id))
+}
+
+/// Select a device that can accept a start-playback request. An active device
+/// is preferred, but an available inactive device is still valid: Spotify's
+/// start-playback endpoint can target it by id.
+pub fn select_spotify_connect_start_device_id(
+    devices: &[rspotify::model::Device],
+) -> Option<String> {
+    devices
+        .iter()
+        .filter(|device| !device.is_restricted && device.id.is_some())
+        .find(|device| device.is_active)
+        .or_else(|| {
+            devices
+                .iter()
+                .find(|device| !device.is_restricted && device.id.is_some())
+        })
+        .and_then(|device| device.id.clone())
+}
+
+/// Id of a Connect device that can accept a start-playback request, if any.
+pub async fn spotify_connect_start_device_id(
+    client: &AuthCodePkceSpotify,
+) -> Result<Option<String>, ProviderError> {
+    let devices = spotify_connect_devices(client).await?;
+    Ok(select_spotify_connect_start_device_id(&devices))
 }
 
 /// Get the account's current Connect playback state (device, position,
@@ -963,5 +989,50 @@ impl MusicProvider for SpotifyProvider {
         self.is_authenticated = false;
         self.access_token = None;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_spotify_connect_start_device_id;
+    use rspotify::model::Device;
+
+    fn device(id: &str, is_active: bool, is_restricted: bool) -> Device {
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "is_active": is_active,
+            "is_private_session": false,
+            "is_restricted": is_restricted,
+            "name": "Test device",
+            "type": "Computer",
+            "volume_percent": 50,
+        }))
+        .expect("test device should deserialize")
+    }
+
+    #[test]
+    fn start_device_selection_uses_an_available_unrestricted_device() {
+        let devices = vec![
+            device("restricted", false, true),
+            device("available", false, false),
+        ];
+
+        assert_eq!(
+            select_spotify_connect_start_device_id(&devices),
+            Some("available".to_string())
+        );
+    }
+
+    #[test]
+    fn start_device_selection_prefers_an_active_device() {
+        let devices = vec![
+            device("available", false, false),
+            device("active", true, false),
+        ];
+
+        assert_eq!(
+            select_spotify_connect_start_device_id(&devices),
+            Some("active".to_string())
+        );
     }
 }
