@@ -983,51 +983,6 @@ fn spawn_spotify_connect_poller(
     });
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{playback_volume_target, spotify_poll_track_matches, PlaybackVolumeTarget};
-    use crate::models::{Source, Track};
-
-    fn spotify_track(id: &str) -> Track {
-        Track {
-            id: id.to_string(),
-            title: "Test track".to_string(),
-            artist: "Test artist".to_string(),
-            album: "Test album".to_string(),
-            duration_ms: 60_000,
-            image_url: None,
-            source: Source::Spotify,
-            url: Some(format!("spotify:track:{id}")),
-            bitrate_kbps: None,
-            sample_rate_hz: None,
-            auth_headers: None,
-            enriched: true,
-        }
-    }
-
-    #[test]
-    fn spotify_poller_ignores_playback_for_a_different_track() {
-        let current_track = spotify_track("current-track");
-
-        assert!(!spotify_poll_track_matches(
-            Some(&current_track),
-            Some("other-track"),
-        ));
-    }
-
-    #[test]
-    fn normalized_spotify_volume_targets_connect() {
-        assert_eq!(
-            playback_volume_target(Some(Source::Spotify)),
-            PlaybackVolumeTarget::SpotifyConnect,
-        );
-        assert_eq!(
-            playback_volume_target(Some(Source::Jellyfin)),
-            PlaybackVolumeTarget::HttpPlayer,
-        );
-    }
-}
-
 pub struct PlaybackManager {
     queue: Arc<Mutex<PlaybackQueue>>,
     info: Arc<Mutex<PlaybackInfo>>,
@@ -2405,5 +2360,50 @@ impl PlaybackManager {
                 }
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{playback_volume_target, spotify_poll_track_matches, PlaybackVolumeTarget};
+    use crate::models::{Source, Track};
+
+    fn spotify_track(id: &str) -> Track {
+        Track {
+            id: id.to_string(),
+            title: "Test track".to_string(),
+            artist: "Test artist".to_string(),
+            album: "Test album".to_string(),
+            duration_ms: 60_000,
+            image_url: None,
+            source: Source::Spotify,
+            url: Some(format!("spotify:track:{id}")),
+            bitrate_kbps: None,
+            sample_rate_hz: None,
+            auth_headers: None,
+            enriched: true,
+        }
+    }
+
+    #[test]
+    fn spotify_poller_ignores_playback_for_a_different_track() {
+        let current_track = spotify_track("current-track");
+
+        assert!(!spotify_poll_track_matches(
+            Some(&current_track),
+            Some("other-track"),
+        ));
+    }
+
+    #[test]
+    fn normalized_spotify_volume_targets_connect() {
+        assert_eq!(
+            playback_volume_target(Some(Source::Spotify)),
+            PlaybackVolumeTarget::SpotifyConnect,
+        );
+        assert_eq!(
+            playback_volume_target(Some(Source::Jellyfin)),
+            PlaybackVolumeTarget::HttpPlayer,
+        );
     }
 }

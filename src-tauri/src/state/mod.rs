@@ -2,7 +2,7 @@
 use crate::models::{PlaybackState, RepeatMode, Track};
 use any_player_core::audio_normalization::INTERNAL_NORMALIZATION_TARGET;
 use serde::{
-    Deserialize, Deserializer, Serialize, Serializer, de::Error as DeError, ser::Error as SerError,
+    de::Error as DeError, ser::Error as SerError, Deserialize, Deserializer, Serialize, Serializer,
 };
 use serde_json::Value;
 use std::path::PathBuf;

@@ -107,9 +107,10 @@ pub async fn enrich_queued_tracks_eager(
                     drop(provider_locked);
                     if let Ok(track) = &result {
                         if source == crate::models::Source::Spotify {
-                            if let Err(e) =
-                                crate::cache::write_track_metadata_cache("spotify", &track_id, track)
-                                    .await
+                            if let Err(e) = crate::cache::write_track_metadata_cache(
+                                "spotify", &track_id, track,
+                            )
+                            .await
                             {
                                 tracing::warn!("Failed to write track metadata cache: {e}");
                             }
