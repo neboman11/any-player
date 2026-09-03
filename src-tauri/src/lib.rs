@@ -110,7 +110,6 @@ pub fn run() {
             commands::authenticate_spotify,
             commands::is_spotify_authenticated,
             commands::check_spotify_premium,
-            commands::initialize_spotify_session,
             commands::initialize_spotify_session_from_provider,
             commands::is_spotify_session_ready,
             commands::refresh_spotify_token,
@@ -118,8 +117,6 @@ pub fn run() {
             commands::get_spotify_playlist,
             commands::check_oauth_code,
             commands::disconnect_spotify,
-            commands::restore_spotify_session,
-            commands::clear_spotify_session,
             // Jellyfin commands
             commands::authenticate_jellyfin,
             commands::is_jellyfin_authenticated,

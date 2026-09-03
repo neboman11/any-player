@@ -77,13 +77,9 @@ export class TauriAPI {
     );
   }
 
-  async setAudioNormalizationSettings(
-    enabled: boolean,
-    strictMode: boolean,
-  ): Promise<void> {
+  async setAudioNormalizationSettings(enabled: boolean): Promise<void> {
     return invoke<void>("set_audio_normalization_settings", {
       enabled,
-      strictMode,
     });
   }
 
@@ -203,10 +199,6 @@ export class TauriAPI {
     return invoke<boolean>("check_spotify_premium");
   }
 
-  async initializeSpotifySession(accessToken: string): Promise<void> {
-    return invoke<void>("initialize_spotify_session", { accessToken });
-  }
-
   async initializeSpotifySessionFromProvider(): Promise<void> {
     return invoke<void>("initialize_spotify_session_from_provider");
   }
@@ -233,14 +225,6 @@ export class TauriAPI {
 
   async disconnectSpotify(): Promise<void> {
     return invoke<void>("disconnect_spotify");
-  }
-
-  async restoreSpotifySession(): Promise<boolean> {
-    return invoke<boolean>("restore_spotify_session");
-  }
-
-  async clearSpotifySession(): Promise<void> {
-    return invoke<void>("clear_spotify_session");
   }
 
   // Jellyfin commands

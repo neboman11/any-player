@@ -17,7 +17,7 @@ import { buildDuplicateGroups, buildDistinctTracks } from "../utils/duplicates";
 import { filterTracks } from "../utils/trackFilters";
 import type { CustomPlaylist, PlaylistTrack, Playlist, Track } from "../types";
 import type { ServiceSource } from "../providerCatalog";
-import "./CustomPlaylistEditor.css";
+import "./PlaylistEditor.css";
 
 const CACHE_VERSION = 1;
 

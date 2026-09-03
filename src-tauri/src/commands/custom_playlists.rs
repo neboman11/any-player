@@ -789,7 +789,7 @@ pub(super) async fn play_custom_playlist_internal(
 
         playback
             .play_track(tracks_with_urls[first_track_index].clone())
-            .await;
+            .await?;
 
         let first_idx = first_track_index;
         drop(playback);
@@ -801,7 +801,7 @@ pub(super) async fn play_custom_playlist_internal(
                 .await;
         });
     } else {
-        playback.play_track(tracks_with_urls[0].clone()).await;
+        playback.play_track(tracks_with_urls[0].clone()).await?;
         drop(playback);
 
         let playback_arc = state.playback.clone();
@@ -870,7 +870,9 @@ pub async fn play_custom_playlist_from_track(
         start_index
     };
 
-    playback.play_track(queue_tracks[play_index].clone()).await;
+    playback
+        .play_track(queue_tracks[play_index].clone())
+        .await?;
     drop(playback);
 
     let playback_arc = state.playback.clone();

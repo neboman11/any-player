@@ -6,10 +6,10 @@ use tokio::sync::Mutex;
 
 /// Delay between API calls when eagerly enriching queued tracks (in milliseconds)
 /// This prevents overwhelming external APIs with rapid consecutive requests
-const TRACK_ENRICHMENT_DELAY_MS: u64 = 50;
+const TRACK_ENRICHMENT_DELAY_MS: u64 = 150;
 
-/// Number of nearest upcoming tracks to enrich immediately without throttle delay.
-/// This helps ensure metadata is ready before those songs begin playback.
+/// Number of nearest upcoming tracks to enrich immediately without the throttle
+/// delay, so metadata is ready before those songs begin playback.
 const PRIORITY_PRELOAD_COUNT: usize = 3;
 
 /// Eagerly enrich queued tracks with full details (URLs, auth headers, etc.)
@@ -81,8 +81,44 @@ pub async fn enrich_queued_tracks_eager(
         };
 
         if let Some(provider) = provider_handle {
-            let provider_locked = provider.lock().await;
-            let enriched_track_result = provider_locked.get_track(&track_id).await;
+            // Mirrors `ProviderRegistry::get_track`'s disk cache (scoped to
+            // Spotify only - Jellyfin/Plex URLs embed session-scoped auth
+            // tokens that shouldn't be persisted). Checked/written directly
+            // here rather than routed through the registry, so this doesn't
+            // hold the registry-wide provider lock for the duration of the
+            // network fetch below.
+            let cached = if source == crate::models::Source::Spotify {
+                match crate::cache::read_track_metadata_cache("spotify", &track_id).await {
+                    Ok(cached) => cached,
+                    Err(e) => {
+                        tracing::warn!("Failed to read track metadata cache: {e}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            let enriched_track_result = match cached {
+                Some(track) => Ok(track),
+                None => {
+                    let provider_locked = provider.lock().await;
+                    let result = provider_locked.get_track(&track_id).await;
+                    drop(provider_locked);
+                    if let Ok(track) = &result {
+                        if source == crate::models::Source::Spotify {
+                            if let Err(e) = crate::cache::write_track_metadata_cache(
+                                "spotify", &track_id, track,
+                            )
+                            .await
+                            {
+                                tracing::warn!("Failed to write track metadata cache: {e}");
+                            }
+                        }
+                    }
+                    result
+                }
+            };
 
             if let Ok(mut enriched_track) = enriched_track_result {
                 // Ensure enriched flag is set (was already set during collection)
@@ -106,7 +142,9 @@ pub async fn enrich_queued_tracks_eager(
             // Track is already marked as enriched, no need to update
         }
 
-        // Delay only for non-priority tracks to keep immediate upcoming songs enriched faster.
+        // Delay only for non-priority tracks to keep immediate upcoming songs
+        // enriched faster. The on-disk track cache means repeat plays of the
+        // same queue skip the network call (and this delay) entirely.
         if position + 1 > PRIORITY_PRELOAD_COUNT {
             tokio::time::sleep(tokio::time::Duration::from_millis(
                 TRACK_ENRICHMENT_DELAY_MS,
@@ -133,52 +171,41 @@ pub async fn enrich_queued_tracks_eager(
 
 /// Helper function to warm up Spotify playback state when available.
 /// Consolidates shared post-auth logic used by multiple command entrypoints.
+///
+/// Spotify's API no longer exposes account tier (`SpotifyProvider::is_premium`
+/// always reports `true`), so this always warms up the session rather than
+/// branching on a premium check that can no longer come back `false`. Actual
+/// premium-required failures now only surface reactively, when Spotify
+/// Connect playback itself rejects a free-tier account.
 pub async fn initialize_premium_session_if_needed(state: &AppState) -> Result<(), String> {
     let providers = state.providers.lock().await;
 
-    match providers
-        .premium_status(crate::models::Source::Spotify)
+    let Some(access_token) = providers
+        .get_access_token(crate::models::Source::Spotify)
         .await
-    {
-        Some(true) => {
-            tracing::info!("User is Spotify Premium - warming Spotify playback state");
+    else {
+        tracing::error!("Could not retrieve Spotify access token for playback warm-up");
+        return Err("Failed to retrieve access token".to_string());
+    };
 
-            if let Some(access_token) = providers
-                .get_access_token(crate::models::Source::Spotify)
-                .await
-            {
-                tracing::info!(
-                    "Retrieved Spotify access token (len={})",
-                    access_token.len()
-                );
-                drop(providers);
+    tracing::info!(
+        "Retrieved Spotify access token (len={})",
+        access_token.len()
+    );
+    drop(providers);
 
-                let playback = state.playback.lock().await;
+    let playback = state.playback.lock().await;
 
-                tracing::info!("Initializing Spotify playback warm-up state with token");
-                playback.initialize_spotify_session(&access_token).await?;
+    tracing::info!("Initializing Spotify playback warm-up state with token");
+    playback.initialize_spotify_session(&access_token).await?;
 
-                if playback.is_spotify_session_ready().await {
-                    tracing::info!("✓ Spotify playback warm-up state initialized");
-                } else {
-                    tracing::warn!("Warm-up call completed but readiness check did not pass");
-                }
-
-                Ok(())
-            } else {
-                tracing::error!("Could not retrieve Spotify access token for playback warm-up");
-                Err("Failed to retrieve access token".to_string())
-            }
-        }
-        Some(false) => {
-            tracing::info!("User has Spotify Free Tier - full track playback not available");
-            Ok(())
-        }
-        None => {
-            tracing::error!("Could not determine Spotify subscription status");
-            Err("Failed to determine subscription status".to_string())
-        }
+    if playback.is_spotify_session_ready().await {
+        tracing::info!("✓ Spotify playback warm-up state initialized");
+    } else {
+        tracing::warn!("Warm-up call completed but readiness check did not pass");
     }
+
+    Ok(())
 }
 
 /// Maximum age of temporary audio files before cleanup (1 hour)

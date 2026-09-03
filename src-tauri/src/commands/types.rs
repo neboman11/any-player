@@ -16,7 +16,6 @@ pub struct PlaybackStatus {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AudioNormalizationStatus {
     pub enabled: bool,
-    pub strict_mode: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

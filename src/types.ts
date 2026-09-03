@@ -17,7 +17,6 @@ export interface PlaybackStatus {
 
 export interface AudioNormalizationSettings {
   enabled: boolean;
-  strict_mode: boolean;
 }
 
 export interface Track {
@@ -129,12 +128,6 @@ export interface SearchResult {
   source: "spotify" | "jellyfin" | "plex" | "custom";
 }
 
-export interface OAuthCallbackData {
-  type: "spotify-auth";
-  code?: string;
-  error?: string;
-}
-
 export interface SpotifyAuthStatus {
   authenticated: boolean;
   premium: boolean | null;
@@ -166,7 +159,7 @@ export type RepeatMode = "off" | "one" | "all";
 
 // ---------------------------------------------------------------------------
 // Dedup contract types
-// Mirrors Rust DuplicateOccurrence / DuplicateGroup / DeduplicateResult.
+// Mirrors Rust DuplicateOccurrence / DuplicateGroup.
 // Uses PlaylistTrack (not Track) to match the desktop custom-playlist surface.
 // ---------------------------------------------------------------------------
 
@@ -186,12 +179,4 @@ export interface DuplicateGroup {
   first_occurrence_index: number;
   /** All duplicate occurrences (does NOT include the first occurrence). */
   occurrences: DuplicateOccurrence[];
-}
-
-/** Result of deduplicating a PlaylistTrack array. */
-export interface DeduplicateResult {
-  /** Tracks to keep: first occurrence of each unique title+artist key, in original order. */
-  tracks: PlaylistTrack[];
-  /** Groups of duplicates found. Empty when no duplicates exist. */
-  duplicate_groups: DuplicateGroup[];
 }

@@ -367,28 +367,17 @@ async function applyProviderConfiguration(value: unknown): Promise<void> {
   }
 }
 
-async function applySettings(value: unknown): Promise<void> {
+export async function applySettings(value: unknown): Promise<void> {
   const enabled = readBoolean(
     value,
     "audio_normalization_enabled",
     "audioNormalizationEnabled",
   );
-  const strictMode = readBoolean(
-    value,
-    "audio_normalization_strict_mode",
-    "audioNormalizationStrictMode",
-    "strict_mode",
-  );
-
-  if (enabled === null && strictMode === null) {
+  if (enabled === null) {
     return;
   }
 
-  const current = await tauriAPI.getAudioNormalizationSettings();
-  await tauriAPI.setAudioNormalizationSettings(
-    enabled ?? current.enabled,
-    strictMode ?? current.strict_mode,
-  );
+  await tauriAPI.setAudioNormalizationSettings(enabled);
 }
 
 async function applyAppState(value: unknown): Promise<void> {

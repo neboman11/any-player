@@ -22,7 +22,7 @@ import type {
   PlaylistTrack,
   TauriSource,
 } from "../types";
-import "./CustomPlaylistEditor.css";
+import "./PlaylistEditor.css";
 
 interface UnionPlaylistEditorProps {
   playlist: CustomPlaylist;

@@ -115,9 +115,6 @@ pub struct PersistentPlaybackState {
     /// Normalization target level percent (0-100)
     #[serde(default = "default_audio_normalization_target")]
     pub audio_normalization_target: u32,
-    /// Whether strict adaptive normalization is enabled
-    #[serde(default = "default_audio_normalization_strict_mode")]
-    pub audio_normalization_strict_mode: bool,
     /// Shuffle order
     pub shuffle_order: Vec<usize>,
     /// Playback state (playing/paused/stopped)
@@ -132,10 +129,6 @@ const fn default_audio_normalization_target() -> u32 {
     INTERNAL_NORMALIZATION_TARGET
 }
 
-const fn default_audio_normalization_strict_mode() -> bool {
-    false
-}
-
 impl Default for PersistentPlaybackState {
     fn default() -> Self {
         Self {
@@ -148,7 +141,6 @@ impl Default for PersistentPlaybackState {
             volume: 50,
             audio_normalization_enabled: default_audio_normalization_enabled(),
             audio_normalization_target: default_audio_normalization_target(),
-            audio_normalization_strict_mode: default_audio_normalization_strict_mode(),
             shuffle_order: Vec::new(),
             state: PlaybackState::Stopped,
         }
@@ -303,9 +295,35 @@ mod tests {
             state.audio_normalization_target,
             INTERNAL_NORMALIZATION_TARGET
         );
-        assert!(!state.audio_normalization_strict_mode);
         assert_eq!(state.shuffle_order.len(), 0);
         assert_eq!(state.state, PlaybackState::Stopped);
+    }
+
+    #[test]
+    fn test_strict_normalization_is_not_persisted() {
+        let serialized =
+            serde_json::to_string(&PersistentPlaybackState::default()).expect("serialize state");
+
+        assert!(!serialized.contains("audio_normalization_strict_mode"));
+    }
+
+    #[test]
+    fn test_legacy_strict_normalization_field_is_ignored() {
+        let mut serialized =
+            serde_json::to_value(PersistentPlaybackState::default()).expect("serialize state");
+        serialized
+            .as_object_mut()
+            .expect("state should serialize as an object")
+            .insert(
+                "audio_normalization_strict_mode".to_string(),
+                serde_json::Value::Bool(true),
+            );
+
+        let restored: PersistentPlaybackState =
+            serde_json::from_value(serialized).expect("deserialize legacy state");
+        let reserialized = serde_json::to_string(&restored).expect("reserialize state");
+
+        assert!(!reserialized.contains("audio_normalization_strict_mode"));
     }
 
     #[test]
@@ -321,7 +339,6 @@ mod tests {
             volume: 75,
             audio_normalization_enabled: true,
             audio_normalization_target: 82,
-            audio_normalization_strict_mode: false,
             shuffle_order: vec![],
             state: PlaybackState::Playing,
         };
@@ -408,7 +425,6 @@ mod tests {
             volume: 80,
             audio_normalization_enabled: true,
             audio_normalization_target: 90,
-            audio_normalization_strict_mode: true,
             shuffle_order: vec![1, 0],
             state: PlaybackState::Paused,
         };
@@ -447,7 +463,6 @@ mod tests {
         assert_eq!(restored_state.volume, 80);
         assert!(restored_state.audio_normalization_enabled);
         assert_eq!(restored_state.audio_normalization_target, 90);
-        assert!(restored_state.audio_normalization_strict_mode);
         assert_eq!(restored_state.shuffle_order, vec![1, 0]);
         assert_eq!(restored_state.state, PlaybackState::Paused);
     }
@@ -468,7 +483,6 @@ mod tests {
             volume: 60,
             audio_normalization_enabled: true,
             audio_normalization_target: 78,
-            audio_normalization_strict_mode: true,
             shuffle_order: vec![],
             state: PlaybackState::Playing,
         };
@@ -487,7 +501,6 @@ mod tests {
         assert_eq!(loaded_state.volume, 60);
         assert!(loaded_state.audio_normalization_enabled);
         assert_eq!(loaded_state.audio_normalization_target, 78);
-        assert!(loaded_state.audio_normalization_strict_mode);
         assert_eq!(loaded_state.state, PlaybackState::Playing);
         assert!(loaded_state.current_track.is_some());
         assert_eq!(

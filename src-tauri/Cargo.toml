@@ -28,21 +28,8 @@ serde_json = "1"
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 
-# Spotify integration - rspotify for Web API, librespot for full song streaming
-rspotify = { version = "0.16", default-features = false, features = ["client-reqwest", "reqwest-rustls-tls"] }
-librespot-core = { version = "0.8", default-features = false, features = [
-    "rustls-tls-webpki-roots",
-] }
-librespot-playback = { version = "0.8.0", default-features = false, features = [
-    "rodio-backend",
-    "rustls-tls-webpki-roots",
-] }
-librespot-connect = { version = "0.8", default-features = false, features = [
-    "rustls-tls-webpki-roots",
-] }
-librespot-oauth = { version = "0.8", default-features = false, features = [
-    "rustls-tls-webpki-roots",
-] }
+# Spotify integration
+rspotify = { version = "0.16", default-features = false, features = ["client-reqwest", "reqwest-rustls-tls", "reqwest-middleware"] }
 
 # HTTP and async
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
@@ -73,20 +60,12 @@ url = "2.4"
 http = "1.0"
 rand = "0.8"
 tokio-tungstenite = "0.28"
-any_player_spotify_engine = { path = "../../any-player-shared-rust/crates/any_player_spotify_engine" }
 any_player_core = { path = "../../any-player-shared-rust/crates/any_player_core" }
 
 # Database
 rusqlite = { version = "0.32", features = ["bundled"] }
+reqwest-middleware = { version = "=0.4.0", features = ["json"] }
+reqwest-retry = "0.7"
 
 [dev-dependencies]
 serial_test = "3.2"
-
-# Override vergen dependencies to fix version conflicts.
-# NOTE: As of vergen_lib_0.1.6, the required fixes are not yet available via crates.io,
-# so we temporarily patch vergen-gitcl and vergen-lib to this specific git tag.
-# Once an equivalent or newer fixed version is published on crates.io (>= 0.1.6),
-# this [patch.crates-io] section should be removed and the crates.io versions used instead.
-[patch.crates-io]
-vergen-gitcl = { git = "https://github.com/rustyhorde/vergen.git", tag = "vergen_lib_0.1.6" }
-vergen-lib = { git = "https://github.com/rustyhorde/vergen.git", tag = "vergen_lib_0.1.6" }

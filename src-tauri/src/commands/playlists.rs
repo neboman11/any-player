@@ -68,7 +68,7 @@ pub async fn play_track(
     // Clear queue, add track, and start playing
     let playback = state.playback.lock().await;
     playback.clear_queue().await;
-    playback.play_track(track).await;
+    playback.play_track(track).await?;
 
     Ok(())
 }
@@ -172,7 +172,7 @@ pub async fn play_playlist(
     // Play the first track
     playback
         .play_track(queue_tracks[first_track_index].clone())
-        .await;
+        .await?;
 
     drop(playback);
 
@@ -315,7 +315,7 @@ pub async fn play_tracks_immediate(
         }
     }
 
-    playback.play_track(track_to_play).await;
+    playback.play_track(track_to_play).await?;
     drop(playback);
 
     // Spawn background task to eagerly enrich the next tracks
