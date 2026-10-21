@@ -1,0 +1,50 @@
+{
+    "name_uuid": [
+        {
+            "key": "track:pl1:SPOTIFY:abc",
+            "uuid": "23a80773-7555-3b93-8aec-0924dff6b30e"
+        },
+        {
+            "key": "track:pl1:SPOTIFY:abc:occurrence:1",
+            "uuid": "cbd9a4c9-0c86-37be-8c59-df8c666fecd8"
+        },
+        {
+            "key": "track:pl1:SPOTIFY:abc:occurrence:2",
+            "uuid": "905cef5d-3dfe-30ac-9acf-9452aea79a4e"
+        },
+        {
+            "key": "union:u1:CUSTOM:p2",
+            "uuid": "0aa51536-b4fa-3464-a250-f4351249e8c3"
+        },
+        {
+            "key": "union:u1:CUSTOM:p2:occurrence:1",
+            "uuid": "40da543a-35d6-3d8e-9bc8-a64f73e9aed1"
+        },
+        {
+            "key": "track:Café 🎶:JELLYFIN:東京",
+            "uuid": "773d7a87-9865-3fba-9e7f-11ad8e223996"
+        },
+        {
+            "key": "",
+            "uuid": "d41d8cd9-8f00-3204-a980-0998ecf8427e"
+        },
+        {
+            "key": "track:p:PLEX:a:b",
+            "uuid": "6d980558-6d3f-3dfd-9dc7-0f9a04d6033f"
+        }
+    ],
+    "export_json": [
+        {
+            "name": "empty",
+            "json": "[]"
+        },
+        {
+            "name": "standard_with_nulls",
+            "json": "[{\"playlist\":{\"id\":\"p1\",\"name\":\"Café 🎶\",\"created_at\":1700000000,\"updated_at\":1700000001,\"track_count\":2,\"playlist_type\":\"standard\"},\"tracks\":[{\"id\":1,\"playlist_id\":\"p1\",\"track_source\":\"spotify\",\"track_id\":\"abc\",\"position\":0,\"added_at\":1700000000,\"title\":\"T\\\"q\",\"artist\":\"Ä\"},{\"id\":2,\"playlist_id\":\"p1\",\"track_source\":\"custom\",\"track_id\":\"c1\",\"position\":1,\"added_at\":1700000002,\"title\":\"東京\",\"artist\":\"B\",\"album\":\"Alb\",\"duration_ms\":1234,\"image_url\":\"https://img\"}]}]"
+        },
+        {
+            "name": "union_distinct",
+            "json": "[{\"playlist\":{\"id\":\"u1\",\"name\":\"Union\",\"description\":\"desc\\n\",\"image_url\":\"https://img/u\",\"created_at\":1,\"updated_at\":2,\"track_count\":0,\"playlist_type\":\"union\",\"is_distinct\":true},\"union_sources\":[{\"id\":1,\"union_playlist_id\":\"u1\",\"source_type\":\"jellyfin\",\"source_playlist_id\":\"jf\",\"position\":0,\"added_at\":5},{\"id\":2,\"union_playlist_id\":\"u1\",\"source_type\":\"custom\",\"source_playlist_id\":\"p1\",\"position\":1,\"added_at\":6}]}]"
+        }
+    ]
+}

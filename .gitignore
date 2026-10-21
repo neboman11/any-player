@@ -31,3 +31,6 @@ yarn.lock
 *.njsproj
 *.sln
 *.sw?
+
+# Cargo workspace build output
+/target

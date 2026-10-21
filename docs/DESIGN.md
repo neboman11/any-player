@@ -638,7 +638,8 @@ equal to their declared default are omitted (`encodeDefaults=false`) and so are 
 `{export_version:1, provider_configs:{spotify?{client_id,redirect_uri}, jellyfin?{base_url}, plex?{base_url}}, custom_playlists:[{playlist{…snake_case, created_at/updated_at seconds}, tracks[…], union_sources[…]}]}`.
 
 - This is identical to the legacy desktop export, which is a superset of what Android reads.
-- Export writes explicit nulls (Android `syncJson`).
+- Export omits nulls and default-valued fields, the same as Android `syncJson` (`encodeDefaults=false`; verified by
+  `fixtures/config_ids.json`).
 - **Import is new on desktop.** It uses deterministic ids via a Rust port of Java `UUID.nameUUIDFromBytes` (MD5,
   version 3):
   - Tracks: `track:<playlistId>:<SOURCE>:<trackId>`, with a `:occurrence:<n>` suffix for repeats.
