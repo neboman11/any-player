@@ -160,7 +160,7 @@ These are Rust ports of Android `:core:model`. Serde shapes must match Android's
   - Other sources = `round(base * OTHER_SOURCE_FACTOR)`, where `target_rms = 0.04 + 0.85*0.18` and the factor is
     `clamp(target_rms / 0.22, 0.1, 1.0)` (≈ 0.877).
   - Computed in `f32` for Android parity; must pass the 0..=100 parity vectors.
-  - No per-track RMS analysis (§15).
+  - Plus a **desktop-only per-track gain** for local sources (§8.4). It is not part of any wire format.
 - `break_schedule::reduce`, a port of the Android §8.1 reducer:
   - The interval is random in [3, 5] and resets to 3 after a failure.
   - `songs_away` counts intervening real songs.
@@ -224,6 +224,7 @@ CREATE TABLE sync_base (domain TEXT NOT NULL, target TEXT NOT NULL, remote_sig T
                         PRIMARY KEY (domain));                                  -- one agreed target per domain
 CREATE TABLE sync_version (target TEXT PRIMARY KEY, version INTEGER NOT NULL);
 CREATE TABLE dj_passage_state (account_key TEXT PRIMARY KEY, state_json TEXT NOT NULL);
+CREATE TABLE track_gain (track_key TEXT PRIMARY KEY, gain REAL NOT NULL, analyzed_at_ms INTEGER NOT NULL);
 ```
 
 `owner_key` is `p:<source>:<id>` for a provider playlist and `u:<id>` for a union playlist (Android parity).
@@ -455,6 +456,10 @@ HttpSource (range reads + read-ahead + disk cache) → symphonia FormatReader/De
 - Item end is the decoder's EOF, signalled once the ring drains past the marker. Duration comes from metadata when
   present, otherwise from the sample count at EOF.
 
+**Per-track gain (desktop-only; see §8.4)**
+
+- When normalization is on, the gain is applied in the output callback, multiplied with the volume factor.
+
 **Errors**
 
 - Network, HTTP or decode errors emit `Error(load_id, item, message)`. The engine marks the track and skips it
@@ -465,6 +470,28 @@ HttpSource (range reads + read-ahead + disk cache) → symphonia FormatReader/De
 - The system default device is followed, and on a device change or loss the stream is rebuilt at the current
   position.
 - An "Output device" picker lives in Settings → General.
+
+### 8.4 Per-track loudness gain (desktop-only extra)
+
+This keeps the legacy desktop feature. Android has no equivalent; the sync `settings` namespace still carries only
+the shared enabled flag.
+
+- **Applies to** every LOCAL item (Jellyfin and Plex; the legacy Plex skip is dropped) while normalization is
+  enabled. Spotify items get only the volume factor. DJ breaks are already loudness-processed and get gain 1.0.
+- **Analysis:**
+  - Input: the first 6 s of decoded audio, all channels interleaved, as f32.
+  - Fewer than 4096 samples, or RMS ≤ 0.0005 → gain 1.0.
+  - `target_rms = 0.04 + 0.18 × 85/100`.
+  - `gain = clamp(target_rms / rms, 0.4, 3.0)`, then `min(gain, 0.98 / peak)`, then `clamp(0.25, 3.0)`.
+  - The same math as legacy `any_player_core` lives in `ap-model::volume_normalization::track_gain`. Unit tests pin it
+    with vectors captured from the legacy implementation before it is deleted.
+- **When it runs:**
+  - The decoder thread holds a 6 s pre-roll buffer before it feeds the ring, so the gain is known before the first
+    sample plays. This adds the fetch+decode time of 6 s of audio to a cold start.
+  - For prefetched next items, analysis runs during prefetch, so the boundary adds no delay.
+- **Cache:** `track_gain` table keyed by `${SOURCE}:${trackId}`. A cached value skips the pre-roll wait entirely.
+- **Gain changes:** a 10 ms gain ramp is applied at item boundaries and whenever normalization is toggled
+  mid-track. Toggling never restarts the item.
 
 ## 9. Sync (`ap-sync`)
 
@@ -873,7 +900,7 @@ This is a port of the Android remote path (Android §8, excluding on-device gene
 | Global playback mutex held across Spotify device waits | Actor plus serialized backend; the UI never blocks |
 | Spotify end detection by 2 stopped polls; Autoplay bleed; poller runs for the app's lifetime | Android run-based Connect backend; polls only while a run is held |
 | Spotify may take over any idle device; switching to a local track pauses any client on the account | Preferred → active → this computer → launch → any. Local switch pauses only a device this app started |
-| Per-track RMS gain analysis for Jellyfin (normalization on) | **Removed** for Android parity. Normalization is the output-volume factor only. *Review point:* keep it as a desktop-only extra? |
+| Per-track RMS gain analysis for Jellyfin (normalization on) | **Kept** as a desktop-only extra (§8.4). Now applied to all local sources and cached per track |
 | Sync: app_state pushed every 2 s with a 15 s heartbeat; playlists pull-only with regenerated ids → re-prompt on every pull | Android sync engine: discrete pushes, three-way merge, deterministic ids |
 | `?token=` WebSocket auth | Authorization header |
 | No import of config/state; unencrypted export only | Full Android transfer: state file (portable/private) and config import/export |
@@ -916,5 +943,5 @@ Each milestone ends green on `cargo test --workspace` and `clippy`.
 | Linux keyring without Secret Service (headless/minimal WMs) | Startup warning with guidance; no plaintext fallback |
 | Byte-exact kotlinx JSON emulation | Golden fixtures generated from Android; escaping table test |
 | Spotify device naming on desktop clients may not equal the hostname | Fall back to type `Computer`; explicit preferred-device picker |
-| Per-track RMS normalization removed (§15) | Owner review point |
+| Per-track gain adds cold-start latency (6 s pre-roll) | Gain cache; prefetch-time analysis for the next item |
 | macOS media keys require a signed app for some integrations | Validate unsigned behavior in §13.4; document it |
