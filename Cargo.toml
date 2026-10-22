@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "app"]
 # The legacy Tauri app stays a separate package until cutover.
 exclude = ["src-tauri"]
 
@@ -28,7 +28,7 @@ thiserror = "2"
 
 # Warnings only; CI promotes them with `-D warnings`.
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 unused_must_use = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
 

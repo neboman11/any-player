@@ -269,7 +269,7 @@ CREATE TABLE track_gain (track_key TEXT PRIMARY KEY, gain REAL NOT NULL, analyze
 
 | Keyring account (service `any-player`) | Value |
 |---|---|
-| `spotify-token` | JSON `{access_token, expires_in, expires_at, refresh_token, scopes}` (legacy rspotify `Token` shape; read and written unchanged) |
+| `spotify-token` | JSON `{access_token, expires_in, expires_at, refresh_token, scope}`: the legacy rspotify 0.16 `Token` shape, read and written unchanged. `scope` is a space-separated string and `expires_at` is RFC 3339 with nanoseconds |
 | `jellyfin-url`, `jellyfin-api-key` | raw strings (legacy) |
 | `plex-url`, `plex-token` | raw strings (legacy) |
 | `sync-token` | **new**: sync bearer token |

@@ -1,0 +1,463 @@
+import { Button, CheckBox, LineEdit, Slider, ComboBox, ScrollView, ListView, AboutSlint, VerticalBox, HorizontalBox, GroupBox, TextEdit, Palette } from "std-widgets.slint";
+
+export struct TrackRow { key: string, title: string, artist: string, album: string, duration: string, source: string, index: int }
+export struct CardRow { id: string, name: string, detail: string }
+export struct ColumnRow { key: string, label: string, width: length }
+
+component Label inherits Text {
+    color: Palette.foreground;
+    accessible-role: text;
+    accessible-label: self.text;
+}
+component TrackTable inherits Rectangle {
+    in property <[TrackRow]> rows;
+    in property <[ColumnRow]> columns;
+    in property <bool> editable;
+    in property <bool> reorder;
+    callback action(string, string, int);
+    callback sort(string);
+    VerticalLayout {
+        spacing: 3px;
+        HorizontalLayout {
+            height: 34px;
+            Label { text: "#"; width: 32px; }
+            for column in root.columns: Button { text: column.label; width: column.width; clicked => { root.sort(column.key); } }
+            Label { text: "Actions"; horizontal-stretch: 1; }
+        }
+        ListView {
+            for row in root.rows: Rectangle {
+                height: 44px;
+                background: mod(row.index, 2) == 0 ? #80808010 : #80808005;
+                accessible-role: list-item;
+                accessible-label: row.title + " by " + row.artist;
+                TouchArea { accessible-role: button; accessible-label: "Play " + row.title; clicked => {root.action("play",row.key,row.index);} }
+                HorizontalLayout {
+                    spacing: 4px;
+                    drag := TouchArea {
+                        width: 32px;
+                        enabled: root.reorder;
+                        accessible-role: button;
+                        accessible-label: "Drag to reorder " + row.title;
+                        Label { text: root.reorder ? "☰" : row.index + 1; vertical-alignment: center; }
+                        pointer-event(event) => {
+                            if event.kind == PointerEventKind.up && root.reorder {
+                                root.action("drag", row.key, row.index + round((self.mouse-y - self.pressed-y) / 44px));
+                            }
+                        }
+                    }
+                    for column in root.columns: Label {
+                        width: column.width;
+                        text: column.key == "title" ? row.title : column.key == "artist" ? row.artist : column.key == "album" ? row.album : column.key == "duration" ? row.duration : row.source;
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+                    Button { text: "▶"; accessible-label: "Play from here " + row.title; clicked => { root.action("play", row.key, row.index); } }
+                    Button { text: "Next"; accessible-label: "Play next " + row.title; clicked => { root.action("next", row.key, row.index); } }
+                    Button { text: "+"; accessible-label: "Add to playlist " + row.title; clicked => { root.action("add", row.key, row.index); } }
+                    if root.editable: Button { text: "Remove"; accessible-label: "Remove " + row.title; clicked => { root.action("remove", row.key, row.index); } }
+                    if root.editable: Button { text: "↑"; accessible-label: "Move up " + row.title; enabled: root.reorder && row.index > 0; clicked => { root.action("move", row.key, row.index - 1); } }
+                    if root.editable: Button { text: "↓"; accessible-label: "Move down " + row.title; enabled: root.reorder && row.index < root.rows.length - 1; clicked => { root.action("move", row.key, row.index + 1); } }
+                }
+            }
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "Any Player";
+    preferred-width: 1100px; preferred-height: 720px;
+    min-width: 800px; min-height: 560px;
+    forward-focus: keyboard-scope;
+    in-out property <int> page: 0;
+    in-out property <int> settings-tab: 0;
+    in-out property <int> catalog-tab: 0;
+    in-out property <int> search-tab: 0;
+    in-out property <int> search-source: 0;
+    in-out property <string> query;
+    in-out property <string> filter;
+    in-out property <string> selected-id;
+    in-out property <string> selected-name;
+    in-out property <string> selected-description;
+    in-out property <bool> selected-custom;
+    in-out property <bool> selected-union;
+    in-out property <bool> distinct;
+    in-out property <bool> reorder-enabled: true;
+    in-out property <string> dialog;
+    in-out property <string> draft-name;
+    in-out property <string> draft-description;
+    in-out property <bool> create-union;
+    in-out property <int> source-filter;
+    in-out property <string> toast;
+    in-out property <string> banner: "Demo mode — offline sample data. No audio is played.";
+    in-out property <string> now-title: "No track playing";
+    in-out property <string> now-artist: "Select a track to play";
+    in-out property <string> now-album;
+    in-out property <string> quality;
+    in-out property <string> now-source;
+    in-out property <string> device;
+    in-out property <image> artwork;
+    in-out property <bool> playing;
+    in-out property <bool> shuffle;
+    in-out property <string> repeat-label: "Repeat off";
+    in-out property <string> disabled-reason;
+    in-out property <float> progress;
+    in-out property <string> position-text: "0:00 / 0:00";
+    in-out property <float> volume: 80;
+    in-out property <bool> history;
+    in-out property <[TrackRow]> queue;
+    in-out property <[TrackRow]> tracks;
+    in-out property <[TrackRow]> duplicates;
+    in-out property <[ColumnRow]> columns;
+    in-out property <[CardRow]> cards;
+    in-out property <[CardRow]> union-sources;
+    in-out property <[CardRow]> candidates;
+    in-out property <[CardRow]> standard-playlists;
+    in-out property <[CardRow]> search-playlists;
+    in-out property <[TrackRow]> search-tracks;
+    in-out property <string> search-status;
+    in-out property <int> search-page;
+    in-out property <bool> search-has-next;
+    in-out property <string> sync-url;
+    in-out property <string> sync-token;
+    in-out property <string> sync-status;
+    in-out property <bool> sync-conflict;
+    in-out property <bool> sync-overwrite;
+    in-out property <bool> sync-app: true;
+    in-out property <bool> sync-playlists: true;
+    in-out property <bool> sync-providers: true;
+    in-out property <bool> sync-settings: true;
+    in-out property <bool> normalize: true;
+    in-out property <[string]> outputs;
+    in-out property <string> output-device;
+    in-out property <bool> close-to-tray;
+    in-out property <bool> tray-available;
+    in-out property <bool> column-title: true;
+    in-out property <bool> column-artist: true;
+    in-out property <bool> column-album: true;
+    in-out property <bool> column-duration: true;
+    in-out property <bool> column-source: true;
+    in-out property <bool> transfer-private;
+    in-out property <string> transfer-passphrase;
+    in-out property <bool> transfer-replace;
+    in-out property <bool> transfer-dry-run: true;
+    in-out property <int> provider-tab;
+    in-out property <string> provider-url;
+    in-out property <string> provider-secret;
+    in-out property <bool> secret-visible;
+    in-out property <string> provider-page-size: "300";
+    in-out property <bool> self-signed;
+    in-out property <bool> provider-connected;
+    in-out property <string> provider-status;
+    in-out property <string> login-url;
+    in-out property <[CardRow]> devices;
+    in-out property <string> preferred-device;
+    in-out property <bool> dj-enabled;
+    in-out property <bool> dj-show-queue: true;
+    in-out property <bool> dj-debug;
+    in-out property <float> dj-level: 1;
+    in-out property <[string]> voices;
+    in-out property <string> voice;
+    in-out property <string> dj-status;
+    in-out property <string> dj-logs;
+    callback action(string, string, int);
+    callback track-action(string, string, int);
+    callback search-action(string, string, int);
+    callback sort(string);
+    callback seek(float);
+    callback volume-change(float);
+    callback sync-commit(string, string);
+    callback query-change(string);
+    callback navigate(int);
+    callback copy(string);
+    in-out property <bool> focus-search;
+    in-out property <string> artwork-url;
+    in-out property <bool> artwork-present;
+    callback artwork-requested(string);
+    callback artwork-ready(string, image);
+
+    keyboard-scope := FocusScope {
+        capture-key-pressed(event) => {
+            if event.text == Key.Escape {root.dialog="";if root.sync-conflict || root.sync-overwrite {root.action("sync-resolve","",2);}return accept;}
+            return reject;
+        }
+        key-pressed(event) => {
+            if root.dialog != "" || root.sync-conflict || root.sync-overwrite {return reject;}
+            if event.modifiers.control || event.modifiers.meta {
+                if event.text == "f" { root.page = 2; root.focus-search = true; return accept; }
+                if event.text == "," { root.page = 3; return accept; }
+                if event.text == Key.RightArrow { root.action("next", "", 0); return accept; }
+                if event.text == Key.LeftArrow { root.action("previous", "", 0); return accept; }
+            }
+            if event.text == " " { root.action("toggle", "", 0); return accept; }
+            return reject;
+        }
+        VerticalLayout {
+            spacing: 8px; padding: 12px;
+            if root.banner != "": HorizontalLayout {
+                height: 40px;
+                Label { text: root.banner; wrap: word-wrap; }
+                Button { text: "Dismiss"; clicked => { root.banner = ""; } }
+            }
+            HorizontalLayout {
+                spacing: 18px;
+                VerticalLayout {
+                    width: 145px; spacing: 8px;
+                    Text { text: "Any Player"; font-size: 23px; font-weight: 700; accessible-role: text; accessible-label: self.text; }
+                    for title[index] in ["Now Playing", "Playlists", "Search", "Settings"]: Button {
+                        text: title; accessible-label: title; checked: root.page == index;
+                        clicked => { root.page = index; root.navigate(index); }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                    Label { text: "Desktop v0.2.0"; }
+                }
+                VerticalLayout {
+                    if root.page == 0: VerticalLayout {
+                        HorizontalLayout {
+                            VerticalLayout {
+                                Image { source: root.artwork; height: 150px; image-fit: contain; accessible-role: image; accessible-label: "Current album artwork"; }
+                                if !root.artwork-present: Label { text: "♫"; font-size: 48px; horizontal-alignment: center; }
+                                Text { text: root.now-title; font-size: 28px; font-weight: 700; wrap: word-wrap; accessible-role: text; accessible-label: self.text; }
+                                Label { text: root.now-artist; font-size: 18px; }
+                                Label { text: root.now-album; }
+                                Label {
+                                    text: "Source: " + root.now-source + " · Quality: " + root.quality; wrap: word-wrap;
+                                    Tooltip { text: root.now-source == "Spotify" ? @markdown("Spotify does not expose per-track playback bitrate/sample-rate to this app, so exact quality values cannot be shown.") : @markdown(""); }
+                                }
+                                Label { text: root.device; }
+                            }
+                            VerticalLayout {
+                                width: 360px;
+                                HorizontalLayout {
+                                    Button { text: "Up Next"; checked: !root.history; clicked => {root.history=false; root.action("queue", "", 0);} }
+                                    Button { text: "History"; checked: root.history; clicked => {root.history=true; root.action("queue", "", 1);} }
+                                }
+                                ListView {
+                                    for row in root.queue: Rectangle {
+                                        height: 44px;
+                                        HorizontalLayout {
+                                            Button { text: row.title + " — " + row.artist; accessible-label: "Jump to " + row.title; enabled: row.key != "dj"; clicked => {root.action("jump", row.key, 0);} }
+                                            Button { text: "Play next"; enabled: row.key != "dj"; clicked => {root.action("queue-next", row.key, 0);} }
+                                        }
+                                        ContextMenuArea {
+                                            Menu {
+                                                MenuItem { title: "Play next"; enabled: row.key != "dj"; activated => {root.action("queue-next", row.key, 0);} }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if root.disabled-reason != "": Label { text: root.disabled-reason; wrap: word-wrap; }
+                        Slider { value: root.progress; minimum: 0; maximum: 100; accessible-label: "Playback position"; released => { root.seek(self.value); } }
+                        Label { text: root.position-text; }
+                        HorizontalLayout {
+                            Button { text: "Shuffle"; checked: root.shuffle; clicked => {root.action("shuffle", "", 0);} }
+                            Button { text: "Previous"; clicked => {root.action("previous", "", 0);} }
+                            Button { text: root.playing ? "Pause" : "Play"; enabled: root.disabled-reason == ""; clicked => {root.action("toggle", "", 0);} }
+                            Button { text: "Next"; clicked => {root.action("next", "", 0);} }
+                            Button { text: root.repeat-label; clicked => {root.action("repeat", "", 0);} }
+                            Slider { value: root.volume; maximum: 100; accessible-label: "Volume"; changed(value) => { root.volume = value; root.volume-change(value); } }
+                        }
+                    }
+                    if root.page == 1 && root.selected-id == "": VerticalLayout {
+                        HorizontalLayout {
+                            Text { text: "Your Playlists"; font-size: 26px; accessible-role: text; accessible-label: self.text; }
+                            Button { text: "Refresh"; clicked => {root.action("refresh", "", 0);} }
+                            Button { text: "+ Create Playlist"; clicked => {root.dialog="create";root.draft-name="";root.create-union=false;} }
+                        }
+                        HorizontalLayout { for tab[index] in ["All", "Custom", "Spotify", "Jellyfin", "Plex"]: Button { text: tab; checked: root.catalog-tab == index; clicked => {root.catalog-tab=index;root.action("catalog", "", index);} } }
+                        ListView { for card in root.cards: Button { height: 68px; text: card.name + "\n" + card.detail; accessible-label: "Open playlist " + card.name; clicked => {root.action("open",card.id,0);} } }
+                        if root.cards.length == 0: Label { text: "No playlists found. Connect a service in Settings."; }
+                    }
+                    if root.page == 1 && root.selected-id != "": VerticalLayout {
+                        HorizontalLayout {
+                            Button { text: "← Back"; clicked => {root.action("back","",0);} }
+                            Text { text: root.selected-name; font-size: 24px; accessible-role: text; accessible-label: self.text; }
+                            if root.selected-union: Label { text: "UNION"; }
+                        }
+                        Label { text: root.selected-description; }
+                        HorizontalLayout {
+                            CheckBox { text: "Distinct"; checked: root.distinct; toggled => {root.action("distinct", "", self.checked ? 1 : 0);} }
+                            Button { text: "Play All"; clicked => {root.action("play-all", "", 0);} }
+                            Button { text: "Refresh"; clicked => {root.action("refresh", "", 0);} }
+                            if root.selected-custom: Button { text: "Edit"; clicked => {root.draft-name=root.selected-name;root.draft-description=root.selected-description;root.dialog="edit";} }
+                            if root.selected-custom: Button { text: "Delete"; clicked => {root.dialog="delete";} }
+                            if root.selected-union: Button { text: "+ Add Playlist"; clicked => {root.dialog="source";root.action("candidates", "", root.source-filter);} }
+                        }
+                        if root.selected-union: ListView {
+                            height: 108px;
+                            for source[index] in root.union-sources: HorizontalLayout {
+                                height: 34px;
+                                Label { text: source.name; }
+                                Button { text: "Remove"; clicked => {root.action("source-remove",source.id,0);} }
+                                Button { text: "↑"; accessible-label: "Move source up"; enabled:index>0; clicked => {root.action("source-move",source.id,index - 1);} }
+                                Button { text: "↓"; accessible-label: "Move source down"; enabled:index<root.union-sources.length - 1; clicked => {root.action("source-move",source.id,index + 1);} }
+                            }
+                        }
+                        LineEdit { text <=> root.filter; placeholder-text: "Search tracks..."; accessible-label: "Filter tracks"; edited => {root.action("filter",self.text,0);} }
+                        TrackTable { rows: root.tracks; columns: root.columns; editable: root.selected-custom && !root.selected-union; reorder: root.reorder-enabled; action(a,k,n) => {root.track-action(a,k,n);} sort(key) => {root.sort(key);} }
+                        if root.distinct && root.duplicates.length > 0: VerticalLayout {
+                            Label { text: "Duplicates — Distinct playback keeps the first occurrence and skips the rest."; }
+                            ListView { height: 75px; for row in root.duplicates: HorizontalLayout { height: 32px; Label {text:row.title + " — " + row.artist;} if root.selected-custom && !root.selected-union: Button {text:"Remove";clicked=>{root.track-action("remove",row.key,row.index);}} } }
+                        }
+                    }
+                    if root.page == 2: VerticalLayout {
+                        Text { text: "Search"; font-size: 26px; accessible-role: text; accessible-label: self.text; }
+                        HorizontalLayout {
+                            search-input := LineEdit {
+                                text <=> root.query; placeholder-text: "Search tracks or playlists"; accessible-label: "Search query";
+                                in property <bool> request-focus: root.focus-search;
+                                changed request-focus => {if self.request-focus {self.focus();root.focus-search=false;}}
+                                init => {if root.focus-search {self.focus();root.focus-search=false;}}
+                                edited => {root.query-change(self.text);} accepted => {root.action("search",self.text,0);}
+                            }
+                            Button {text:"Search";clicked=>{root.action("search",root.query,0);}}
+                        }
+                        HorizontalLayout {
+                            for tab[index] in ["Tracks", "Playlists"]: Button { text:tab; checked:root.search-tab==index; clicked=>{root.search-tab=index;root.action("search",root.query,0);} }
+                            ComboBox { model:["All","Spotify","Jellyfin","Plex"]; current-index <=> root.search-source; accessible-label:"Search source"; selected(value)=>{root.action("search",root.query,0);} }
+                        }
+                        Label { text:root.search-status; }
+                        if root.search-tab == 0: TrackTable { rows:root.search-tracks; columns:root.columns; action(a,k,n)=>{root.search-action(a,k,n);} }
+                        if root.search-tab == 1: ListView {for card in root.search-playlists: Button {height:48px;text:card.name + " — " + card.detail;clicked=>{root.action("open",card.id,0);}}}
+                        HorizontalLayout {
+                            Button {text:"← Previous";enabled:root.search-page>0;clicked=>{root.action("search",root.query,root.search-page - 1);}}
+                            Label {text:"Page " + (root.search-page + 1);}
+                            Button {text:"Next →";enabled:root.search-has-next;clicked=>{root.action("search",root.query,root.search-page + 1);}}
+                        }
+                    }
+                    if root.page == 3: VerticalLayout {
+                        Text {text:"Settings";font-size:26px;accessible-role:text;accessible-label:self.text;}
+                        HorizontalLayout {for tab[index] in ["General","Providers","AI DJ"]: Button {text:tab;checked:root.settings-tab==index;clicked=>{root.settings-tab=index;}}}
+                        ScrollView { VerticalBox {
+                            if root.settings-tab == 0: VerticalBox {
+                                GroupBox {title:"Sync Server";VerticalBox {
+                                    LineEdit {text <=> root.sync-url;placeholder-text:"Server URL";accessible-label:"Sync server URL";accepted=>{root.sync-commit(root.sync-url,root.sync-token);} changed has-focus=>{if !self.has-focus {root.sync-commit(root.sync-url,root.sync-token);}}}
+                                    LineEdit {text <=> root.sync-token;input-type:password;placeholder-text:"Sync bearer token";accessible-label:"Sync bearer token";accepted=>{root.sync-commit(root.sync-url,root.sync-token);} changed has-focus=>{if !self.has-focus {root.sync-commit(root.sync-url,root.sync-token);}}}
+                                    CheckBox {text:"Sync app_state";checked:root.sync-app;toggled=>{root.action("domain","",self.checked?1:0);}}
+                                    CheckBox {text:"Sync playlists (confirms before destructive overwrite)";checked:root.sync-playlists;toggled=>{root.action("domain","",self.checked?3:2);}}
+                                    CheckBox {text:"Sync provider_configuration";checked:root.sync-providers;toggled=>{root.action("domain","",self.checked?5:4);}}
+                                    CheckBox {text:"Sync settings";checked:root.sync-settings;toggled=>{root.action("domain","",self.checked?7:6);}}
+                                    HorizontalBox {Button {text:"Connect";clicked=>{root.sync-commit(root.sync-url,root.sync-token);root.action("sync-connect","",0);}} Button {text:"Pull";clicked=>{root.action("sync-pull","",0);}}}
+                                    Label {text:root.sync-status;wrap:word-wrap;}
+                                }}
+                                GroupBox {title:"Playback";VerticalBox {
+                                    CheckBox {text:"Normalize Audio Across Providers";checked:root.normalize;toggled=>{root.action("normalize","",self.checked?1:0);}}
+                                    ComboBox {model:root.outputs;current-value:root.output-device;accessible-label:"Output device";selected(value)=>{root.action("output",value,0);}}
+                                }}
+                                GroupBox {title:"Transfer";VerticalBox {
+                                    CheckBox {text:"PRIVATE (include encrypted secrets)";checked <=> root.transfer-private;}
+                                    LineEdit {text <=> root.transfer-passphrase;input-type:password;placeholder-text:"Passphrase";accessible-label:"Transfer passphrase";}
+                                    CheckBox {text:"Replace existing state (otherwise merge)";checked <=> root.transfer-replace;}
+                                    CheckBox {text:"Dry run (preview import)";checked <=> root.transfer-dry-run;}
+                                    HorizontalBox {for label[index] in ["Export state","Import state","Export Config","Import Config"]: Button {text:label;clicked=>{root.action("transfer","",index);}}}
+                                }}
+                                Button {text:"Clear Provider Cache";clicked=>{root.action("clear-cache","",0);}}
+                                GroupBox {title:"Track Table Columns";VerticalBox {
+                                    CheckBox {text:"Title";checked:root.column-title;toggled=>{root.action("column","title",self.checked?1:0);}}
+                                    CheckBox {text:"Artist";checked:root.column-artist;toggled=>{root.action("column","artist",self.checked?1:0);}}
+                                    CheckBox {text:"Album";checked:root.column-album;toggled=>{root.action("column","album",self.checked?1:0);}}
+                                    CheckBox {text:"Duration";checked:root.column-duration;toggled=>{root.action("column","duration",self.checked?1:0);}}
+                                    CheckBox {text:"Source";checked:root.column-source;toggled=>{root.action("column","source",self.checked?1:0);}}
+                                }}
+                                GroupBox {title:"Window";VerticalBox {
+                                    CheckBox {text:"Close to tray";checked:root.close-to-tray;enabled:root.tray-available;toggled=>{root.action("close-tray","",self.checked?1:0);}}
+                                    if !root.tray-available: Label {text:"No tray host available. Closing quits the app.";}
+                                }}
+                                GroupBox {title:"About";VerticalBox {
+                                    Label {text:"Any Player 0.2.0 · Apache-2.0";}
+                                    Label {text:"Slint royalty-free license · image, Tokio, rfd: MIT/Apache-2.0";wrap:word-wrap;}
+                                    AboutSlint { }
+                                }}
+                            }
+                            if root.settings-tab == 1: VerticalBox {
+                                HorizontalBox {for name[index] in ["Spotify","Jellyfin","Plex"]: Button {text:name;checked:root.provider-tab==index;clicked=>{root.provider-tab=index;root.action("provider-tab","",index);}}}
+                                Label {text:root.provider-status;wrap:word-wrap;}
+                                if root.provider-tab != 0: VerticalBox {
+                                    LineEdit {text <=> root.provider-url;placeholder-text:"Server URL";accessible-label:"Provider server URL";enabled:!root.provider-connected;}
+                                    LineEdit {text <=> root.provider-secret;placeholder-text:root.provider-tab==1?"API Key":"Token";input-type:root.secret-visible?text:password;accessible-label:"Provider secret";enabled:!root.provider-connected;}
+                                    CheckBox {text:"Show secret";checked <=> root.secret-visible;}
+                                    LineEdit {text <=> root.provider-page-size;placeholder-text:"Playlist Page Size (default: 300)";accessible-label:"Playlist page size";enabled:!root.provider-connected;}
+                                    CheckBox {text:"Allow self-signed certificate";checked <=> root.self-signed;enabled:!root.provider-connected;}
+                                }
+                                Button {text:root.provider-connected?"Disconnect":"Connect";clicked=>{root.action("provider-connect","",0);}}
+                                if root.provider-tab == 0: VerticalBox {
+                                    if root.login-url != "": VerticalBox {Label {text:"Complete Spotify Login";} LineEdit {text:root.login-url;read-only:true;accessible-label:"Spotify login URL";} Button {text:"Copy Link";clicked=>{root.copy(root.login-url);}} Button {text:"Close";clicked=>{root.action("cancel-login","",0);}}}
+                                    Label {text:"Spotify Connect devices";}
+                                    for device in root.devices: HorizontalBox {Label {text:device.name;} Button {text:device.id==root.preferred-device?"Preferred":"Use this device";clicked=>{root.action("device",device.id,0);}}}
+                                }
+                            }
+                            if root.settings-tab == 2: VerticalBox {
+                                if root.sync-url == "": Label {text:"AI DJ needs a sync server configured in Settings → General.";wrap:word-wrap;}
+                                CheckBox {text:"Enable AI DJ";checked:root.dj-enabled;toggled=>{root.action("dj-enable","",self.checked?1:0);}}
+                                CheckBox {text:"Show entries in queue";checked:root.dj-show-queue;toggled=>{root.action("dj-queue","",self.checked?1:0);}}
+                                ComboBox {model:root.voices;current-value:root.voice;accessible-label:"AI DJ voice";selected(value)=>{root.action("dj-voice",value,0);}}
+                                Slider {value:root.dj-level;minimum:0.5;maximum:2;accessible-label:"Voice level 0.5 to 2.0";changed(value)=>{root.action("dj-level","",round(value*100));}}
+                                Label {text:"Preparation status: " + root.dj-status;}
+                                GroupBox {title:"AI DJ Logs";VerticalBox {
+                                    CheckBox {text:"Enable debug logging";checked:root.dj-debug;toggled=>{root.action("dj-debug","",self.checked?1:0);}}
+                                    HorizontalBox {Button {text:"Clear";clicked=>{root.action("dj-clear","",0);}} Button {text:"Copy";clicked=>{root.copy(root.dj-logs);}}}
+                                    TextEdit {text:root.dj-logs;read-only:true;accessible-label:"AI DJ diagnostic logs";height:180px;}
+                                }}
+                            }
+                        }}
+                    }
+                }
+            }
+            if root.page != 0: HorizontalLayout {
+                height: 54px;
+                Label {text:root.now-title + " — " + root.now-artist;overflow:elide;}
+                Button {text:"Previous";clicked=>{root.action("previous","",0);}}
+                Button {text:root.playing?"Pause":"Play";enabled:root.disabled-reason=="";clicked=>{root.action("toggle","",0);}}
+                Button {text:"Next";clicked=>{root.action("next","",0);}}
+                Slider {value:root.progress;maximum:100;accessible-label:"Playback position";released=>{root.seek(self.value);}}
+                Slider {value:root.volume;maximum:100;accessible-label:"Volume";changed(v)=>{root.volume-change(v);}}
+            }
+            if root.toast != "": HorizontalLayout {height:36px;Label {text:root.toast;wrap:word-wrap;} Button {text:"×";accessible-label:"Dismiss notification";clicked=>{root.toast="";}}}
+        }
+    if root.dialog != "" || root.sync-conflict || root.sync-overwrite: Rectangle {
+        background: #00000088;
+        TouchArea { }
+        Rectangle {
+            x: (parent.width - self.width)/2; y: (parent.height - self.height)/2;
+            width: min(620px,parent.width - 40px); height: min(460px,parent.height - 40px);
+            background: Palette.background; border-radius: 8px;
+            VerticalLayout {
+                padding:20px;spacing:12px;
+                if root.sync-conflict || root.sync-overwrite: VerticalLayout {
+                    Label {text:root.sync-conflict?"Server already has synced data - choose which side to keep.":"Confirm playlist overwrite";wrap:word-wrap;}
+                    Button {text:root.sync-conflict?"Keep server data":"Continue";clicked=>{root.action("sync-resolve","",0);}}
+                    Button {text:"Keep this device's playlists";clicked=>{root.action("sync-resolve","",1);}}
+                    Button {text:"Cancel";clicked=>{root.action("sync-resolve","",2);}}
+                }
+                if root.dialog == "create" || root.dialog == "edit": VerticalLayout {
+                    Label {text:root.dialog=="create"?"Create New Playlist":"Edit Playlist";font-size:24px;}
+                    if root.dialog == "create": HorizontalLayout {
+                        Button {text:"Standard Playlist";checked:!root.create-union;clicked=>{root.create-union=false;}}
+                        Button {text:"Union Playlist";checked:root.create-union;clicked=>{root.create-union=true;}}
+                    }
+                    Label {text:root.create-union?"Combine tracks from multiple playlists":"Store tracks directly in this playlist";}
+                    LineEdit {text <=> root.draft-name;placeholder-text:"Playlist name";accessible-label:"Playlist name";accepted=>{root.action(root.dialog=="create"?"create":"edit",root.draft-name,root.create-union?1:0);}}
+                    LineEdit {text <=> root.draft-description;placeholder-text:"Description";accessible-label:"Playlist description";}
+                    Button {text:root.dialog=="create"?(root.create-union?"Create Union":"Create Standard"):"Save";enabled:root.draft-name!="";clicked=>{root.action(root.dialog=="create"?"create":"edit",root.draft-name,root.create-union?1:0);}}
+                }
+                if root.dialog == "delete": VerticalLayout {
+                    Label {text:"Delete Playlist";font-size:24px;}
+                    Label {text:"Are you sure you want to delete \"" + root.selected-name + "\"? This cannot be undone.";wrap:word-wrap;}
+                    Button {text:"Delete";clicked=>{root.action("delete","",0);}}
+                }
+                if root.dialog == "add": VerticalLayout {
+                    Label {text:"Add to Playlist";font-size:24px;}
+                    ListView {for card in root.standard-playlists: Button {height:40px;text:card.name;clicked=>{root.action("add-to",card.id,0);}}}
+                }
+                if root.dialog == "source": VerticalLayout {
+                    Label {text:"Add Playlist to Union";font-size:24px;}
+                    ComboBox {model:["All","Spotify","Jellyfin","Plex","Custom"];current-index <=> root.source-filter;accessible-label:"Filter union sources";selected(value)=>{root.action("candidates","",root.source-filter);}}
+                    ListView {for card in root.candidates: Button {height:40px;text:"Add " + card.name + " — " + card.detail;clicked=>{root.action("source-add",card.id,0);}}}
+                }
+                if !root.sync-conflict && !root.sync-overwrite: Button {text:"Cancel";clicked=>{root.dialog="";}}
+            }
+        }
+    }
+    }
+}
