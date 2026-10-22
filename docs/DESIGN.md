@@ -326,8 +326,14 @@ Retry policy is `execute_retrying`, a port of Android `retrying`:
   - Each 401 gets one forced refresh and a retry.
   - The token is persisted after every refresh, including at startup (fixes the legacy gap).
 - Catalog:
-  - `me/playlists` and `playlists/{id}/tracks`, paged with `limit=50/100` and `offset`. Episodes are skipped.
-  - `search?type=track&limit=50`; **playlist search** `type=playlist` is new (it was a legacy stub).
+  - `me/playlists` and `playlists/{id}/items`, paged with `limit=50/100` and `offset`. Episodes are skipped.
+    - Spotify's February 2026 development-mode Web API changes removed `playlists/{id}/tracks`.
+    - Each entry is read from `item`, falling back to `track`. The playlist count is `items.total`, falling back to
+      `tracks.total`.
+  - `search?type=track`: the maximum `limit` is now 10, so results are paged 10 × 5 to reach 50.
+    **Playlist search** (`type=playlist`) is new; it was a legacy stub.
+  - `/me` `product` may be absent, in which case premium status is unknown and is detected on the first
+    `PREMIUM_REQUIRED` error.
   - Ids are normalized from `spotify:track:X`, URLs, and bare ids.
 
 ### 7.1 Spotify sign-in
@@ -389,7 +395,7 @@ This is a port of Android `SpotifyBackend`, `SpotifyPlayerApi` and `SpotifyDevic
 - **End detection:**
   - Settle window 3000 ms.
   - `RunEnded` arms only after `is_playing` was seen for the item.
-  - Match on `item.id` or `item.linked_from.id`.
+  - Match on `item.id`, or on `item.linked_from.id` when present (Spotify may omit `linked_from` now).
   - An unknown id must be seen on 2 consecutive polls.
   - `STOPPED_AT_END_POLLS = 2`; end tolerance 700 ms; stall threshold 10 s; recovery attempts are bounded.
 - **Boundary handling:**
@@ -869,8 +875,11 @@ This is a port of the Android remote path (Android §8, excluding on-device gene
 - **Generation:**
   - `POST /v1/dj-breaks {title, artist, passages:[{chunk_id, text, source}], voice_id?}` with a read timeout of 5 min
     and a call timeout of 6 min.
-  - 200 returns a WAV body. 204 means the script was rejected (logged; no break this time). Any other status logs
-    "This sync server doesn't have AI DJ break generation configured yet. Ask the server admin."
+  - 200 returns a WAV body. 204 means the script was rejected (logged; no break this time).
+  - Other statuses log Android's `describeFailure` text:
+    - 404 → "This sync server doesn't have AI DJ break generation configured yet. Ask the server admin."
+    - 401/403 → the token was rejected.
+    - Anything else → `HTTP n`.
 - **Post-processing:** the WAV is decoded with `hound`, run through a port of `VoiceProcessor`, and written to
   `dj_filler/<breakId>.wav`. The processing chain:
   - Trim at −50 dB with a 20 ms margin.
