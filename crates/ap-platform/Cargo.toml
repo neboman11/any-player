@@ -1,0 +1,35 @@
+[package]
+name = "ap-platform"
+description = "Desktop platform integration for Any Player"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+ap-playback = { version = "0.2.0", path = "../ap-playback" }
+async-trait = "0.1"
+fs2 = "0.4"
+gethostname = "1"
+interprocess = { version = "2.2", features = ["tokio"] }
+souvlaki = "0.8"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "sync", "time"] }
+tokio-util = "0.7"
+url = "2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "0.3", features = ["tokio"] }
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+tray-icon = "0.21"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "test-util"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,508 @@
+{
+    "app_state": [
+        {
+            "name": "empty",
+            "current": null,
+            "queue": [],
+            "shuffle": null,
+            "repeat": "off",
+            "expected": "10728b2eba03a6e7559394bddea5d57488f24ce33276f8ae35af3d223144b050"
+        },
+        {
+            "name": "empty_shuffle_false",
+            "current": null,
+            "queue": [],
+            "shuffle": false,
+            "repeat": "off",
+            "expected": "afdb1d3413baa5e1ea1c6b5b7336fc1a8397ba80e82a74472976e77d4fb31b01"
+        },
+        {
+            "name": "simple",
+            "current": {
+                "id": "a",
+                "title": "Title a",
+                "artist": "Artist",
+                "source": "spotify"
+            },
+            "queue": [
+                {
+                    "id": "a",
+                    "title": "Title a",
+                    "artist": "Artist",
+                    "source": "spotify"
+                },
+                {
+                    "id": "b",
+                    "title": "Title b",
+                    "artist": "Artist",
+                    "source": "jellyfin"
+                }
+            ],
+            "shuffle": true,
+            "repeat": "all",
+            "expected": "f1c21243ef663bd78f46d8bc4a7ec281b3d3d61994ca5ae416e36855caa53f6e"
+        },
+        {
+            "name": "current_missing_from_queue",
+            "current": {
+                "id": "z",
+                "title": "Title z",
+                "artist": "Artist",
+                "source": "plex"
+            },
+            "queue": [
+                {
+                    "id": "a",
+                    "title": "Title a",
+                    "artist": "Artist",
+                    "source": "spotify"
+                },
+                {
+                    "id": "b",
+                    "title": "Title b",
+                    "artist": "Artist",
+                    "source": "spotify"
+                }
+            ],
+            "shuffle": false,
+            "repeat": "one",
+            "expected": "12e665bbcedf2a700060ed58524c30063e311a4426facb7809df0d2e3c8e8381"
+        },
+        {
+            "name": "current_same_id_other_source",
+            "current": {
+                "id": "a",
+                "title": "Title a",
+                "artist": "Artist",
+                "source": "custom"
+            },
+            "queue": [
+                {
+                    "id": "a",
+                    "title": "Title a",
+                    "artist": "Artist",
+                    "source": "spotify"
+                }
+            ],
+            "shuffle": false,
+            "repeat": "off",
+            "expected": "29e9eb354a0361484a978facdc1bbf06ffc127d1073207ab644b3bac8e5531ea"
+        },
+        {
+            "name": "duplicates",
+            "current": {
+                "id": "a",
+                "title": "Title a",
+                "artist": "Artist",
+                "source": "spotify"
+            },
+            "queue": [
+                {
+                    "id": "a",
+                    "title": "Title a",
+                    "artist": "Artist",
+                    "source": "spotify"
+                },
+                {
+                    "id": "a",
+                    "title": "Title a",
+                    "artist": "Artist",
+                    "source": "spotify"
+                },
+                {
+                    "id": "b",
+                    "title": "Title b",
+                    "artist": "Artist",
+                    "source": "spotify"
+                },
+                {
+                    "id": "a",
+                    "title": "Title a",
+                    "artist": "Artist",
+                    "source": "spotify"
+                }
+            ],
+            "shuffle": null,
+            "repeat": "all",
+            "expected": "aca5ff417d752ad371680636b5c06b05e2e32d7a803a0ad62d6de96d95bfba9b"
+        },
+        {
+            "name": "no_current",
+            "current": null,
+            "queue": [
+                {
+                    "id": "x",
+                    "title": "Title x",
+                    "artist": "Artist",
+                    "source": "custom",
+                    "url": "https://h/x.mp3"
+                },
+                {
+                    "id": "y",
+                    "title": "Title y",
+                    "artist": "Artist",
+                    "source": "plex"
+                }
+            ],
+            "shuffle": true,
+            "repeat": "off",
+            "expected": "ae5b6586585df02cc1a6cb2a7f8a068ed176da174db1481ee8cfc9628e174196"
+        },
+        {
+            "name": "unicode_ids",
+            "current": {
+                "id": "é🎵",
+                "title": "Title é🎵",
+                "artist": "Artist",
+                "source": "spotify"
+            },
+            "queue": [
+                {
+                    "id": "é🎵",
+                    "title": "Café ☕",
+                    "artist": "Artist",
+                    "source": "spotify"
+                },
+                {
+                    "id": "曲-東京",
+                    "title": "Title 曲-東京",
+                    "artist": "Artist",
+                    "source": "jellyfin"
+                },
+                {
+                    "id": "q\"uo\\te\n\t\u0001",
+                    "title": "Title q\"uo\\te\n\t\u0001",
+                    "artist": "Artist",
+                    "source": "spotify"
+                }
+            ],
+            "shuffle": true,
+            "repeat": "one",
+            "expected": "247fd35e2498bb46ab3a055c6dc6c22623abfba9806e45411e67b3c78d533559"
+        },
+        {
+            "name": "metadata_ignored",
+            "current": {
+                "id": "a",
+                "title": "Other",
+                "artist": "Artist",
+                "album": "Album",
+                "source": "spotify"
+            },
+            "queue": [
+                {
+                    "id": "a",
+                    "title": "Title a",
+                    "artist": "Artist",
+                    "source": "spotify"
+                }
+            ],
+            "shuffle": false,
+            "repeat": "off",
+            "expected": "bd605aa3dd4cfba2a3ceef8dc77209c0763d1c90b74a4d64a13956098de80e4d"
+        }
+    ],
+    "playlists": [
+        {
+            "name": "null",
+            "input_text": null,
+            "input": null,
+            "expected": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+            "name": "not_array",
+            "input_text": "{\"x\":1}",
+            "input": {
+                "x": 1
+            },
+            "expected": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+            "name": "empty",
+            "input_text": "[]",
+            "input": [],
+            "expected": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        {
+            "name": "single",
+            "input_text": "[{\"playlist\":{\"id\":\"p1\",\"name\":\"One\",\"description\":null,\"image_url\":null,\"created_at\":1700000000,\"updated_at\":1700000001,\"track_count\":1,\"playlist_type\":\"standard\",\"is_distinct\":false},\"tracks\":[{\"id\":1,\"playlist_id\":\"p1\",\"track_source\":\"spotify\",\"track_id\":\"abc\",\"position\":0,\"added_at\":1700000000,\"title\":\"T\",\"artist\":\"A\",\"album\":null,\"duration_ms\":null,\"image_url\":null}],\"union_sources\":[]}]",
+            "input": [
+                {
+                    "playlist": {
+                        "id": "p1",
+                        "name": "One",
+                        "description": null,
+                        "image_url": null,
+                        "created_at": 1700000000,
+                        "updated_at": 1700000001,
+                        "track_count": 1,
+                        "playlist_type": "standard",
+                        "is_distinct": false
+                    },
+                    "tracks": [
+                        {
+                            "id": 1,
+                            "playlist_id": "p1",
+                            "track_source": "spotify",
+                            "track_id": "abc",
+                            "position": 0,
+                            "added_at": 1700000000,
+                            "title": "T",
+                            "artist": "A",
+                            "album": null,
+                            "duration_ms": null,
+                            "image_url": null
+                        }
+                    ],
+                    "union_sources": []
+                }
+            ],
+            "expected": "a1934999b11c315735a11aa134fea57a738ffee0531aae0304ef2355247df4cd"
+        },
+        {
+            "name": "unsorted_positions_and_row_ids",
+            "input_text": "[{\"playlist\":{\"id\":\"p2\",\"name\":\"Two\"},\"tracks\":[{\"id\":7,\"position\":2,\"track_id\":\"c\"},{\"id\":3,\"position\":0,\"track_id\":\"a\"},{\"id\":99,\"position\":1,\"track_id\":\"b\"}],\"union_sources\":[{\"id\":5,\"position\":1,\"source_playlist_id\":\"s2\",\"source_type\":\"plex\"},{\"id\":4,\"position\":0,\"source_playlist_id\":\"s1\",\"source_type\":\"custom\"}]},{\"playlist\":{\"id\":\"p1\",\"name\":\"First\"}}]",
+            "input": [
+                {
+                    "playlist": {
+                        "id": "p2",
+                        "name": "Two"
+                    },
+                    "tracks": [
+                        {
+                            "id": 7,
+                            "position": 2,
+                            "track_id": "c"
+                        },
+                        {
+                            "id": 3,
+                            "position": 0,
+                            "track_id": "a"
+                        },
+                        {
+                            "id": 99,
+                            "position": 1,
+                            "track_id": "b"
+                        }
+                    ],
+                    "union_sources": [
+                        {
+                            "id": 5,
+                            "position": 1,
+                            "source_playlist_id": "s2",
+                            "source_type": "plex"
+                        },
+                        {
+                            "id": 4,
+                            "position": 0,
+                            "source_playlist_id": "s1",
+                            "source_type": "custom"
+                        }
+                    ]
+                },
+                {
+                    "playlist": {
+                        "id": "p1",
+                        "name": "First"
+                    }
+                }
+            ],
+            "expected": "e8a395af951df6378d1fdd4f2502fee7e6d12f23f9f160bbb32639ad188c51a0"
+        },
+        {
+            "name": "missing_tracks_and_non_objects",
+            "input_text": "[{\"playlist\":{\"id\":\"b\"}},5,\"x\",null,{\"playlist\":{\"id\":\"a\"},\"tracks\":[1,{\"position\":0,\"k\":null}],\"extra\":{\"z\":1,\"a\":[{\"y\":null,\"b\":2}]}}]",
+            "input": [
+                {
+                    "playlist": {
+                        "id": "b"
+                    }
+                },
+                5,
+                "x",
+                null,
+                {
+                    "playlist": {
+                        "id": "a"
+                    },
+                    "tracks": [
+                        1,
+                        {
+                            "position": 0,
+                            "k": null
+                        }
+                    ],
+                    "extra": {
+                        "z": 1,
+                        "a": [
+                            {
+                                "y": null,
+                                "b": 2
+                            }
+                        ]
+                    }
+                }
+            ],
+            "expected": "02975889ff485cf3117eaae5cc5c872027d17c7646f165e64d5fc4fc982016fb"
+        },
+        {
+            "name": "unicode_and_escapes",
+            "input_text": "[{\"playlist\":{\"id\":\"ü\",\"name\":\"Café 🎶 東京\",\"description\":\"q\\\"uote\\\\back\\nnl\\u0001\"},\"tracks\":[{\"position\":0,\"title\":\"é\",\"artist\":\"😀\"}]}]",
+            "input": [
+                {
+                    "playlist": {
+                        "id": "ü",
+                        "name": "Café 🎶 東京",
+                        "description": "q\"uote\\back\nnl\u0001"
+                    },
+                    "tracks": [
+                        {
+                            "position": 0,
+                            "title": "é",
+                            "artist": "😀"
+                        }
+                    ]
+                }
+            ],
+            "expected": "0e4c99c20fe4f8bef7288f96ada2dc908a4486e37c44d624b03315eb307f5302"
+        },
+        {
+            "name": "missing_playlist_id",
+            "input_text": "[{\"playlist\":{\"name\":\"no id\"}},{\"playlist\":{\"id\":\"a\"}}]",
+            "input": [
+                {
+                    "playlist": {
+                        "name": "no id"
+                    }
+                },
+                {
+                    "playlist": {
+                        "id": "a"
+                    }
+                }
+            ],
+            "expected": "6e8d87d7a2ba4b45d61908653522feb872d1bdadff9b882fa7ae678eb4c7fe77"
+        },
+        {
+            "name": "numbers",
+            "input_text": "[{\"playlist\":{\"id\":\"n\",\"n1\":1.0,\"n2\":1e3,\"n3\":-0,\"n4\":12345678901234}}]",
+            "input": [
+                {
+                    "playlist": {
+                        "id": "n",
+                        "n1": 1.0,
+                        "n2": 1000.0,
+                        "n3": 0,
+                        "n4": 12345678901234
+                    }
+                }
+            ],
+            "expected": "c2412bec507011797687b42d5bbf8d6125c859695a0fa0e744fd775ab281b19b"
+        }
+    ],
+    "settings": [
+        {
+            "name": "both_false",
+            "input_text": "{\"audio_normalization_enabled\":false,\"audio_normalization_strict_mode\":false}",
+            "input": {
+                "audio_normalization_enabled": false,
+                "audio_normalization_strict_mode": false
+            },
+            "expected": "d95d93de67a61bd6a2a58c38648f3fdf60ec0632c36619314a1b17a6f91b121a"
+        },
+        {
+            "name": "both_true",
+            "input_text": "{\"audio_normalization_enabled\":true,\"audio_normalization_strict_mode\":true}",
+            "input": {
+                "audio_normalization_enabled": true,
+                "audio_normalization_strict_mode": true
+            },
+            "expected": "fedfdfbc120dc134f33bf43780a7f267783b265c5975b0621badb55713057add"
+        },
+        {
+            "name": "enabled_only",
+            "input_text": "{\"audio_normalization_enabled\":true,\"audio_normalization_strict_mode\":false}",
+            "input": {
+                "audio_normalization_enabled": true,
+                "audio_normalization_strict_mode": false
+            },
+            "expected": "263adc4bfc79e5ff8b1731e539b82c3e02da0b16fbfb8ff687aefce51964a8fd"
+        },
+        {
+            "name": "unsorted_with_nulls",
+            "input_text": "{\"z\":null,\"b\":true,\"a\":{\"y\":1,\"x\":null},\"c\":[{\"k\":null,\"j\":\"é\"}]}",
+            "input": {
+                "z": null,
+                "b": true,
+                "a": {
+                    "y": 1,
+                    "x": null
+                },
+                "c": [
+                    {
+                        "k": null,
+                        "j": "é"
+                    }
+                ]
+            },
+            "expected": "f116b79a18846b58828e053d2d44542d8c0825eed6b7ffcfb86007635af5e845"
+        },
+        {
+            "name": "empty",
+            "input_text": "{}",
+            "input": {},
+            "expected": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        {
+            "name": "unicode",
+            "input_text": "{\"name\":\"東京 🎵\",\"q\":\"a\\\"b\\\\c\\n\"}",
+            "input": {
+                "name": "東京 🎵",
+                "q": "a\"b\\c\n"
+            },
+            "expected": "c14b049f16ad48976941a93462a8e895b452f54111e01039253e127d36e7a503"
+        }
+    ],
+    "base_target": [
+        {
+            "server_target": "",
+            "auth_token": "",
+            "expected": "#e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+            "server_target": "sync.example.com",
+            "auth_token": "secret",
+            "expected": "https://sync.example.com#2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"
+        },
+        {
+            "server_target": "https://sync.example.com/",
+            "auth_token": "Bearer secret",
+            "expected": "https://sync.example.com#2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b"
+        },
+        {
+            "server_target": "  http://host:8080///  ",
+            "auth_token": "  bearer   tok en  ",
+            "expected": "http://host:8080#3e405f6de0588ff873144b6cb783dd5d7c1e9279337d0a9448e8e3a9c981975e"
+        },
+        {
+            "server_target": "HTTPS://Upper.example",
+            "auth_token": "BEARER\ttoken",
+            "expected": "https://HTTPS://Upper.example#3c469e9d6c5875d37a43f353d4f88e61fcf812c66eee3457465a40b0da4153e0"
+        },
+        {
+            "server_target": "https://sync.example.com/base/path/",
+            "auth_token": "",
+            "expected": "https://sync.example.com/base/path#e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+            "server_target": "sync.example.com",
+            "auth_token": "Bearer",
+            "expected": "https://sync.example.com#710e0dbdd42299851017a4d67265ecd046f1b4edb741525992a1a6a8fa801258"
+        },
+        {
+            "server_target": "ünï.example/路径",
+            "auth_token": "tök€n",
+            "expected": "https://ünï.example/路径#df84331714c7e96716baee01dfc421e888fa6701e51b69ab866a72643ca4b89a"
+        }
+    ]
+}

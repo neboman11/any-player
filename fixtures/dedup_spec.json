@@ -1,0 +1,166 @@
+{
+  "description": "Canonical cross-platform dedup specification for Any Player. Single source of truth — copy kept byte-identical at any-player-android/app/src/test/resources/dedup_spec.json.",
+  "version": "1",
+  "normalization_rules": "title and artist are trimmed (leading/trailing whitespace including tabs) and lowercased before comparison; key format is '{normalized_title}|{normalized_artist}'",
+  "test_cases": [
+    {
+      "id": "empty_input",
+      "description": "Empty track list returns empty result — no crash, no groups",
+      "input": [],
+      "expected_deduped_count": 0,
+      "expected_duplicate_groups": []
+    },
+    {
+      "id": "no_duplicates",
+      "description": "All distinct tracks — no duplicates found, all tracks returned",
+      "input": [
+        { "id": "t1", "title": "Song A", "artist": "Artist 1" },
+        { "id": "t2", "title": "Song B", "artist": "Artist 2" },
+        { "id": "t3", "title": "Song C", "artist": "Artist 3" }
+      ],
+      "expected_deduped_count": 3,
+      "expected_duplicate_groups": []
+    },
+    {
+      "id": "exact_duplicates",
+      "description": "Exact title+artist duplicates are grouped; first occurrence is kept",
+      "input": [
+        { "id": "t1", "title": "Bohemian Rhapsody", "artist": "Queen" },
+        { "id": "t2", "title": "Bohemian Rhapsody", "artist": "Queen" },
+        { "id": "t3", "title": "Somebody to Love", "artist": "Queen" }
+      ],
+      "expected_deduped_count": 2,
+      "expected_duplicate_groups": [
+        {
+          "key": "bohemian rhapsody|queen",
+          "first_occurrence_id": "t1",
+          "first_occurrence_index": 0,
+          "duplicate_ids": ["t2"]
+        }
+      ]
+    },
+    {
+      "id": "case_insensitive",
+      "description": "Title and artist matching is case-insensitive; all case variants collapse to one group",
+      "input": [
+        { "id": "t1", "title": "Hotel California", "artist": "Eagles" },
+        { "id": "t2", "title": "HOTEL CALIFORNIA", "artist": "EAGLES" },
+        { "id": "t3", "title": "hotel california", "artist": "eagles" }
+      ],
+      "expected_deduped_count": 1,
+      "expected_duplicate_groups": [
+        {
+          "key": "hotel california|eagles",
+          "first_occurrence_id": "t1",
+          "first_occurrence_index": 0,
+          "duplicate_ids": ["t2", "t3"]
+        }
+      ]
+    },
+    {
+      "id": "whitespace_trim",
+      "description": "Leading and trailing space characters are trimmed before matching",
+      "input": [
+        { "id": "t1", "title": "Imagine", "artist": "John Lennon" },
+        { "id": "t2", "title": "  Imagine  ", "artist": "  John Lennon  " },
+        { "id": "t3", "title": "Yesterday", "artist": "The Beatles" }
+      ],
+      "expected_deduped_count": 2,
+      "expected_duplicate_groups": [
+        {
+          "key": "imagine|john lennon",
+          "first_occurrence_id": "t1",
+          "first_occurrence_index": 0,
+          "duplicate_ids": ["t2"]
+        }
+      ]
+    },
+    {
+      "id": "tab_whitespace",
+      "description": "Tab characters at the start/end of title or artist are trimmed before matching",
+      "input": [
+        { "id": "t1", "title": "Stairway to Heaven", "artist": "Led Zeppelin" },
+        { "id": "t2", "title": "\tStairway to Heaven\t", "artist": "\tLed Zeppelin\t" },
+        { "id": "t3", "title": "Kashmir", "artist": "Led Zeppelin" }
+      ],
+      "expected_deduped_count": 2,
+      "expected_duplicate_groups": [
+        {
+          "key": "stairway to heaven|led zeppelin",
+          "first_occurrence_id": "t1",
+          "first_occurrence_index": 0,
+          "duplicate_ids": ["t2"]
+        }
+      ]
+    },
+    {
+      "id": "empty_artist",
+      "description": "Empty artist string is a valid dedup key component; two tracks with same title and empty artist are duplicates",
+      "input": [
+        { "id": "t1", "title": "Unknown Track", "artist": "" },
+        { "id": "t2", "title": "Unknown Track", "artist": "" },
+        { "id": "t3", "title": "Another Track", "artist": "" }
+      ],
+      "expected_deduped_count": 2,
+      "expected_duplicate_groups": [
+        {
+          "key": "unknown track|",
+          "first_occurrence_id": "t1",
+          "first_occurrence_index": 0,
+          "duplicate_ids": ["t2"]
+        }
+      ]
+    },
+    {
+      "id": "unicode",
+      "description": "Unicode titles and artists (including CJK) are matched correctly; case folding applies to non-ASCII where applicable",
+      "input": [
+        { "id": "t1", "title": "F\u00fcr Elise", "artist": "Beethoven" },
+        { "id": "t2", "title": "F\u00fcr Elise", "artist": "Beethoven" },
+        { "id": "t3", "title": "Clair de Lune", "artist": "Debussy" },
+        { "id": "t4", "title": "\u6771\u4eac\u306e\u591c", "artist": "\u5742\u672c\u9f8d\u4e00" },
+        { "id": "t5", "title": "\u6771\u4eac\u306e\u591c", "artist": "\u5742\u672c\u9f8d\u4e00" }
+      ],
+      "expected_deduped_count": 3,
+      "expected_duplicate_groups": [
+        {
+          "key": "f\u00fcr elise|beethoven",
+          "first_occurrence_id": "t1",
+          "first_occurrence_index": 0,
+          "duplicate_ids": ["t2"]
+        },
+        {
+          "key": "\u6771\u4eac\u306e\u591c|\u5742\u672c\u9f8d\u4e00",
+          "first_occurrence_id": "t4",
+          "first_occurrence_index": 3,
+          "duplicate_ids": ["t5"]
+        }
+      ]
+    },
+    {
+      "id": "mixed_case_and_whitespace",
+      "description": "Combined case normalization and whitespace trimming; multiple duplicate groups in one playlist",
+      "input": [
+        { "id": "t1", "title": "Purple Rain", "artist": "Prince" },
+        { "id": "t2", "title": "  PURPLE RAIN  ", "artist": "  PRINCE  " },
+        { "id": "t3", "title": "When Doves Cry", "artist": "Prince" },
+        { "id": "t4", "title": "when doves cry", "artist": "prince" }
+      ],
+      "expected_deduped_count": 2,
+      "expected_duplicate_groups": [
+        {
+          "key": "purple rain|prince",
+          "first_occurrence_id": "t1",
+          "first_occurrence_index": 0,
+          "duplicate_ids": ["t2"]
+        },
+        {
+          "key": "when doves cry|prince",
+          "first_occurrence_id": "t3",
+          "first_occurrence_index": 2,
+          "duplicate_ids": ["t4"]
+        }
+      ]
+    }
+  ]
+}

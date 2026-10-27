@@ -1,0 +1,65 @@
+[package]
+name = "any-player"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "any-player"
+path = "src/main.rs"
+
+[dependencies]
+ap-model = { path = "../crates/ap-model" }
+ap-store = { path = "../crates/ap-store" }
+ap-providers = { path = "../crates/ap-providers" }
+ap-library = { path = "../crates/ap-library" }
+ap-playback = { path = "../crates/ap-playback" }
+ap-platform = { path = "../crates/ap-platform" }
+ap-dj = { path = "../crates/ap-dj" }
+ap-sync = { path = "../crates/ap-sync" }
+indexmap = "2"
+tokio-util = "0.7"
+open = "5"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+souvlaki = "0.8"
+async-trait = "0.1.89"
+tokio = { version = "1.48", features = ["rt-multi-thread", "sync", "time", "macros", "fs"] }
+thiserror = "2.0"
+slint = { version = "=1.18.1", default-features = false, features = ["std", "backend-winit", "renderer-software", "compat-1-2", "accessibility", "unstable-winit-030"] }
+rand = "0.9"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rfd = { version = "0.15.4", default-features = false, features = ["xdg-portal", "tokio"] }
+image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "webp"] }
+lru = "0.16.2"
+arboard = { version = "3.6.1", default-features = false }
+reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls", "stream"] }
+sha2 = "0.10.9"
+dirs = "6.0.0"
+
+[build-dependencies]
+slint-build = "=1.18.1"
+
+[dev-dependencies]
+i-slint-backend-testing = "=1.18.1"
+tempfile = "3"
+wiremock = "0.6"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+raw-window-handle = "0.6.2"
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+tray-icon = "0.21"
+
+[lints]
+workspace = true
+
+[package.metadata.packager]
+product-name = "Any Player"
+identifier = "rocks.nesbitt.any-player.app"
+icons = ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"]
+before-packaging-command = "cargo build --release -p any-player"
+out-dir = "../target/release/bundle"

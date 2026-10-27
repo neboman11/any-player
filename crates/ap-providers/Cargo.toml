@@ -1,0 +1,31 @@
+[package]
+name = "ap-providers"
+description = "Jellyfin, Plex and Spotify Web API clients, Spotify auth and the shared retry policy for Any Player."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+ap-model.workspace = true
+async-trait = "0.1"
+base64.workspace = true
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+percent-encoding = "2"
+rand.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { version = "1", features = ["sync", "time"] }
+url = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+wiremock = "0.6"
+
+[lints]
+workspace = true

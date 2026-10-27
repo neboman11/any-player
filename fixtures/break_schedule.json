@@ -1,0 +1,4072 @@
+{
+    "cases": [
+        {
+            "name": "enable_then_advance",
+            "intervals": [
+                3,
+                4
+            ],
+            "events": [
+                {
+                    "event": "enable",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 0,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 1,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 2,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 3,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 4,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "break_started",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 4,
+                        "content_version": 1
+                    }
+                }
+            ],
+            "expected": [
+                {
+                    "songs_away": 3,
+                    "target_uid": 5,
+                    "songs_until_break": 3,
+                    "anchor_order_pos": 0,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 2,
+                    "target_uid": 5,
+                    "songs_until_break": 2,
+                    "anchor_order_pos": 1,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 1,
+                    "target_uid": 5,
+                    "songs_until_break": 1,
+                    "anchor_order_pos": 2,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 0,
+                    "target_uid": 5,
+                    "songs_until_break": 0,
+                    "anchor_order_pos": 3,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 3,
+                    "target_uid": 9,
+                    "songs_until_break": 3,
+                    "anchor_order_pos": 4,
+                    "order_version": 1,
+                    "failed_on_current": true,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 4,
+                    "target_uid": 10,
+                    "songs_until_break": 4,
+                    "anchor_order_pos": 4,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                }
+            ]
+        },
+        {
+            "name": "intervals_4_and_5",
+            "intervals": [
+                4,
+                5
+            ],
+            "events": [
+                {
+                    "event": "enable",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 0,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 2,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "queue_replaced",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 0,
+                        "content_version": 2
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 1,
+                        "content_version": 2
+                    }
+                }
+            ],
+            "expected": [
+                {
+                    "songs_away": 4,
+                    "target_uid": 6,
+                    "songs_until_break": 4,
+                    "anchor_order_pos": 0,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 2,
+                    "target_uid": 6,
+                    "songs_until_break": 2,
+                    "anchor_order_pos": 2,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 5,
+                    "target_uid": 7,
+                    "songs_until_break": 5,
+                    "anchor_order_pos": 0,
+                    "order_version": 2,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 4,
+                    "target_uid": 7,
+                    "songs_until_break": 4,
+                    "anchor_order_pos": 1,
+                    "order_version": 2,
+                    "failed_on_current": false,
+                    "enabled": true
+                }
+            ]
+        },
+        {
+            "name": "fillers_and_unplayable",
+            "intervals": [
+                3
+            ],
+            "events": [
+                {
+                    "event": "enable",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav",
+                                    "isDjFiller": true
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav",
+                                    "isDjFiller": true
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 0,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav",
+                                    "isDjFiller": true
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav",
+                                    "isDjFiller": true
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 2,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav",
+                                    "isDjFiller": true
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav",
+                                    "isDjFiller": true
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 4,
+                        "content_version": 1
+                    }
+                }
+            ],
+            "expected": [
+                {
+                    "songs_away": 4,
+                    "target_uid": 8,
+                    "songs_until_break": 3,
+                    "anchor_order_pos": 0,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 2,
+                    "target_uid": 8,
+                    "songs_until_break": 1,
+                    "anchor_order_pos": 2,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 1,
+                    "target_uid": 8,
+                    "songs_until_break": 0,
+                    "anchor_order_pos": 4,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                }
+            ]
+        },
+        {
+            "name": "backward_jump_and_edit_reanchor",
+            "intervals": [
+                5
+            ],
+            "events": [
+                {
+                    "event": "enable",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 3,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 1,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 2,
+                        "content_version": 7
+                    }
+                }
+            ],
+            "expected": [
+                {
+                    "songs_away": 5,
+                    "target_uid": 10,
+                    "songs_until_break": 5,
+                    "anchor_order_pos": 3,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 5,
+                    "target_uid": 8,
+                    "songs_until_break": 5,
+                    "anchor_order_pos": 1,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 5,
+                    "target_uid": 9,
+                    "songs_until_break": 5,
+                    "anchor_order_pos": 2,
+                    "order_version": 7,
+                    "failed_on_current": false,
+                    "enabled": true
+                }
+            ]
+        },
+        {
+            "name": "overshoot_and_generation_failed",
+            "intervals": [
+                3
+            ],
+            "events": [
+                {
+                    "event": "enable",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 0,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 9,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "generation_failed",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 9,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 10,
+                        "content_version": 1
+                    }
+                }
+            ],
+            "expected": [
+                {
+                    "songs_away": 3,
+                    "target_uid": 5,
+                    "songs_until_break": 3,
+                    "anchor_order_pos": 0,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 3,
+                    "target_uid": null,
+                    "songs_until_break": 3,
+                    "anchor_order_pos": 9,
+                    "order_version": 1,
+                    "failed_on_current": true,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 3,
+                    "target_uid": null,
+                    "songs_until_break": 3,
+                    "anchor_order_pos": 9,
+                    "order_version": 1,
+                    "failed_on_current": true,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 2,
+                    "target_uid": null,
+                    "songs_until_break": 2,
+                    "anchor_order_pos": 10,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                }
+            ]
+        },
+        {
+            "name": "no_playable_target",
+            "intervals": [
+                3
+            ],
+            "events": [
+                {
+                    "event": "enable",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                        ],
+                        "cursor": 0,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                        ],
+                        "cursor": 1,
+                        "content_version": 1
+                    }
+                }
+            ],
+            "expected": [
+                {
+                    "songs_away": 3,
+                    "target_uid": null,
+                    "songs_until_break": 3,
+                    "anchor_order_pos": 0,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 2,
+                    "target_uid": null,
+                    "songs_until_break": 2,
+                    "anchor_order_pos": 1,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                }
+            ]
+        },
+        {
+            "name": "disable_and_reenable",
+            "intervals": [
+                4,
+                3
+            ],
+            "events": [
+                {
+                    "event": "enable",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 0,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "enable",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 0,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "disable",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 1,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "cursor_moved",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 2,
+                        "content_version": 1
+                    }
+                },
+                {
+                    "event": "enable",
+                    "queue": {
+                        "entries": [
+                            {
+                                "uid": 1,
+                                "track": {
+                                    "id": "t0",
+                                    "title": "T0",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t0.wav"
+                                }
+                            },
+                            {
+                                "uid": 2,
+                                "track": {
+                                    "id": "t1",
+                                    "title": "T1",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t1.wav"
+                                }
+                            },
+                            {
+                                "uid": 3,
+                                "track": {
+                                    "id": "t2",
+                                    "title": "T2",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t2.wav"
+                                }
+                            },
+                            {
+                                "uid": 4,
+                                "track": {
+                                    "id": "t3",
+                                    "title": "T3",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t3.wav"
+                                }
+                            },
+                            {
+                                "uid": 5,
+                                "track": {
+                                    "id": "t4",
+                                    "title": "T4",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t4.wav"
+                                }
+                            },
+                            {
+                                "uid": 6,
+                                "track": {
+                                    "id": "t5",
+                                    "title": "T5",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t5.wav"
+                                }
+                            },
+                            {
+                                "uid": 7,
+                                "track": {
+                                    "id": "t6",
+                                    "title": "T6",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t6.wav"
+                                }
+                            },
+                            {
+                                "uid": 8,
+                                "track": {
+                                    "id": "t7",
+                                    "title": "T7",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t7.wav"
+                                }
+                            },
+                            {
+                                "uid": 9,
+                                "track": {
+                                    "id": "t8",
+                                    "title": "T8",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t8.wav"
+                                }
+                            },
+                            {
+                                "uid": 10,
+                                "track": {
+                                    "id": "t9",
+                                    "title": "T9",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t9.wav"
+                                }
+                            },
+                            {
+                                "uid": 11,
+                                "track": {
+                                    "id": "t10",
+                                    "title": "T10",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t10.wav"
+                                }
+                            },
+                            {
+                                "uid": 12,
+                                "track": {
+                                    "id": "t11",
+                                    "title": "T11",
+                                    "artist": "A",
+                                    "source": "custom",
+                                    "url": "file:///t11.wav"
+                                }
+                            }
+                        ],
+                        "order": [
+                            0,
+                            1,
+                            2,
+                            3,
+                            4,
+                            5,
+                            6,
+                            7,
+                            8,
+                            9,
+                            10,
+                            11
+                        ],
+                        "cursor": 2,
+                        "content_version": 1
+                    }
+                }
+            ],
+            "expected": [
+                {
+                    "songs_away": 4,
+                    "target_uid": 6,
+                    "songs_until_break": 4,
+                    "anchor_order_pos": 0,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": 4,
+                    "target_uid": 6,
+                    "songs_until_break": 4,
+                    "anchor_order_pos": 0,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                },
+                {
+                    "songs_away": null,
+                    "target_uid": null,
+                    "songs_until_break": 3,
+                    "anchor_order_pos": -1,
+                    "order_version": -1,
+                    "failed_on_current": false,
+                    "enabled": false
+                },
+                {
+                    "songs_away": null,
+                    "target_uid": null,
+                    "songs_until_break": 3,
+                    "anchor_order_pos": -1,
+                    "order_version": -1,
+                    "failed_on_current": false,
+                    "enabled": false
+                },
+                {
+                    "songs_away": 3,
+                    "target_uid": 7,
+                    "songs_until_break": 3,
+                    "anchor_order_pos": 2,
+                    "order_version": 1,
+                    "failed_on_current": false,
+                    "enabled": true
+                }
+            ]
+        },
+        {
+            "name": "empty_queue",
+            "intervals": [
+                3
+            ],
+            "events": [
+                {
+                    "event": "enable",
+                    "queue": {
+                        "entries": [],
+                        "order": [],
+                        "cursor": -1,
+                        "content_version": 0
+                    }
+                }
+            ],
+            "expected": [
+                {
+                    "songs_away": 3,
+                    "target_uid": null,
+                    "songs_until_break": 3,
+                    "anchor_order_pos": -1,
+                    "order_version": 0,
+                    "failed_on_current": false,
+                    "enabled": true
+                }
+            ]
+        }
+    ]
+}

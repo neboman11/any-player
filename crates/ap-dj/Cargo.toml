@@ -1,0 +1,32 @@
+[package]
+name = "ap-dj"
+description = "Remote AI DJ for Any Player: passages, remote break generation, voice post-processing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+ap-model.workspace = true
+ap-playback = { path = "../ap-playback", version = "0.2.0" }
+rand = "0.9"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+hound = "3.5"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { version = "1", features = ["fs", "io-util", "rt", "sync", "time"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+async-trait = "0.1"
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
+wiremock = "0.6"
+
+[lints]
+workspace = true
