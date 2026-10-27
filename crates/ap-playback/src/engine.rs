@@ -862,6 +862,7 @@ impl Core {
     fn transport(&mut self, play: bool, origin: ChangeOrigin) {
         let allowed = self.enforce_gate();
         let start = play && allowed;
+        tracing::debug!(play, allowed, ?origin, current = ?self.p.current_uid, "transport");
         if start && self.active.as_ref().is_some_and(|a| a.ended) {
             self.seek_position = 0;
             self.anchor(0, self.p.duration_ms);
@@ -1204,6 +1205,7 @@ impl Core {
             self.generation += 1;
             let id = self.generation;
             let backend_run = self.backend_run(&run);
+            tracing::info!(load_id = id, backend = ?self.kinds[index], items = run.items.len(), playing = requested, "loading run");
             self.active = Some(Applied {
                 id,
                 backend: index,
@@ -1275,9 +1277,15 @@ impl Core {
     // ------------------------------------------------------------------ backend events
 
     fn on_backend_event(&mut self, index: usize, event: BackendEvent) {
+        tracing::debug!(backend = ?self.kinds[index], ?event, "backend event");
         let Some(applied) = &self.active else { return };
         let load_id = event.load_id();
         if load_id != self.generation || load_id != applied.id || index != applied.backend {
+            tracing::debug!(
+                load_id,
+                current = self.generation,
+                "dropped stale backend event"
+            );
             return;
         }
         let backend = self.backends[index].clone();
@@ -1415,6 +1423,7 @@ impl Core {
                 return;
             }
             BackendEvent::Error { key, message, .. } => {
+                tracing::warn!(backend = ?self.kinds[index], ?key, %message, "playback backend error");
                 let uid = match key {
                     Some(ItemKey::Song(uid)) => Some(uid),
                     _ => None,

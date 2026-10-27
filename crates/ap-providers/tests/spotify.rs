@@ -180,3 +180,24 @@ async fn player_sends_run_and_reports_premium_required() {
     let error = player.pause(Some("dev")).await.unwrap_err();
     assert_eq!(error.kind, SpotifyErrorKind::PremiumRequired);
 }
+
+/// Spotify's front end rejects body-less PUTs without `Content-Length` (HTTP 411), which broke
+/// pause/seek/volume/shuffle/repeat against the live API.
+#[tokio::test]
+async fn bodyless_player_commands_send_content_length_zero() {
+    let server = MockServer::start().await;
+    for p in ["/me/player/pause", "/me/player/seek", "/me/player/volume"] {
+        Mock::given(method("PUT"))
+            .and(path(p))
+            .and(header("content-length", "0"))
+            .respond_with(ResponseTemplate::new(204))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    let (_, tokens, _) = setup(&server, token("access", 3600));
+    let player = WebSpotifyPlayerApi::new(common::http(), tokens).with_api_base(server.uri());
+    player.pause(Some("dev")).await.unwrap();
+    player.seek(1000, Some("dev")).await.unwrap();
+    player.set_volume(40, Some("dev")).await.unwrap();
+}

@@ -431,6 +431,7 @@ impl Actor {
         }
     }
     async fn fail(&mut self, error: &SpotifyError) {
+        tracing::warn!(%error, load_id = self.load, "Spotify Connect command failed");
         if self.started
             && self.intended
             && let Err(pause_error) = self.api.pause(&self.device).await

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use ap_model::{RepeatMode, is_valid_spotify_track_id};
 use async_trait::async_trait;
-use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE};
 use reqwest::{Client, Method, Response, StatusCode};
 use serde_json::{Value, json};
 
@@ -234,9 +234,13 @@ impl WebSpotifyPlayerApi {
                 .header(AUTHORIZATION, format!("Bearer {token}"))
                 .header(ACCEPT, "application/json");
             if method != Method::GET {
+                let body = body.clone().unwrap_or_default();
+                // Spotify answers 411 to a body-less PUT/POST that omits Content-Length, and
+                // reqwest/hyper omit it for an empty body.
                 request = request
                     .header(CONTENT_TYPE, "application/json")
-                    .body(body.clone().unwrap_or_default());
+                    .header(CONTENT_LENGTH, body.len())
+                    .body(body);
             }
             request.build()
         })
