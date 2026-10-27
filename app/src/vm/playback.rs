@@ -88,7 +88,6 @@ impl SyncMigrationBanner {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

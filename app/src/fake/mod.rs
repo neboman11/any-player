@@ -72,8 +72,11 @@ impl Default for DemoServices {
 impl DemoServices {
     pub fn show_playback_error(&self) {
         let mut notice = crate::vm::playback::PlaybackNotice::default();
-        if let Some(message) = notice.event("Spotify HTTP 0: Spotify playback stalled while reporting playing") {
-            self.playback.send_modify(|state| state.error.clone_from(&message));
+        if let Some(message) =
+            notice.event("Spotify HTTP 0: Spotify playback stalled while reporting playing")
+        {
+            self.playback
+                .send_modify(|state| state.error.clone_from(&message));
             let _ = self.playback_errors.send(message);
         }
     }

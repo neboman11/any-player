@@ -1,7 +1,10 @@
 //! Engine snapshots and user commands for Slint.
-use crate::vm::{PlaybackCommand, PlaybackPort, PlaybackSnapshot, Result};
 use crate::vm::playback::PlaybackNotice;
-use ap_playback::{Engine, state::{ChangeOrigin, EngineEvent}};
+use crate::vm::{PlaybackCommand, PlaybackPort, PlaybackSnapshot, Result};
+use ap_playback::{
+    Engine,
+    state::{ChangeOrigin, EngineEvent},
+};
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{broadcast, watch};
@@ -29,7 +32,10 @@ impl PlaybackAdapter {
     pub fn new(engine: Engine) -> Arc<Self> {
         let mut notice = PlaybackNotice::default();
         let player = engine.player().borrow().clone();
-        notice.observe(player.error.as_deref(), player.status == ap_model::PlaybackStateType::Playing);
+        notice.observe(
+            player.error.as_deref(),
+            player.status == ap_model::PlaybackStateType::Playing,
+        );
         let mut initial = snapshot(&engine);
         notice.message().clone_into(&mut initial.error);
         let mut events = engine.events();
@@ -62,7 +68,10 @@ impl PlaybackAdapter {
                 let mut notice = this.notice.lock().expect("playback notice");
                 if player_changed {
                     let p = player.borrow().clone();
-                    notice.observe(p.error.as_deref(), p.status == ap_model::PlaybackStateType::Playing);
+                    notice.observe(
+                        p.error.as_deref(),
+                        p.status == ap_model::PlaybackStateType::Playing,
+                    );
                 }
                 let mut state = snapshot(&this.engine);
                 notice.message().clone_into(&mut state.error);
