@@ -330,6 +330,8 @@ impl Bridge {
                 );
                 ui.set_volume(f32::from(state.volume));
                 ui.set_device(state.device.into());
+                ui.set_buffering(state.buffering);
+                ui.set_playback_error(state.error.into());
                 ui.set_disabled_reason(state.disabled_reason.into());
                 let mut rows = if ui.get_history() { history } else { next };
                 if !ui.get_history() && dj.enabled && dj.show_queue {
@@ -464,6 +466,7 @@ impl Bridge {
         let ports = self.ports.clone();
         let selected = self.context.lock().expect("context").selected.clone();
         let playback = match action {
+            "dismiss-playback-error" => Some(PlaybackCommand::DismissError),
             "toggle" => Some(PlaybackCommand::Toggle),
             "next" => Some(PlaybackCommand::Next),
             "previous" => Some(PlaybackCommand::Previous),
@@ -979,6 +982,19 @@ pub fn attach(ui: &MainWindow, services: Services) {
         tokio::spawn(async move {
             while rx.changed().await.is_ok() {
                 b.refresh_playback();
+            }
+        });
+    }
+    {
+        let b = bridge.clone();
+        let mut errors = b.ports.playback.errors();
+        tokio::spawn(async move {
+            loop {
+                match errors.recv().await {
+                    Ok(message) => b.toast(message),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
             }
         });
     }

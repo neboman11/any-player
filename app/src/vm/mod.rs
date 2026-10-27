@@ -23,6 +23,8 @@ pub type Result<T = ()> = std::result::Result<T, ServiceError>;
 pub struct PlaybackSnapshot {
     pub queue: QueueState,
     pub playing: bool,
+    pub buffering: bool,
+    pub error: String,
     pub position_ms: i64,
     pub at: Instant,
     pub volume: u8,
@@ -46,6 +48,7 @@ impl PlaybackSnapshot {
 }
 #[derive(Clone, Debug)]
 pub enum PlaybackCommand {
+    DismissError,
     Toggle,
     Next,
     Previous,
@@ -60,6 +63,7 @@ pub enum PlaybackCommand {
 #[async_trait]
 pub trait PlaybackPort: Send + Sync {
     fn subscribe(&self) -> watch::Receiver<PlaybackSnapshot>;
+    fn errors(&self) -> tokio::sync::broadcast::Receiver<String>;
     async fn playback(&self, command: PlaybackCommand) -> Result;
 }
 

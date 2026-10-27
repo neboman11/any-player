@@ -16,7 +16,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 mod transfer;
 
 /// Offline artwork supplied to the demo through the same loader as provider artwork.
@@ -51,6 +51,7 @@ impl crate::images::ImageCache for DemoImageCache {
 
 pub struct DemoServices {
     playback: watch::Sender<PlaybackSnapshot>,
+    playback_errors: broadcast::Sender<String>,
     library: watch::Sender<LibrarySnapshot>,
     search: watch::Sender<SearchSnapshot>,
     settings: watch::Sender<SettingsSnapshot>,
@@ -69,6 +70,14 @@ impl Default for DemoServices {
     }
 }
 impl DemoServices {
+    pub fn show_playback_error(&self) {
+        let mut notice = crate::vm::playback::PlaybackNotice::default();
+        if let Some(message) = notice.event("Spotify HTTP 0: Spotify playback stalled while reporting playing") {
+            self.playback.send_modify(|state| state.error.clone_from(&message));
+            let _ = self.playback_errors.send(message);
+        }
+    }
+
     pub fn new() -> Self {
         let tracks: Vec<_> = (0..72)
             .map(|i| {
@@ -162,6 +171,8 @@ impl DemoServices {
             playback: watch::channel(PlaybackSnapshot {
                 queue,
                 playing: false,
+                buffering: false,
+                error: String::new(),
                 position_ms: 0,
                 at: Instant::now(),
                 volume: 80,
@@ -169,6 +180,7 @@ impl DemoServices {
                 device: "This computer (demo)".into(),
             })
             .0,
+            playback_errors: broadcast::channel(32).0,
             library: watch::channel(library).0,
             search: watch::channel(SearchSnapshot::default()).0,
             settings: watch::channel(SettingsSnapshot {
@@ -300,13 +312,22 @@ impl PlaybackPort for DemoServices {
     fn subscribe(&self) -> watch::Receiver<PlaybackSnapshot> {
         self.playback.subscribe()
     }
+    fn errors(&self) -> broadcast::Receiver<String> {
+        self.playback_errors.subscribe()
+    }
     async fn playback(&self, command: PlaybackCommand) -> Result {
         self.check()?;
         self.playback.send_modify(|s| {
             s.position_ms = s.position();
             s.at = Instant::now();
             match command {
-                PlaybackCommand::Toggle => s.playing = !s.playing,
+                PlaybackCommand::DismissError => s.error.clear(),
+                PlaybackCommand::Toggle => {
+                    s.playing = !s.playing;
+                    if s.playing {
+                        s.error.clear();
+                    }
+                }
                 PlaybackCommand::Next => {
                     if let Some(queue) = QueueOps::advance(&s.queue, true) {
                         s.queue = queue;

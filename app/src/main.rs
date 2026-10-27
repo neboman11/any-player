@@ -14,6 +14,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let window = any_player::MainWindow::new()?;
     any_player::attach(&window, services.ports());
     any_player::images::attach_cache(&window, Arc::new(any_player::fake::DemoImageCache));
+    if std::env::args().any(|arg| arg == "--demo-playback-error") {
+        services.show_playback_error();
+    }
     // Demo-only route selection makes native-window screenshots reproducible.
     let args: Vec<_> = std::env::args().collect();
     if let Some(index) = args.iter().position(|arg| arg == "--demo-page") {
@@ -107,6 +110,25 @@ fn production_inner(runtime: &tokio::runtime::Runtime) -> Result<(), Box<dyn std
                     tracing::warn!(error = %e, "could not persist the sync banner dismissal");
                 }
             });
+        });
+        let mut settings = services.settings_store.subscribe();
+        let db = services.db.clone();
+        let weak = window.as_weak();
+        tokio::spawn(async move {
+            let mut banner = any_player::vm::playback::SyncMigrationBanner::new(true);
+            loop {
+                banner.observe_target(&settings.borrow_and_update().sync.server_target);
+                if !banner.visible() {
+                    let _ = weak.upgrade_in_event_loop(|ui| ui.set_banner("".into()));
+                    if let Err(e) = any_player::startup::dismiss_sync_banner(&db).await {
+                        tracing::warn!(error = %e, "could not persist the sync banner dismissal");
+                    }
+                    break;
+                }
+                if settings.changed().await.is_err() {
+                    break;
+                }
+            }
         });
     }
     window.set_startup_warning(status.warnings.join("\n").into());

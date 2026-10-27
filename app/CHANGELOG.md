@@ -15,5 +15,7 @@
 - Added demo screenshot routes: `--demo --demo-page now-playing|playlists|playlist|union|search|settings|providers|dj`. Add `--demo-small` for the 800×560 viewport. These switches only operate in offline demo mode.
 - UI smoke coverage exercises accessible icon labels and navigation at the minimum window size.
 - The "sync settings didn't carry over" banner appears only after an upgrade from the legacy desktop (an unmigrated legacy database or a migrated `playback_state.json`) while no sync target is set, and stays dismissed once dismissed. Fresh installs never show it.
+- Playback failures now appear as dismissible messages and notifications; Spotify startup shows a Starting indicator. Use `--demo --demo-playback-error` to preview the error presentation.
+- Configuring a sync target immediately hides and permanently dismisses the legacy sync reminder.
 - Track tables share one column-width model between header and rows (lead #/drag and actions columns included); headers are plain sortable column titles with a ▲/▼ indicator. Narrow tables hide Album, then Via, and fold row actions into a single "More actions" menu.
 - Playlist detail: compact Back button beside the title, compact action row with Play All as the primary action, compact union source rows; banner and notification dismiss buttons are compact and right-aligned.
