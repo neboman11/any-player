@@ -1,6 +1,7 @@
 import { Button as NativeButton, CheckBox, LineEdit, Slider, ComboBox, ScrollView, ListView, AboutSlint, VerticalBox, HorizontalBox, GroupBox, TextEdit, Palette } from "std-widgets.slint";
 
-export struct TrackRow { key: string, title: string, artist: string, album: string, duration: string, source: string, quality: string, index: int }
+export struct TrackRow { key: string, title: string, artist: string, album: string, duration: string, source: string, quality: string, index: int, image-url: string }
+export struct QueueArt { image: image, present: bool }
 export struct CardRow { id: string, name: string, detail: string }
 export struct ColumnRow { key: string, label: string, width: length }
 
@@ -233,6 +234,8 @@ export component MainWindow inherits Window {
     in-out property <string> now-source;
     in-out property <string> device;
     in-out property <image> artwork;
+    in-out property <image> thumbnail;
+    in-out property <bool> thumbnail-present;
     in-out property <bool> playing;
     in-out property <bool> shuffle;
     in-out property <string> repeat-label: "Repeat off";
@@ -242,6 +245,15 @@ export component MainWindow inherits Window {
     in-out property <float> volume: 80;
     in-out property <bool> history;
     in-out property <[TrackRow]> queue;
+    in-out property <[QueueArt]> queue-art;
+    in-out property <int> queue-first;
+    in-out property <int> queue-last;
+    callback queue-window(int, int);
+    callback thumbnail-ready(string, image, bool);
+    callback thumbnail-requested(string);
+    function request-queue-art() {
+        if root.page == 0 { root.queue-window(root.queue-first, root.queue-last); }
+    }
     in-out property <[TrackRow]> tracks;
     in-out property <[TrackRow]> duplicates;
     in-out property <[ColumnRow]> columns;
@@ -421,18 +433,27 @@ export component MainWindow inherits Window {
                                     Button { text: "Up Next"; checked: !root.history; clicked => {root.history=false;root.action("queue","",0);} }
                                     Button { text: "History"; checked: root.history; clicked => {root.history=true;root.action("queue","",1);} }
                                 }
-                                ListView {
-                                    for row in root.queue: Rectangle {
+                                queue-list := ListView {
+                                    changed content-y => {
+                                        root.queue-first = max(0, floor(-self.content-y / 64px) - 1);
+                                        root.queue-last = ceil((-self.content-y + self.height) / 64px) + 1;
+                                        root.request-queue-art();
+                                    }
+                                    changed height => {
+                                        root.queue-last = ceil((-self.content-y + self.height) / 64px) + 1;
+                                        root.request-queue-art();
+                                    }
+                                    for row[index] in root.queue: Rectangle {
                                         height: 64px; border-radius: 8px;
                                         background: queue-hit.has-hover ? Theme.accent.with-alpha(0.12) : transparent;
                                         queue-hit := TouchArea { accessible-role: button; accessible-label: "Jump to " + row.title; enabled: row.key != "dj"; clicked => {root.action("jump",row.key,0);} }
                                         HorizontalLayout {
                                             padding: 8px; spacing: 8px;
-                                            Cover { width: 40px; height: 40px; border-radius: 6px; variant: row.index; }
+                                            Cover { width: 40px; height: 40px; border-radius: 6px; variant: row.index; art: root.queue-art[index].image; present: root.queue-art[index].present; }
                                             VerticalLayout {
                                                 alignment: center; spacing: 4px;
                                                 Label { text: row.title; overflow: elide; font-weight: 600; }
-                                                Label { text: row.artist + " · " + row.quality; overflow: elide; color: Theme.muted; font-size: 11px; }
+                                                Label { text: row.quality == "" ? row.artist : row.artist + " · " + row.quality; overflow: elide; color: Theme.muted; font-size: 11px; }
                                             }
                                             Label { text: row.duration; color: Theme.muted; font-size: 11px; vertical-alignment: center; width: 32px; }
                                             IconButton { icon: @image-url("icons/next.svg"); label: "Play next " + row.title; reveal: queue-hit.has-hover; enabled: row.key != "dj"; clicked => {root.action("queue-next",row.key,0);} }
@@ -630,7 +651,7 @@ export component MainWindow inherits Window {
             }
             if root.page != 0: HorizontalLayout {
                 height: 64px; spacing: 12px;
-                Cover { width: 48px; height: 48px; art: root.artwork; present: root.artwork-present; border-radius: 6px; }
+                Cover { width: 48px; height: 48px; art: root.thumbnail; present: root.thumbnail-present; border-radius: 6px; }
                 VerticalLayout {
                     width: 180px; alignment: center; spacing: 4px;
                     Label {text:root.now-title;overflow:elide;font-weight:600;}

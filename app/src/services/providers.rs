@@ -533,7 +533,7 @@ impl ap_playback::ports::ConnectionGate for ProvidersAdapter {
         let state = self.state.read().ok()?;
         let profile = state.profiles.get(&source)?;
         (!profile.connected || profile.playback_ready == Some(false))
-            .then(|| source.name().to_owned())
+            .then(|| crate::presenter::source_label(source).to_owned())
     }
     fn subscribe(&self) -> watch::Receiver<()> {
         self.changed.subscribe()

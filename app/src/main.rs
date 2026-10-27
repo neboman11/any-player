@@ -13,6 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let progression = services.start_progression();
     let window = any_player::MainWindow::new()?;
     any_player::attach(&window, services.ports());
+    any_player::images::attach_cache(&window, Arc::new(any_player::fake::DemoImageCache));
     // Demo-only route selection makes native-window screenshots reproducible.
     let args: Vec<_> = std::env::args().collect();
     if let Some(index) = args.iter().position(|arg| arg == "--demo-page") {

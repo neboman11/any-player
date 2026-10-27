@@ -19,6 +19,34 @@ use std::{
 use tokio::sync::watch;
 mod transfer;
 
+/// Offline artwork supplied to the demo through the same loader as provider artwork.
+pub struct DemoImageCache;
+
+#[async_trait::async_trait]
+impl crate::images::ImageCache for DemoImageCache {
+    async fn load(&self, url: &str) -> crate::vm::Result<Vec<u8>> {
+        let colors: ([u8; 3], [u8; 3]) = match url {
+            "demo-art://0" => ([28, 58, 107], [234, 123, 84]),
+            "demo-art://1" => ([44, 24, 84], [238, 160, 84]),
+            "demo-art://2" => ([14, 73, 78], [227, 188, 104]),
+            _ => return Err(crate::vm::ServiceError("Unknown demo artwork".into())),
+        };
+        let image = image::RgbaImage::from_fn(192, 192, |x, y| {
+            let mix = x + y;
+            let channel = |i: usize| {
+                u8::try_from((u32::from(colors.0[i]) * (382 - mix) + u32::from(colors.1[i]) * mix) / 382)
+                    .expect("interpolated channel fits in u8")
+            };
+            image::Rgba([channel(0), channel(1), channel(2), 255])
+        });
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(&mut bytes, image::ImageFormat::Png)
+            .map_err(|error| crate::vm::ServiceError(error.to_string()))?;
+        Ok(bytes.into_inner())
+    }
+}
+
 pub struct DemoServices {
     playback: watch::Sender<PlaybackSnapshot>,
     library: watch::Sender<LibrarySnapshot>,
@@ -61,6 +89,7 @@ impl DemoServices {
                 track.album = Some("After Hours".into());
                 track.duration_ms = Some(185_000 + i64::try_from(i).unwrap_or_default() * 1000);
                 track.url = Some(format!("https://demo.invalid/audio/{i}.flac"));
+                track.image_url = Some(format!("demo-art://{}", i % 3));
                 track.bitrate_kbps = Some(980);
                 track.sample_rate_hz = Some(44_100);
                 track

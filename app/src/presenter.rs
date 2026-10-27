@@ -58,6 +58,39 @@ fn duration(ms: i64) -> String {
     let seconds = ms.max(0) / 1000;
     format!("{}:{:02}", seconds / 60, seconds % 60)
 }
+/// User-facing provider name ("Spotify"), not the Kotlin constant name used on the wire.
+pub(crate) fn source_label(source: SourceType) -> &'static str {
+    match source {
+        SourceType::Spotify => "Spotify",
+        SourceType::Jellyfin => "Jellyfin",
+        SourceType::Plex => "Plex",
+        SourceType::Custom => "Custom",
+        SourceType::All => "All",
+    }
+}
+
+/// Legacy quality label: `"<n> kbps"` and/or `"<khz> kHz"` joined by `" • "`; `None` when the
+/// provider exposes neither (Spotify never does). Zero values count as unknown.
+pub(crate) fn quality_label(track: &Track) -> Option<String> {
+    let bitrate = track
+        .bitrate_kbps
+        .filter(|b| *b > 0)
+        .map(|b| format!("{b} kbps"));
+    let rate = track.sample_rate_hz.filter(|r| *r > 0).map(|hz| {
+        if hz % 1000 == 0 {
+            format!("{} kHz", hz / 1000)
+        } else {
+            format!("{:.1} kHz", f64::from(hz) / 1000.0)
+        }
+    });
+    match (bitrate, rate) {
+        (None, None) => None,
+        (Some(b), None) => Some(b),
+        (None, Some(r)) => Some(r),
+        (Some(b), Some(r)) => Some(format!("{b} • {r}")),
+    }
+}
+
 fn row(track: &Track, key: String, index: usize) -> TrackRow {
     TrackRow {
         key: key.into(),
@@ -68,14 +101,9 @@ fn row(track: &Track, key: String, index: usize) -> TrackRow {
             .duration_ms
             .map_or_else(|| "--:--".into(), duration)
             .into(),
-        source: format!("{:?}", track.source).into(),
-        quality: track
-            .bitrate_kbps
-            .map_or_else(
-                || format!("{:?}", track.source),
-                |bitrate| format!("{bitrate} kbps"),
-            )
-            .into(),
+        source: source_label(track.source).into(),
+        quality: quality_label(track).unwrap_or_default().into(),
+        image_url: track.image_url.clone().unwrap_or_default().into(),
         index: i32::try_from(index).unwrap_or(i32::MAX),
     }
 }
@@ -254,9 +282,12 @@ impl Bridge {
                     .unwrap_or_default();
                 if ui.get_artwork_url().as_str() != url {
                     ui.set_artwork(slint::Image::default());
+                    ui.set_thumbnail(slint::Image::default());
+                    ui.set_thumbnail_present(false);
                     ui.set_artwork_present(false);
                     ui.set_artwork_url(url.into());
                     if !url.is_empty() {
+                        ui.invoke_thumbnail_requested(url.into());
                         ui.invoke_artwork_requested(url.into());
                     }
                 }
@@ -278,21 +309,13 @@ impl Bridge {
                 );
                 ui.set_now_source(
                     current
-                        .map_or_else(String::new, |e| format!("{:?}", e.track.source))
+                        .map_or_else(String::new, |e| source_label(e.track.source).to_owned())
                         .into(),
                 );
                 ui.set_quality(
                     current
-                        .map_or_else(
-                            || "Unknown".into(),
-                            |e| {
-                                format!(
-                                    "{} kbps · {} Hz",
-                                    e.track.bitrate_kbps.unwrap_or_default(),
-                                    e.track.sample_rate_hz.unwrap_or_default()
-                                )
-                            },
-                        )
+                        .and_then(|e| quality_label(&e.track))
+                        .unwrap_or_else(|| "Unknown".into())
                         .into(),
                 );
                 ui.set_playing(state.playing);
@@ -321,7 +344,11 @@ impl Bridge {
                         },
                     );
                 }
+                ui.set_queue_art(Rc::new(VecModel::from(vec![crate::generated::QueueArt::default(); rows.len()])).into());
                 ui.set_queue(swap(ui.get_queue(), rows));
+                if ui.get_page() == 0 {
+                    ui.invoke_queue_window(ui.get_queue_first(), ui.get_queue_last());
+                }
             });
         });
     }

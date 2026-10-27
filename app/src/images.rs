@@ -34,6 +34,13 @@ impl ImageLoader {
         cache: Arc<dyn ImageCache>,
         url: String,
     ) -> Result<SharedPixelBuffer<Rgba8Pixel>> {
+        Self::decode_sized(cache, url, 640).await
+    }
+    async fn decode_sized(
+        cache: Arc<dyn ImageCache>,
+        url: String,
+        size: u32,
+    ) -> Result<SharedPixelBuffer<Rgba8Pixel>> {
         let bytes = cache.load(&url).await?;
         if bytes.len() > 8 * 1024 * 1024 {
             return Err(ServiceError("Artwork exceeds 8 MiB".into()));
@@ -50,7 +57,7 @@ impl ImageLoader {
             let mut image = reader
                 .decode()
                 .map_err(|e| ServiceError(e.to_string()))?
-                .thumbnail(640, 640)
+                .thumbnail(size, size)
                 .to_rgba8();
             round_corners(&mut image);
             Ok(SharedPixelBuffer::clone_from_slice(
@@ -239,10 +246,77 @@ pub(crate) fn attach(ui: &crate::MainWindow) {
     attach_cache(ui, Arc::new(DiskImageCache::new(directory)));
 }
 
+fn visible_urls(model: &slint::ModelRc<crate::TrackRow>, first: i32, last: i32) -> Vec<String> {
+    use slint::Model;
+    let start = usize::try_from(first.max(0)).unwrap_or(0).min(model.row_count());
+    let end = usize::try_from(last.max(first).max(0)).unwrap_or(0).min(model.row_count());
+    (start..end)
+        .filter_map(|index| model.row_data(index))
+        .filter(|row| !row.image_url.is_empty())
+        .map(|row| row.image_url.to_string())
+        .collect()
+}
+
+fn apply_thumbnail(ui: &crate::MainWindow, url: &str, image: &Image) {
+    use slint::Model;
+    if ui.get_artwork_url() == url {
+        ui.set_thumbnail(image.clone());
+        ui.set_thumbnail_present(true);
+    }
+    let rows = ui.get_queue();
+    let art = ui.get_queue_art();
+    let start = usize::try_from(ui.get_queue_first().max(0)).unwrap_or(0).min(rows.row_count());
+    let end = usize::try_from(ui.get_queue_last().max(0)).unwrap_or(0).min(rows.row_count());
+    for index in start..end {
+        if rows.row_data(index).is_some_and(|row| row.image_url == url) {
+            art.set_row_data(index, crate::generated::QueueArt { image: image.clone(), present: true });
+        }
+    }
+}
+
 pub fn attach_cache(ui: &crate::MainWindow, cache: Arc<dyn ImageCache>) {
     use slint::ComponentHandle;
     let loader = ImageLoader::new(cache);
     let weak = ui.as_weak();
+    let thumbnails = ImageLoader::new(loader.backing_cache());
+    let pending = Rc::new(RefCell::new(std::collections::HashSet::<String>::new()));
+    let ready_thumbnails = thumbnails.clone();
+    let ready_pending = pending.clone();
+    let thumbnail_ui = ui.as_weak();
+    ui.on_thumbnail_ready(move |url, image, success| {
+        ready_pending.borrow_mut().remove(url.as_str());
+        if success {
+            ready_thumbnails.remember(url.to_string(), image.clone());
+            if let Some(ui) = thumbnail_ui.upgrade() {
+                apply_thumbnail(&ui, &url, &image);
+            }
+        }
+    });
+    let thumbnail_ui = ui.as_weak();
+    ui.on_thumbnail_requested(move |url| {
+        let Some(ui) = thumbnail_ui.upgrade() else { return };
+        if let Some(image) = thumbnails.cached(&url) {
+            apply_thumbnail(&ui, &url, &image);
+        } else if pending.borrow_mut().insert(url.to_string()) {
+            let cache = thumbnails.backing_cache();
+            let weak = thumbnail_ui.clone();
+            tokio::spawn(async move {
+                let decoded = ImageLoader::decode_sized(cache, url.to_string(), 96).await;
+                let _ = weak.upgrade_in_event_loop(move |ui| {
+                    let success = decoded.is_ok();
+                    let image = decoded.map(Image::from_rgba8).unwrap_or_default();
+                    ui.invoke_thumbnail_ready(url, image, success);
+                });
+            });
+        }
+    });
+    let thumbnail_ui = ui.as_weak();
+    ui.on_queue_window(move |first, last| {
+        let Some(ui) = thumbnail_ui.upgrade() else { return };
+        for url in visible_urls(&ui.get_queue(), first, last) {
+            ui.invoke_thumbnail_requested(url.into());
+        }
+    });
     let ready = loader.clone();
     ui.on_artwork_ready(move |url, image| {
         ready.remember(url.to_string(), image.clone());
@@ -274,6 +348,29 @@ pub fn attach_cache(ui: &crate::MainWindow, cache: Arc<dyn ImageCache>) {
 }
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn only_visible_queue_window_requests_artwork() {
+        use std::sync::{Arc, Mutex};
+        struct RecordingCache(Mutex<Vec<String>>);
+        #[async_trait::async_trait]
+        impl super::ImageCache for RecordingCache {
+            async fn load(&self, url: &str) -> crate::vm::Result<Vec<u8>> {
+                self.0.lock().unwrap().push(url.to_owned());
+                Err(crate::vm::ServiceError("test".into()))
+            }
+        }
+        let rows: Vec<_> = (0..1000).map(|i| crate::TrackRow {
+            image_url: format!("art-{i}").into(),
+            ..Default::default()
+        }).collect();
+        let model: slint::ModelRc<_> = std::rc::Rc::new(slint::VecModel::from(rows)).into();
+        let cache = Arc::new(RecordingCache(Mutex::new(Vec::new())));
+        for url in super::visible_urls(&model, 120, 128) {
+            let _ = super::ImageLoader::decode_sized(cache.clone(), url, 96).await;
+        }
+        assert_eq!(*cache.0.lock().unwrap(), (120..128).map(|i| format!("art-{i}")).collect::<Vec<_>>());
+    }
+
     #[test]
     fn artwork_mask_rounds_corners_without_changing_center() {
         let mut image = image::RgbaImage::from_pixel(100, 80, image::Rgba([100, 150, 200, 255]));

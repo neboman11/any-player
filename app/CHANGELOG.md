@@ -5,6 +5,7 @@
 - Normal launch now assembles the real SQLite, keyring, provider, local/Spotify playback, library, transfer, DJ and sync services. `--demo` remains an independent offline mode.
 - Startup migrates legacy state in place, restores playback paused, bounds provider restoration, and offers per-step Retry and Continue without services. Logs rotate daily with seven retained files; fatal startup errors use a native dialog.
 - Artwork loads through a 100 MiB on-disk LRU; Jellyfin/Plex auth headers are attached per request and never stored in cache keys. Streams from servers marked self-signed accept invalid certificates in the local HTTP source.
+- Queue artwork loads only around the visible rows, with off-thread thumbnail decoding; the compact player shows current artwork. Demo artwork is available offline.
 - DJ, catalog refresh and sync start only after the window is first shown or playback is requested.
 - The Now Playing album/source/quality line is hidden when nothing is playing.
 - Added tray controls, close-to-tray with an initial notice and unavailable-host fallback, single-instance focus, `--minimized`, and User-origin OS media controls with track metadata and saved state on Quit.

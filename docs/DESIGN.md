@@ -699,6 +699,11 @@ Every format in §10 has a fixture in `fixtures/`. CI fails if the Rust output d
    - Copy volume, shuffle, repeat, position and normalization.
    - Commit, then rename the file to `playback_state.json.migrated-v2`.
 3. Keyring entries are read in place and keep the same format. No migration is needed.
+   - On Linux the legacy app used keyring's `linux-native` backend, which keeps entries in the kernel **session**
+     keyring. That keyring is wiped at logout or reboot, so most legacy Linux installs have no credentials left.
+     This was verified on a real install.
+   - v2 uses `linux-native-sync-persistent` (Secret Service storage with a keyutils cache), so credentials persist.
+     After upgrading, Linux users usually sign in to their providers once.
 4. Legacy cache files are deleted from `cache_dir()/any-player/`:
    - `playlists_cache.json`, `custom_playlists_cache.json`
    - `custom_playlist_tracks_*`, `union_playlist_tracks_*`, `provider_playlist_*`
