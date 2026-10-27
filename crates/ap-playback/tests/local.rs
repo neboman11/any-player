@@ -353,7 +353,9 @@ async fn gapless_boundaries_at_consumed_sample_and_repeat_one() {
         sink.pump(80);
         repeated.extend(std::iter::from_fn(|| events.try_recv().ok()));
         assert!(
-            !repeated.iter().any(|e| matches!(e, BackendEvent::Error { .. })),
+            !repeated
+                .iter()
+                .any(|e| matches!(e, BackendEvent::Error { .. })),
             "{repeated:?}"
         );
         if repeated

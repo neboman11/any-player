@@ -37,6 +37,9 @@ ap-store -> ap-model
 - The playback engine, Spotify backend and DJ scheduler are single tokio actor tasks driven by `mpsc` commands.
 - Local audio decode is one OS thread per decoder feeding an `rtrb` ring; the `cpal` output callback never blocks
   or allocates.
+- On Windows, one process-lifetime WASAPI owner thread handles CPAL device queries and owns output
+  streams. CPAL 0.16 caches its COM enumerator globally; creating it on a short-lived caller thread
+  leaves later calls using an invalid apartment. Stream-guard drop waits for native teardown.
 - SQLite goes through the dedicated DB thread (writer) and the read-only pool. Never open ad-hoc connections.
 - Large list transforms (≥1k rows) and DSP use `tokio::task::spawn_blocking`.
 - Never block the main thread or a tokio worker with IO or heavy computation.

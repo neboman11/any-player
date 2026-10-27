@@ -1,9 +1,12 @@
 //! Local decoder → rate converter → half-second SPSC ring → allocation-free audio callback.
 //!
-//! Device creation and decoding stay off tokio. Sink streams are owned by the decoder OS
+//! Device creation and decoding stay off tokio. Sink streams stay on their owning OS
 //! thread (CPAL streams need not be Send). Boundary messages share the sample ring, so events
 //! describe consumed audio, never decoder look-ahead. CaptureSink exposes manual pumping for
 //! deterministic device-free integration tests.
+#[cfg(any(windows, test))]
+#[path = "local_cpal_windows.rs"]
+mod cpal_windows;
 #[path = "local_http.rs"]
 pub mod http;
 #[path = "local_null.rs"]
@@ -14,6 +17,8 @@ use crate::state::ChangeOrigin;
 use ap_model::{BackendKind, volume_normalization::track_gain};
 use async_trait::async_trait;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+#[cfg(windows)]
+pub use cpal_windows::CpalSink;
 use http::{AudioCache, HttpSource};
 pub use null::NullSink;
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -70,13 +75,15 @@ pub trait AudioSink: Send + Sync + 'static {
     }
 }
 /// CPAL output, default device when selection is None; device loss requests a rebuild.
+#[cfg(not(windows))]
+pub use NativeCpalSink as CpalSink;
 #[derive(Default)]
-pub struct CpalSink;
+pub struct NativeCpalSink;
 struct CpalStream {
     _stream: cpal::Stream,
 }
 impl SinkStream for CpalStream {}
-impl CpalSink {
+impl NativeCpalSink {
     fn device(name: Option<&str>) -> Result<cpal::Device, LocalError> {
         let host = cpal::default_host();
         if let Some(name) = name {
@@ -90,7 +97,7 @@ impl CpalSink {
         }
     }
 }
-impl AudioSink for CpalSink {
+impl AudioSink for NativeCpalSink {
     fn default_device_name(&self) -> Option<String> {
         cpal::default_host()
             .default_output_device()
