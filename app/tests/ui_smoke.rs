@@ -27,7 +27,13 @@ fn navigate_every_page_and_dialog_with_fake_engine() {
     let step = Rc::new(Cell::new(0));
     let timer = Timer::default();
     let weak = ui.as_weak();
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
     timer.start(TimerMode::Repeated, Duration::from_millis(150), move || {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "UI smoke timed out at step {}",
+            step.get()
+        );
         let ui = weak.upgrade().unwrap();
         match step.get() {
             0 => {
@@ -148,9 +154,19 @@ fn navigate_every_page_and_dialog_with_fake_engine() {
                     "Server already has synced data - choose which side to keep.",
                 );
                 ui.invoke_action("sync-resolve".into(), "".into(), 2);
-                ui.invoke_action("sync-pull".into(), "".into(), 0);
             }
             19 => {
+                // Actions run on Tokio tasks: wait for Resolve to finish before
+                // launching Pull, or Resolve can erase Pull's overwrite prompt.
+                if ui.get_sync_conflict() {
+                    return;
+                }
+                ui.invoke_action("sync-pull".into(), "".into(), 0);
+            }
+            20 => {
+                if !ui.get_sync_overwrite() {
+                    return;
+                }
                 visible(&ui, "Confirm playlist overwrite");
                 visible(&ui, "Continue");
                 visible(&ui, "Keep this device's playlists");
