@@ -344,7 +344,13 @@ impl Bridge {
                         },
                     );
                 }
-                ui.set_queue_art(Rc::new(VecModel::from(vec![crate::generated::QueueArt::default(); rows.len()])).into());
+                ui.set_queue_art(
+                    Rc::new(VecModel::from(vec![
+                        crate::generated::QueueArt::default();
+                        rows.len()
+                    ]))
+                    .into(),
+                );
                 ui.set_queue(swap(ui.get_queue(), rows));
                 if ui.get_page() == 0 {
                     ui.invoke_queue_window(ui.get_queue_first(), ui.get_queue_last());

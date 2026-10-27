@@ -34,8 +34,10 @@ impl crate::images::ImageCache for DemoImageCache {
         let image = image::RgbaImage::from_fn(192, 192, |x, y| {
             let mix = x + y;
             let channel = |i: usize| {
-                u8::try_from((u32::from(colors.0[i]) * (382 - mix) + u32::from(colors.1[i]) * mix) / 382)
-                    .expect("interpolated channel fits in u8")
+                u8::try_from(
+                    (u32::from(colors.0[i]) * (382 - mix) + u32::from(colors.1[i]) * mix) / 382,
+                )
+                .expect("interpolated channel fits in u8")
             };
             image::Rgba([channel(0), channel(1), channel(2), 255])
         });

@@ -248,8 +248,12 @@ pub(crate) fn attach(ui: &crate::MainWindow) {
 
 fn visible_urls(model: &slint::ModelRc<crate::TrackRow>, first: i32, last: i32) -> Vec<String> {
     use slint::Model;
-    let start = usize::try_from(first.max(0)).unwrap_or(0).min(model.row_count());
-    let end = usize::try_from(last.max(first).max(0)).unwrap_or(0).min(model.row_count());
+    let start = usize::try_from(first.max(0))
+        .unwrap_or(0)
+        .min(model.row_count());
+    let end = usize::try_from(last.max(first).max(0))
+        .unwrap_or(0)
+        .min(model.row_count());
     (start..end)
         .filter_map(|index| model.row_data(index))
         .filter(|row| !row.image_url.is_empty())
@@ -265,11 +269,21 @@ fn apply_thumbnail(ui: &crate::MainWindow, url: &str, image: &Image) {
     }
     let rows = ui.get_queue();
     let art = ui.get_queue_art();
-    let start = usize::try_from(ui.get_queue_first().max(0)).unwrap_or(0).min(rows.row_count());
-    let end = usize::try_from(ui.get_queue_last().max(0)).unwrap_or(0).min(rows.row_count());
+    let start = usize::try_from(ui.get_queue_first().max(0))
+        .unwrap_or(0)
+        .min(rows.row_count());
+    let end = usize::try_from(ui.get_queue_last().max(0))
+        .unwrap_or(0)
+        .min(rows.row_count());
     for index in start..end {
         if rows.row_data(index).is_some_and(|row| row.image_url == url) {
-            art.set_row_data(index, crate::generated::QueueArt { image: image.clone(), present: true });
+            art.set_row_data(
+                index,
+                crate::generated::QueueArt {
+                    image: image.clone(),
+                    present: true,
+                },
+            );
         }
     }
 }
@@ -294,7 +308,9 @@ pub fn attach_cache(ui: &crate::MainWindow, cache: Arc<dyn ImageCache>) {
     });
     let thumbnail_ui = ui.as_weak();
     ui.on_thumbnail_requested(move |url| {
-        let Some(ui) = thumbnail_ui.upgrade() else { return };
+        let Some(ui) = thumbnail_ui.upgrade() else {
+            return;
+        };
         if let Some(image) = thumbnails.cached(&url) {
             apply_thumbnail(&ui, &url, &image);
         } else if pending.borrow_mut().insert(url.to_string()) {
@@ -312,7 +328,9 @@ pub fn attach_cache(ui: &crate::MainWindow, cache: Arc<dyn ImageCache>) {
     });
     let thumbnail_ui = ui.as_weak();
     ui.on_queue_window(move |first, last| {
-        let Some(ui) = thumbnail_ui.upgrade() else { return };
+        let Some(ui) = thumbnail_ui.upgrade() else {
+            return;
+        };
         for url in visible_urls(&ui.get_queue(), first, last) {
             ui.invoke_thumbnail_requested(url.into());
         }
@@ -359,16 +377,21 @@ mod tests {
                 Err(crate::vm::ServiceError("test".into()))
             }
         }
-        let rows: Vec<_> = (0..1000).map(|i| crate::TrackRow {
-            image_url: format!("art-{i}").into(),
-            ..Default::default()
-        }).collect();
+        let rows: Vec<_> = (0..1000)
+            .map(|i| crate::TrackRow {
+                image_url: format!("art-{i}").into(),
+                ..Default::default()
+            })
+            .collect();
         let model: slint::ModelRc<_> = std::rc::Rc::new(slint::VecModel::from(rows)).into();
         let cache = Arc::new(RecordingCache(Mutex::new(Vec::new())));
         for url in super::visible_urls(&model, 120, 128) {
             let _ = super::ImageLoader::decode_sized(cache.clone(), url, 96).await;
         }
-        assert_eq!(*cache.0.lock().unwrap(), (120..128).map(|i| format!("art-{i}")).collect::<Vec<_>>());
+        assert_eq!(
+            *cache.0.lock().unwrap(),
+            (120..128).map(|i| format!("art-{i}")).collect::<Vec<_>>()
+        );
     }
 
     #[test]
