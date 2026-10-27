@@ -39,6 +39,9 @@ impl Server {
                     std::thread::sleep(Duration::from_millis(1));
                     continue;
                 };
+                // Accepted sockets inherit O_NONBLOCK on macOS/BSD. A partial
+                // write followed by WouldBlock would truncate the declared body.
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(2)))
                     .unwrap();
@@ -342,10 +345,26 @@ async fn gapless_boundaries_at_consumed_sample_and_repeat_one() {
     backend
         .load(10, run(&[&first.url]), 0, 0, true, ChangeOrigin::User)
         .await;
-    wait_worker().await;
-    sink.pump(3200);
-    wait_worker().await;
-    let repeated = std::iter::from_fn(|| events.try_recv().ok()).collect::<Vec<_>>();
+    // Let the decoder refill between callbacks, as a real audio device does.
+    // One immediate 3200-frame callback races the worker decoding the repeat.
+    let mut repeated = Vec::new();
+    for _ in 0..200 {
+        wait_worker().await;
+        sink.pump(80);
+        repeated.extend(std::iter::from_fn(|| events.try_recv().ok()));
+        assert!(
+            !repeated.iter().any(|e| matches!(e, BackendEvent::Error { .. })),
+            "{repeated:?}"
+        );
+        if repeated
+            .iter()
+            .filter(|e| matches!(e, BackendEvent::ItemStarted { load_id: 10, .. }))
+            .count()
+            >= 2
+        {
+            break;
+        }
+    }
     assert_eq!(
         repeated
             .iter()
