@@ -91,7 +91,10 @@ async fn standard_crud_duplicates_positions_timestamps_and_cascades() {
             1,
         )?;
         assert!(delete_playlist(c, &p.id)?);
-        assert!(list_tracks(c, &p.id)?.is_empty());
+        assert_eq!(
+            list_tracks(c, &p.id)?,
+            [] as [ap_store::playlists::PlaylistTrackRecord; 0]
+        );
         assert!(catalog::tracks(c, &catalog::union_owner_key(&p.id))?.is_none());
         assert!(!delete_playlist(c, &p.id)?);
         Ok(())
@@ -154,7 +157,10 @@ async fn union_sources_clamp_reorder_remove_and_replace_atomically() {
             );
             assert_eq!(list_union_sources(c, &p.id)?, before);
             assert!(delete_playlist(c, &p.id)?);
-            assert!(list_union_sources(c, &p.id)?.is_empty());
+            assert_eq!(
+                list_union_sources(c, &p.id)?,
+                [] as [ap_store::playlists::UnionSourceRecord; 0]
+            );
             Ok(())
         })
         .await
@@ -334,7 +340,10 @@ async fn catalog_scopes_owners_removes_vanished_and_preserves_freshness() {
             assert!(catalog::touch_owner(c, &key, 900)?);
             assert_eq!(catalog::tracks(c, &key)?.unwrap().updated_at_ms, 900);
             catalog::clear_provider(c, SourceType::Plex)?;
-            assert!(catalog::playlists(c, None)?.is_empty());
+            assert_eq!(
+                catalog::playlists(c, None)?,
+                [] as [ap_store::catalog::CachedPlaylist; 0]
+            );
             assert!(catalog::tracks(c, &key)?.is_none());
             Ok(())
         })

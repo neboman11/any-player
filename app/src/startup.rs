@@ -115,7 +115,7 @@ mod tests {
             ap_store::secrets::MemoryBackend::new(),
         )));
         let (services, status) = boot(&paths, secrets).await.unwrap();
-        assert!(status.warnings.is_empty());
+        assert_eq!(status.warnings, [] as [std::string::String; 0]);
         assert!(
             !status.sync_migration_banner,
             "fresh install shows no upgrade banner"

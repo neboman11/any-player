@@ -26,7 +26,7 @@ async fn typed_settings_defaults_roundtrip_every_key_and_boundaries() {
     assert_eq!(initial.player.position_ms, 0);
     assert_eq!(initial.dj.voice_id, None);
     assert!((initial.dj.voice_level - 1.0).abs() < f64::EPSILON);
-    assert!(initial.sync.server_target.is_empty());
+    assert_eq!(initial.sync.server_target, "");
     assert!(initial.sync.client_id.starts_with("desktop-"));
     assert!(
         initial.sync.domains.app_state

@@ -53,7 +53,10 @@ async fn standard_crud_dense_reorder_duplicates_and_play_from_track() {
     repo.rename(&p.id, "new").await.unwrap();
     assert_eq!(repo.get(&p.id).await.unwrap().unwrap().name, "new");
     assert!(repo.delete(&p.id).await.unwrap());
-    assert!(repo.cached_tracks(&p.id).await.unwrap().is_empty());
+    assert_eq!(
+        repo.cached_tracks(&p.id).await.unwrap(),
+        [] as [ap_model::Track; 0]
+    );
 }
 #[tokio::test]
 async fn union_source_order_one_level_expansion_identity_then_title_dedupe() {
@@ -117,7 +120,10 @@ async fn union_source_order_one_level_expansion_identity_then_title_dedupe() {
         .unwrap();
     assert_eq!(repo.cached_tracks(&union.id).await.unwrap().len(), 2);
     repo.replace_union_sources(&union.id, vec![]).await.unwrap();
-    assert!(repo.cached_tracks(&union.id).await.unwrap().is_empty());
+    assert_eq!(
+        repo.cached_tracks(&union.id).await.unwrap(),
+        [] as [ap_model::Track; 0]
+    );
 }
 #[tokio::test]
 async fn observe_only_union_never_fetches_and_source_edit_survives_cancellation() {
@@ -145,7 +151,10 @@ async fn observe_only_union_never_fetches_and_source_edit_survives_cancellation(
     edit.abort();
     let _ = edit.await;
     assert_eq!(repo.union_sources(&union.id).await.unwrap().len(), 1);
-    assert!(repo.cached_tracks(&union.id).await.unwrap().is_empty());
+    assert_eq!(
+        repo.cached_tracks(&union.id).await.unwrap(),
+        [] as [ap_model::Track; 0]
+    );
     assert_eq!(fake.active.load(Ordering::SeqCst), 0);
 }
 #[tokio::test]
@@ -208,8 +217,14 @@ async fn source_edit_wins_over_materialization_already_in_flight() {
     fake.started.acquire().await.unwrap().forget();
     repo.replace_union_sources(&union.id, vec![]).await.unwrap();
     gate.add_permits(1);
-    assert!(materialize.await.unwrap().unwrap().is_empty());
-    assert!(repo.cached_tracks(&union.id).await.unwrap().is_empty());
+    assert_eq!(
+        materialize.await.unwrap().unwrap(),
+        [] as [ap_model::Track; 0]
+    );
+    assert_eq!(
+        repo.cached_tracks(&union.id).await.unwrap(),
+        [] as [ap_model::Track; 0]
+    );
 }
 
 #[tokio::test]
@@ -240,5 +255,8 @@ async fn nested_custom_unions_expand_only_one_level_and_local_urls_survive() {
     repo.replace_union_sources(&third.id, vec![(SourceType::Custom, second.id)])
         .await
         .unwrap();
-    assert!(repo.cached_tracks(&third.id).await.unwrap().is_empty());
+    assert_eq!(
+        repo.cached_tracks(&third.id).await.unwrap(),
+        [] as [ap_model::Track; 0]
+    );
 }

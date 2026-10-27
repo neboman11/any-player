@@ -86,8 +86,18 @@ impl MediaControls {
     pub fn set_playback(&mut self, playback: PlaybackState) -> Result<(), souvlaki::Error> {
         self.0.set_playback(map_playback(playback))
     }
+    /// Publishes the player volume. Only MPRIS (Linux) has a volume property; Windows SMTC and
+    /// macOS Now Playing expose none, so there the call succeeds without effect.
+    #[cfg(target_os = "linux")]
     pub fn set_volume(&mut self, volume: f64) -> Result<(), souvlaki::Error> {
         self.0.set_volume(volume)
+    }
+    /// Publishes the player volume. Only MPRIS (Linux) has a volume property; Windows SMTC and
+    /// macOS Now Playing expose none, so there the call succeeds without effect.
+    #[cfg(not(target_os = "linux"))]
+    #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
+    pub fn set_volume(&mut self, _volume: f64) -> Result<(), souvlaki::Error> {
+        Ok(())
     }
 }
 #[cfg(test)]

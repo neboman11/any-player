@@ -186,9 +186,9 @@ fn level_trim_shifts_loudness_and_silence_stays_empty() {
     let fs = 24_000;
     let quieter = process(&speech(fs as i32, 0.5, 4, 7), fs, 0.5);
     assert!((loudness_of(&quieter, fs) - (TARGET_LUFS - 6.0)).abs() <= 1.0);
-    assert!(process(&vec![0.0; fs as usize], fs, 1.0).is_empty());
-    assert!(process(&vec![1e-4; fs as usize], fs, 1.0).is_empty());
-    assert!(process(&[], fs, 1.0).is_empty());
+    assert_eq!(process(&vec![0.0; fs as usize], fs, 1.0), [] as [f32; 0]);
+    assert_eq!(process(&vec![1e-4; fs as usize], fs, 1.0), [] as [f32; 0]);
+    assert_eq!(process(&[], fs, 1.0), [] as [f32; 0]);
 }
 
 #[test]

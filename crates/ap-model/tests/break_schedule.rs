@@ -286,7 +286,7 @@ fn fixture_event(name: &str) -> ScheduleEvent {
 fn golden_vectors_from_android() {
     let root = fixture_json("break_schedule.json");
     let cases = root["cases"].as_array().unwrap();
-    assert!(!cases.is_empty());
+    assert_ne!(cases.len(), 0, "fixture has no cases");
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let mut intervals = case["intervals"]

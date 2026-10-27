@@ -99,12 +99,12 @@ async fn search_retains_successes_in_provider_order_and_errors_only_if_all_fail(
     let repo = CatalogRepository::new(db, vec![s.clone(), p.clone(), j.clone()])
         .await
         .unwrap();
-    assert!(
+    assert_eq!(
         repo.search(" ", SourceType::All, SearchType::Tracks)
             .await
             .unwrap()
-            .tracks
-            .is_empty()
+            .tracks,
+        [] as [ap_model::Track; 0]
     );
     assert_eq!(j.calls.load(Ordering::SeqCst), 0);
     let result = repo
@@ -164,7 +164,10 @@ async fn refresh_all_limits_track_fetches_to_four_and_keeps_listing_order() {
     let repo = CatalogRepository::new(db, vec![fake.clone()])
         .await
         .unwrap();
-    assert!(repo.refresh_all().await.unwrap().is_empty());
+    assert_eq!(
+        repo.refresh_all().await.unwrap(),
+        [] as [ap_library::ProviderRefreshFailure; 0]
+    );
     assert!(fake.peak.load(Ordering::SeqCst) <= 4);
     assert_eq!(fake.calls.load(Ordering::SeqCst), 13);
     assert_eq!(repo.cached_playlists().await.unwrap()[11].id, "11");

@@ -95,7 +95,7 @@ async fn search_keeps_partial_success_and_pages_twenty() {
         .await
         .unwrap();
     let state = SearchPort::subscribe(&service).borrow().clone();
-    assert!(state.error.is_empty());
+    assert_eq!(state.error, "");
     assert!(
         state
             .tracks
@@ -151,7 +151,7 @@ async fn all_page_view_models_accept_service_ports() {
         })
         .await
         .unwrap();
-    assert!(!search.state.borrow().tracks.is_empty());
+    assert_ne!(search.state.borrow().tracks, [] as [ap_model::Track; 0]);
     let settings = settings::SettingsVm::new(service.clone());
     settings
         .dispatch(SettingsCommand::Normalize(false))
@@ -272,10 +272,16 @@ async fn dj_level_is_clamped_and_logs_are_cleared() {
     service.dj(DjCommand::Debug(true)).await.unwrap();
     service.dj(DjCommand::Level(9.0)).await.unwrap();
     assert!((DjPort::subscribe(&service).borrow().level - 2.0).abs() < f32::EPSILON);
-    assert!(!DjPort::subscribe(&service).borrow().logs.is_empty());
+    assert_ne!(
+        DjPort::subscribe(&service).borrow().logs,
+        [] as [std::string::String; 0]
+    );
     service.dj(DjCommand::Debug(false)).await.unwrap();
     service.dj(DjCommand::ClearLogs).await.unwrap();
-    assert!(DjPort::subscribe(&service).borrow().logs.is_empty());
+    assert_eq!(
+        DjPort::subscribe(&service).borrow().logs,
+        [] as [std::string::String; 0]
+    );
 }
 
 #[tokio::test]

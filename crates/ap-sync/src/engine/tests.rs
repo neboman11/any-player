@@ -490,7 +490,7 @@ async fn connect_conflict_cancel_and_explicit_resolution() {
     rig.queue("local").await;
     rig.actor.command(Command::Local).await.unwrap();
     rig.actor.timers().await.unwrap();
-    assert!(rig.pushes("app-state").is_empty());
+    assert_eq!(rig.pushes("app-state"), [] as [ap_model::JsonElement; 0]);
     rig.actor.command(Command::Connect).await.unwrap();
     rig.actor.command(Command::Resolve(false)).await.unwrap();
     assert_eq!(
@@ -532,7 +532,7 @@ async fn startup_applies_paused_state_and_echo_guard() {
     rig.actor.observed.store(true, Ordering::SeqCst);
     rig.actor.command(Command::Local).await.unwrap();
     assert!(rig.actor.app_due.is_none());
-    assert!(rig.pushes("app-state").is_empty());
+    assert_eq!(rig.pushes("app-state"), [] as [ap_model::JsonElement; 0]);
     rig.actor.suppress_until = Instant::now();
     rig.actor.command(Command::Local).await.unwrap();
     rig.actor.timers().await.unwrap();
@@ -970,7 +970,7 @@ async fn playlist_wire_base_and_local_base_make_repeat_pull_idempotent() {
         .unwrap();
     assert!(!rig.actor.state.borrow().playlist_sync_paused);
     assert_eq!(rig.actor.deps.playlists.list().await.unwrap(), rows);
-    assert!(rig.pushes("playlists").is_empty());
+    assert_eq!(rig.pushes("playlists"), [] as [ap_model::JsonElement; 0]);
 }
 
 #[tokio::test]
@@ -1076,7 +1076,10 @@ async fn import_failure_reports_import_status_and_still_records_version() {
     assert!(status.starts_with("Sync import failed: "), "{status}");
     // Not applied: no "Sync pull complete." over the failed import.
     assert_eq!(rig.actor.state.borrow().status, "Sync idle");
-    assert!(rig.actor.deps.playlists.list().await.unwrap().is_empty());
+    assert_eq!(
+        rig.actor.deps.playlists.list().await.unwrap(),
+        [] as [ap_store::playlists::PlaylistRecord; 0]
+    );
     assert_eq!(rig.actor.cursor, 7);
     let key = rig.target.key();
     assert_eq!(

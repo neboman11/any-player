@@ -281,13 +281,9 @@ async fn dry_run_changes_neither_playlists_connections_nor_playback() {
         .unwrap();
     assert_eq!(summary.playlists_added, 1);
     assert_eq!(summary.connections_imported, 1);
-    assert!(
-        service
-            .snapshot()
-            .await
-            .unwrap()
-            .custom_playlists
-            .is_empty()
+    assert_eq!(
+        service.snapshot().await.unwrap().custom_playlists,
+        [] as [ap_model::CustomPlaylist; 0]
     );
     assert!(connections.0.lock().unwrap().is_empty());
     assert!(summary.playback_settings.is_none());

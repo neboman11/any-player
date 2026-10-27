@@ -37,11 +37,22 @@ impl Api {
         *self.last.lock().unwrap() = s;
     }
     fn setting_result(&self) -> Result<(), SpotifyError> {
-        if self
-            .settings_failures
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
-            .is_ok()
-        {
+        let mut remaining = self.settings_failures.load(Ordering::Relaxed);
+        let consumed = loop {
+            if remaining == 0 {
+                break false;
+            }
+            match self.settings_failures.compare_exchange(
+                remaining,
+                remaining - 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break true,
+                Err(actual) => remaining = actual,
+            }
+        };
+        if consumed {
             Err(SpotifyError::Http {
                 status: 404,
                 message: "Device is still activating".into(),

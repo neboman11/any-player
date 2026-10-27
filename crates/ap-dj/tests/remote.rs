@@ -98,7 +98,7 @@ async fn success_posts_body_and_writes_processed_wav() {
     // Audible tone spans samples 6001..=17999 (sample 6000 is a zero crossing), plus 2 × 20 ms
     // trim margins and the 50/200 ms pads.
     assert_eq!(wave.samples.len(), 11_999 + 2 * 480 + 1_200 + 4_800);
-    assert!(diagnostics.entries().is_empty());
+    assert_eq!(diagnostics.entries(), [] as [ap_dj::DjLogEntry; 0]);
 }
 
 #[tokio::test]
@@ -165,7 +165,7 @@ async fn undecodable_or_silent_audio_fails() {
         .await;
     let (ok, diagnostics, _dir) = generate(&server, None, 1.0).await;
     assert!(!ok);
-    assert!(diagnostics.entries().is_empty());
+    assert_eq!(diagnostics.entries(), [] as [ap_dj::DjLogEntry; 0]);
 }
 
 #[tokio::test]
@@ -186,7 +186,7 @@ async fn no_account_or_unreachable_server() {
             )
             .await
     );
-    assert!(diagnostics.entries().is_empty());
+    assert_eq!(diagnostics.entries(), [] as [ap_dj::DjLogEntry; 0]);
     // Port 9 (discard) on loopback is closed in test environments.
     assert!(
         !generator

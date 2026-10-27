@@ -109,7 +109,7 @@ mod tests {
         assert_eq!(entries[0].message, "50");
         assert_eq!(entries[199].message, "249");
         diagnostics.clear();
-        assert!(diagnostics.entries().is_empty());
+        assert_eq!(diagnostics.entries().len(), 0);
     }
 
     #[test]

@@ -581,5 +581,5 @@ async fn facade_refreshes_voice_catalog_validates_selection_and_controls_logs() 
     diagnostics.debug("Test", "visible");
     assert_eq!(diagnostics.entries().last().unwrap().message, "visible");
     rig.controller.clear_logs();
-    assert!(diagnostics.entries().is_empty());
+    assert_eq!(diagnostics.entries(), [] as [ap_dj::DjLogEntry; 0]);
 }

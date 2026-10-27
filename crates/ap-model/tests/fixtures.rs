@@ -49,7 +49,7 @@ fn track(v: &JsonElement) -> Track {
 fn sync_signatures_app_state() {
     let root = fixture_tree("sync_signatures.json");
     let cases = field(&root, "app_state").as_array().unwrap();
-    assert!(!cases.is_empty());
+    assert_ne!(cases.len(), 0, "fixture has no cases");
     for case in cases {
         let name = text(case, "name");
         let current = match field(case, "current") {
@@ -84,7 +84,7 @@ fn signature_input(case: &JsonElement) -> JsonElement {
 fn sync_signatures_playlists() {
     let root = fixture_tree("sync_signatures.json");
     let cases = field(&root, "playlists").as_array().unwrap();
-    assert!(!cases.is_empty());
+    assert_ne!(cases.len(), 0, "fixture has no cases");
     for case in cases {
         let input = signature_input(case);
         let input = if input == JsonElement::Null {
@@ -105,7 +105,7 @@ fn sync_signatures_playlists() {
 fn sync_signatures_settings() {
     let root = fixture_tree("sync_signatures.json");
     let cases = field(&root, "settings").as_array().unwrap();
-    assert!(!cases.is_empty());
+    assert_ne!(cases.len(), 0, "fixture has no cases");
     for case in cases {
         assert_eq!(
             signatures::settings(&signature_input(case)),
@@ -129,7 +129,7 @@ fn sync_signatures_settings() {
 fn sync_signatures_base_target() {
     let root = fixture_tree("sync_signatures.json");
     let cases = field(&root, "base_target").as_array().unwrap();
-    assert!(!cases.is_empty());
+    assert_ne!(cases.len(), 0, "fixture has no cases");
     for case in cases {
         let (target, token) = (text(case, "server_target"), text(case, "auth_token"));
         assert_eq!(
@@ -260,7 +260,7 @@ fn legacy_state_file_verifies() {
 fn config_ids_name_uuid() {
     let root = fixture_json("config_ids.json");
     let cases = root["name_uuid"].as_array().unwrap();
-    assert!(!cases.is_empty());
+    assert_ne!(cases.len(), 0, "fixture has no cases");
     for case in cases {
         let key = case["key"].as_str().unwrap();
         assert_eq!(
@@ -293,7 +293,7 @@ fn config_ids_name_uuid() {
 fn config_export_json_round_trips_byte_exact() {
     let root = fixture_json("config_ids.json");
     let cases = root["export_json"].as_array().unwrap();
-    assert!(!cases.is_empty());
+    assert_ne!(cases.len(), 0, "fixture has no cases");
     for case in cases {
         let json = case["json"].as_str().unwrap();
         let playlists: Vec<ConfigCustomPlaylist> = serde_json::from_str(json).unwrap();
@@ -348,7 +348,7 @@ fn volume_normalization_parity() {
 fn dedupe_cases() -> Vec<serde_json::Value> {
     let root = fixture_json("dedup_spec.json");
     let cases = root["test_cases"].as_array().unwrap().clone();
-    assert!(!cases.is_empty());
+    assert_ne!(cases.len(), 0, "fixture has no cases");
     cases
 }
 

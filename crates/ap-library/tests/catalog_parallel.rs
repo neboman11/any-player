@@ -21,5 +21,8 @@ async fn both_provider_requests_start_before_either_finishes() {
     j.started.acquire().await.unwrap().forget();
     p.started.acquire().await.unwrap().forget();
     gate.add_permits(2);
-    assert!(refresh.await.unwrap().unwrap().is_empty());
+    assert_eq!(
+        refresh.await.unwrap().unwrap(),
+        [] as [ap_library::ProviderRefreshFailure; 0]
+    );
 }

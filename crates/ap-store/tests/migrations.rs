@@ -76,11 +76,9 @@ async fn fresh_empty_db_gets_full_v1_schema() {
         .unwrap();
     assert_eq!(fk, 1);
     assert_eq!(mode, "wal");
-    assert!(
-        db.call(|c| playlists::list_playlists(c))
-            .await
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        db.call(|c| playlists::list_playlists(c)).await.unwrap(),
+        [] as [ap_store::playlists::PlaylistRecord; 0]
     );
 }
 

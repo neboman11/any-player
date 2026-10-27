@@ -76,8 +76,8 @@ async fn stored_user_is_preferred_and_resolution_is_cached() {
         .mount(&server)
         .await;
     let c = client(&server, Some("u2"), 300);
-    assert!(c.playlists().await.unwrap().is_empty());
-    assert!(c.playlists().await.unwrap().is_empty());
+    assert_eq!(c.playlists().await.unwrap(), [] as [ap_model::Playlist; 0]);
+    assert_eq!(c.playlists().await.unwrap(), [] as [ap_model::Playlist; 0]);
     assert_eq!(c.resolve_user().await.unwrap().id, "u2");
 }
 
@@ -279,7 +279,10 @@ async fn search_is_one_page_of_fifty_and_blank_is_local() {
     let c = client(&server, None, 300);
     assert_eq!(c.search_tracks("rock & roll").await.unwrap().len(), 1);
     assert_eq!(c.search_playlists("x").await.unwrap().len(), 1);
-    assert!(c.search_tracks("   ").await.unwrap().is_empty());
+    assert_eq!(
+        c.search_tracks("   ").await.unwrap(),
+        [] as [ap_model::Track; 0]
+    );
 }
 
 #[tokio::test]

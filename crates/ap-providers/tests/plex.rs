@@ -90,7 +90,10 @@ async fn transient_5xx_is_retried_then_succeeds() {
         .respond_with(ResponseTemplate::new(200).set_body_json(container(json!([]), Some(0))))
         .mount(&server)
         .await;
-    assert!(client(&server, 300).playlists().await.unwrap().is_empty());
+    assert_eq!(
+        client(&server, 300).playlists().await.unwrap(),
+        [] as [ap_model::Playlist; 0]
+    );
 }
 
 async fn mount_page(
@@ -289,7 +292,10 @@ async fn search_filters_types_and_blank_is_local() {
     let c = client(&server, 300);
     assert_eq!(c.search_tracks("song").await.unwrap().len(), 2);
     assert_eq!(c.search_playlists("song").await.unwrap().len(), 2);
-    assert!(c.search_tracks("   ").await.unwrap().is_empty());
+    assert_eq!(
+        c.search_tracks("   ").await.unwrap(),
+        [] as [ap_model::Track; 0]
+    );
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
 

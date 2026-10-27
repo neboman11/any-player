@@ -283,7 +283,7 @@ async fn non_ok_status_and_malformed_bodies_yield_none() {
     .unwrap();
     let account = DjAccount::new(&server.uri(), "");
     assert_eq!(client.find_passages(&account, &track()).await, None);
-    assert!(diagnostics.entries().is_empty());
+    assert_eq!(diagnostics.entries(), [] as [ap_dj::DjLogEntry; 0]);
     assert_eq!(client.find_passages(&account, &track()).await, None);
     assert_eq!(
         diagnostics.entries().last().unwrap().message,
@@ -380,7 +380,7 @@ async fn accounts_preserve_separate_queues_and_exclusions() {
     f.client.flush_pending(&f.account).await;
     assert_eq!(f.receipts().await.len(), before + 1);
     let keys: Vec<String> = f.store.values().into_keys().collect();
-    assert!(!keys.is_empty());
+    assert_ne!(keys, [] as [std::string::String; 0]);
     assert!(keys.iter().all(|k| k.len() == 70
         && k.starts_with("state_")
         && k[6..].bytes().all(|b| b.is_ascii_hexdigit())));

@@ -1161,7 +1161,7 @@ mod tests {
         plex.fail.store(true, Ordering::SeqCst);
         adapter.search(search_request("other", 0, 3)).await.unwrap();
         assert_eq!(state.borrow().total, 25);
-        assert!(state.borrow().error.is_empty());
+        assert_eq!(state.borrow().error, "");
         jellyfin.fail.store(true, Ordering::SeqCst);
         adapter
             .search(search_request("all fail", 0, 4))
