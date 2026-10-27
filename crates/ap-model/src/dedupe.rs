@@ -36,7 +36,11 @@ pub struct Deduplicated<T> {
 /// The dedupe key: Kotlin-trimmed, lowercased title and artist joined with `|`.
 #[must_use]
 pub fn key(title: &str, artist: &str) -> String {
-    format!("{}|{}", kotlin_trim(title).to_lowercase(), kotlin_trim(artist).to_lowercase())
+    format!(
+        "{}|{}",
+        kotlin_trim(title).to_lowercase(),
+        kotlin_trim(artist).to_lowercase()
+    )
 }
 
 /// Dedupes playlist rows by title|artist.
@@ -64,15 +68,25 @@ pub fn dedupe_by<T>(
     for (index, item) in items.into_iter().enumerate() {
         let key = key_of(&item);
         if let Some(&slot) = slot_of.get(&key) {
-            groups[slot].occurrences.push(DuplicateOccurrence { index, track_id: id_of(&item) });
+            groups[slot].occurrences.push(DuplicateOccurrence {
+                index,
+                track_id: id_of(&item),
+            });
         } else {
             slot_of.insert(key.clone(), groups.len());
-            groups.push(DuplicateGroup { key, first_occurrence_index: index, occurrences: Vec::new() });
+            groups.push(DuplicateGroup {
+                key,
+                first_occurrence_index: index,
+                occurrences: Vec::new(),
+            });
             kept.push(item);
         }
     }
     groups.retain(|g| !g.occurrences.is_empty());
-    Deduplicated { items: kept, duplicate_groups: groups }
+    Deduplicated {
+        items: kept,
+        duplicate_groups: groups,
+    }
 }
 
 #[cfg(test)]
@@ -88,16 +102,29 @@ mod tests {
 
     #[test]
     fn groups_are_ordered_by_first_occurrence() {
-        let t = |id: &str, title: &str, artist: &str| Track::new(id, title, artist, SourceType::Jellyfin);
+        let t = |id: &str, title: &str, artist: &str| {
+            Track::new(id, title, artist, SourceType::Jellyfin)
+        };
         let result = deduplicate_tracks(vec![
             t("1", "Song A", "X"),
             t("2", "Song B", "Y"),
             t("3", "Song B", "Y"),
             t("4", "Song A", "X"),
         ]);
-        assert_eq!(result.items.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["1", "2"]);
         assert_eq!(
-            result.duplicate_groups.iter().map(|g| g.key.as_str()).collect::<Vec<_>>(),
+            result
+                .items
+                .iter()
+                .map(|t| t.id.as_str())
+                .collect::<Vec<_>>(),
+            ["1", "2"]
+        );
+        assert_eq!(
+            result
+                .duplicate_groups
+                .iter()
+                .map(|g| g.key.as_str())
+                .collect::<Vec<_>>(),
             ["song a|x", "song b|y"]
         );
     }

@@ -14,7 +14,16 @@ fn tracks() -> Vec<Track> {
 }
 
 fn queue_with(start: isize, shuffle: bool, seed: u64) -> QueueState {
-    QueueOps::replace(&QueueState { shuffle, ..QueueState::default() }, tracks(), start, &mut rng(seed), false)
+    QueueOps::replace(
+        &QueueState {
+            shuffle,
+            ..QueueState::default()
+        },
+        tracks(),
+        start,
+        &mut rng(seed),
+        false,
+    )
 }
 
 fn queue(start: isize) -> QueueState {
@@ -35,7 +44,10 @@ fn replace_without_shuffle_keeps_insertion_order_and_start_index() {
     assert_eq!(&*s.order, &[0, 1, 2, 3, 4]);
     assert_eq!(s.cursor, 2);
     assert_eq!(current_id(&s), Some("c"));
-    assert_eq!(s.entries.iter().map(|e| e.uid).collect::<Vec<_>>(), [1, 2, 3, 4, 5]);
+    assert_eq!(
+        s.entries.iter().map(|e| e.uid).collect::<Vec<_>>(),
+        [1, 2, 3, 4, 5]
+    );
     assert_eq!(s.next_uid, 6);
     assert_eq!(s.content_version, 1);
 }
@@ -50,8 +62,14 @@ fn replace_empty_tracks_clears_queue() {
 
 #[test]
 fn replace_start_index_is_clamped() {
-    assert_eq!(QueueOps::replace(&QueueState::default(), tracks(), 99, &mut rng(1), false).cursor, 4);
-    assert_eq!(QueueOps::replace(&QueueState::default(), tracks(), -3, &mut rng(1), false).cursor, 0);
+    assert_eq!(
+        QueueOps::replace(&QueueState::default(), tracks(), 99, &mut rng(1), false).cursor,
+        4
+    );
+    assert_eq!(
+        QueueOps::replace(&QueueState::default(), tracks(), -3, &mut rng(1), false).cursor,
+        0
+    );
 }
 
 #[test]
@@ -71,7 +89,16 @@ fn replace_with_shuffle_and_explicit_start_puts_start_first_and_shuffles_rest() 
 
 #[test]
 fn replace_with_shuffle_single_track_starts_at_it() {
-    let s = QueueOps::replace(&QueueState { shuffle: true, ..QueueState::default() }, vec![jf("x")], 0, &mut rng(3), false);
+    let s = QueueOps::replace(
+        &QueueState {
+            shuffle: true,
+            ..QueueState::default()
+        },
+        vec![jf("x")],
+        0,
+        &mut rng(3),
+        false,
+    );
     assert_eq!(&*s.order, &[0]);
     assert_eq!(s.cursor, 0);
 }
@@ -80,7 +107,10 @@ fn replace_with_shuffle_single_track_starts_at_it() {
 fn replace_resets_play_next_offset() {
     let stacked = QueueOps::play_next(&queue(0), jf("n"));
     assert_eq!(stacked.play_next_offset, 1);
-    assert_eq!(QueueOps::replace(&stacked, tracks(), 0, &mut rng(1), false).play_next_offset, 0);
+    assert_eq!(
+        QueueOps::replace(&stacked, tracks(), 0, &mut rng(1), false).play_next_offset,
+        0
+    );
 }
 
 #[test]
@@ -170,7 +200,10 @@ fn advance_and_back_follow_shuffled_order() {
     let s = queue_with(0, true, 11);
     let next = QueueOps::advance(&s, true).unwrap();
     assert_eq!(next.current(), Some(s.entry_at(1)));
-    assert_eq!(QueueOps::back(&next).unwrap().current(), Some(s.entry_at(0)));
+    assert_eq!(
+        QueueOps::back(&next).unwrap().current(),
+        Some(s.entry_at(0))
+    );
 }
 
 #[test]
@@ -182,7 +215,10 @@ fn set_shuffle_on_keeps_current_at_cursor_and_history() {
     assert_eq!(current_id(&on), Some("c"));
     assert_eq!(s.current(), on.current());
     assert_eq!(ids(on.history()), ["a", "b"]);
-    assert_eq!(ids(on.upcoming()).into_iter().collect::<BTreeSet<_>>(), ["d".to_owned(), "e".to_owned()].into());
+    assert_eq!(
+        ids(on.upcoming()).into_iter().collect::<BTreeSet<_>>(),
+        ["d".to_owned(), "e".to_owned()].into()
+    );
     assert_eq!(set(&on.order), (0..5).collect());
 }
 
@@ -205,9 +241,16 @@ fn set_shuffle_unchanged_returns_same_state() {
 
 #[test]
 fn set_shuffle_without_current_shuffles_everything() {
-    let entries: Arc<[QueueEntry]> =
-        tracks().into_iter().zip(1..).map(|(track, uid)| QueueEntry { uid, track }).collect();
-    let s = QueueState { entries, order: (0..5).collect(), ..QueueState::default() };
+    let entries: Arc<[QueueEntry]> = tracks()
+        .into_iter()
+        .zip(1..)
+        .map(|(track, uid)| QueueEntry { uid, track })
+        .collect();
+    let s = QueueState {
+        entries,
+        order: (0..5).collect(),
+        ..QueueState::default()
+    };
     let on = QueueOps::set_shuffle(&s, true, &mut rng(2));
     assert_eq!(on.cursor, -1);
     assert_eq!(set(&on.order), (0..5).collect());
@@ -215,7 +258,13 @@ fn set_shuffle_without_current_shuffles_everything() {
 
 #[test]
 fn jump_with_duplicate_track_ids_is_distinct_by_uid() {
-    let s = QueueOps::replace(&QueueState::default(), vec![jf("a"), jf("b"), jf("a"), jf("a")], 0, &mut rng(1), false);
+    let s = QueueOps::replace(
+        &QueueState::default(),
+        vec![jf("a"), jf("b"), jf("a"), jf("a")],
+        0,
+        &mut rng(1),
+        false,
+    );
     let (third, fourth) = (s.entries[2].clone(), s.entries[3].clone());
     assert_eq!(third.track, fourth.track);
     assert_ne!(third.uid, fourth.uid);
@@ -227,7 +276,10 @@ fn jump_with_duplicate_track_ids_is_distinct_by_uid() {
     assert_eq!(j4.cursor, 3);
     assert_eq!(j4.current().map(|e| e.uid), Some(fourth.uid));
     assert_eq!(ids(j3.upcoming()), ["a"]);
-    assert_eq!(j3.upcoming().map(|e| e.uid).collect::<Vec<_>>(), [fourth.uid]);
+    assert_eq!(
+        j3.upcoming().map(|e| e.uid).collect::<Vec<_>>(),
+        [fourth.uid]
+    );
 }
 
 #[test]
@@ -242,26 +294,67 @@ fn upcoming_and_history_follow_cursor() {
 
 #[test]
 fn replace_random_start_picks_random_start_only_when_requested() {
-    let shuffled = QueueState { shuffle: true, ..QueueState::default() };
+    let shuffled = QueueState {
+        shuffle: true,
+        ..QueueState::default()
+    };
     let starts: BTreeSet<String> = (1..=40)
-        .map(|seed| current_id(&QueueOps::replace(&shuffled, tracks(), 0, &mut rng(seed), true)).unwrap().to_owned())
+        .map(|seed| {
+            current_id(&QueueOps::replace(
+                &shuffled,
+                tracks(),
+                0,
+                &mut rng(seed),
+                true,
+            ))
+            .unwrap()
+            .to_owned()
+        })
         .collect();
-    assert!(starts.len() > 1, "random start should vary across seeds, got {starts:?}");
+    assert!(
+        starts.len() > 1,
+        "random start should vary across seeds, got {starts:?}"
+    );
     for seed in 1..=40 {
         let kept = QueueOps::replace(&shuffled, tracks(), 0, &mut rng(seed), false);
-        assert_eq!(current_id(&kept), Some("a"), "restore/sync keep the given start");
+        assert_eq!(
+            current_id(&kept),
+            Some("a"),
+            "restore/sync keep the given start"
+        );
     }
     // Without shuffle random_start is ignored.
-    assert_eq!(current_id(&QueueOps::replace(&QueueState::default(), tracks(), 0, &mut rng(3), true)), Some("a"));
+    assert_eq!(
+        current_id(&QueueOps::replace(
+            &QueueState::default(),
+            tracks(),
+            0,
+            &mut rng(3),
+            true
+        )),
+        Some("a")
+    );
     // An explicit non-zero start is never randomized.
-    assert_eq!(current_id(&QueueOps::replace(&shuffled, tracks(), 2, &mut rng(3), true)), Some("c"));
+    assert_eq!(
+        current_id(&QueueOps::replace(
+            &shuffled,
+            tracks(),
+            2,
+            &mut rng(3),
+            true
+        )),
+        Some("c")
+    );
 }
 
 #[test]
 fn play_next_offset_resets_on_back_and_jump() {
     let stacked = QueueOps::play_next(&queue(2), jf("x"));
     assert_eq!(QueueOps::back(&stacked).unwrap().play_next_offset, 0);
-    assert_eq!(QueueOps::jump_to_uid(&stacked, stacked.entries[4].uid).play_next_offset, 0);
+    assert_eq!(
+        QueueOps::jump_to_uid(&stacked, stacked.entries[4].uid).play_next_offset,
+        0
+    );
 }
 
 #[test]
@@ -276,7 +369,10 @@ fn cursor_moves_do_not_bump_content_version() {
     let v = s.content_version;
     assert_eq!(QueueOps::advance(&s, true).unwrap().content_version, v);
     assert_eq!(QueueOps::back(&s).unwrap().content_version, v);
-    assert_eq!(QueueOps::jump_to_uid(&s, s.entries[4].uid).content_version, v);
+    assert_eq!(
+        QueueOps::jump_to_uid(&s, s.entries[4].uid).content_version,
+        v
+    );
     assert_eq!(QueueOps::set_repeat(&s, RepeatMode::All).content_version, v);
     let advanced = QueueOps::advance(&s, true).unwrap();
     assert!(Arc::ptr_eq(&advanced.entries, &s.entries));
@@ -288,8 +384,14 @@ fn content_changes_bump_content_version() {
     let s = queue(1);
     let v = s.content_version;
     assert_eq!(QueueOps::play_next(&s, jf("x")).content_version, v + 1);
-    assert_eq!(QueueOps::set_shuffle(&s, true, &mut rng(1)).content_version, v + 1);
-    assert_eq!(QueueOps::replace(&s, tracks(), 0, &mut rng(1), false).content_version, v + 1);
+    assert_eq!(
+        QueueOps::set_shuffle(&s, true, &mut rng(1)).content_version,
+        v + 1
+    );
+    assert_eq!(
+        QueueOps::replace(&s, tracks(), 0, &mut rng(1), false).content_version,
+        v + 1
+    );
 }
 
 #[test]
@@ -303,9 +405,21 @@ fn play_next_inserts_into_entries_after_current_plus_offset() {
 
 #[test]
 fn previous_restarts_past_threshold_and_skips_unplayable() {
-    let s = QueueOps::replace(&QueueState::default(), vec![jf("a"), dead("u"), jf("c")], 2, &mut rng(1), false);
-    assert_eq!(QueueOps::previous(&s, PREVIOUS_RESTART_THRESHOLD_MS + 1), Previous::SeekToStart);
-    assert_eq!(QueueOps::previous(&s, PREVIOUS_RESTART_THRESHOLD_MS), Previous::MoveTo(0));
+    let s = QueueOps::replace(
+        &QueueState::default(),
+        vec![jf("a"), dead("u"), jf("c")],
+        2,
+        &mut rng(1),
+        false,
+    );
+    assert_eq!(
+        QueueOps::previous(&s, PREVIOUS_RESTART_THRESHOLD_MS + 1),
+        Previous::SeekToStart
+    );
+    assert_eq!(
+        QueueOps::previous(&s, PREVIOUS_RESTART_THRESHOLD_MS),
+        Previous::MoveTo(0)
+    );
     let first = QueueOps::jump_to_uid(&s, s.entries[0].uid);
     assert_eq!(QueueOps::previous(&first, 0), Previous::SeekToStart);
 }

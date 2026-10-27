@@ -71,6 +71,9 @@ pub trait ConnectionGate: Send + Sync + 'static {
 pub struct StreamRequest {
     pub url: Url,
     pub headers: HeaderMap,
+    /// Accept invalid/self-signed TLS certificates for this request. Only set when the user
+    /// enabled "Allow self-signed certificate" for the connection (design §7, Plex).
+    pub allow_invalid_certs: bool,
 }
 
 /// Resolves a track to its stream request (ap-providers `stream_request`).

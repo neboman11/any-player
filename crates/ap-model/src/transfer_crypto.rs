@@ -9,7 +9,9 @@ use base64::engine::general_purpose::STANDARD;
 use rand::{CryptoRng, Rng};
 use sha2::Sha256;
 
-use crate::wire::{ANY_PLAYER_STATE_FORMAT, ENCRYPTION_ALGORITHM, ENCRYPTION_KDF, EncryptedStateFile};
+use crate::wire::{
+    ANY_PLAYER_STATE_FORMAT, ENCRYPTION_ALGORITHM, ENCRYPTION_KDF, EncryptedStateFile,
+};
 
 /// Android's default PBKDF2 iteration count.
 pub const DEFAULT_KDF_ITERATIONS: u32 = 150_000;
@@ -85,8 +87,12 @@ pub fn decrypt(file: &EncryptedStateFile, passphrase: &str) -> Result<String, Cr
         .ok()
         .filter(|&n| n > 0)
         .ok_or(CryptoError::InvalidIterations)?;
-    let salt = STANDARD.decode(&file.salt_base64).map_err(|_| CryptoError::Base64("saltBase64"))?;
-    let nonce = STANDARD.decode(&file.nonce_base64).map_err(|_| CryptoError::Base64("nonceBase64"))?;
+    let salt = STANDARD
+        .decode(&file.salt_base64)
+        .map_err(|_| CryptoError::Base64("saltBase64"))?;
+    let nonce = STANDARD
+        .decode(&file.nonce_base64)
+        .map_err(|_| CryptoError::Base64("nonceBase64"))?;
     if nonce.len() != NONCE_LEN {
         return Err(CryptoError::InvalidNonce);
     }
@@ -118,7 +124,10 @@ mod tests {
         assert_eq!(decrypt(&file, "pässwörd").unwrap(), "{\"a\":1}");
         assert_eq!(decrypt(&file, "nope"), Err(CryptoError::DecryptFailed));
         // 7 plaintext bytes + 16-byte tag.
-        assert_eq!(STANDARD.decode(&file.ciphertext_base64).unwrap().len(), 7 + 16);
+        assert_eq!(
+            STANDARD.decode(&file.ciphertext_base64).unwrap().len(),
+            7 + 16
+        );
     }
 
     #[test]
@@ -126,6 +135,9 @@ mod tests {
         let mut rng = rand::rng();
         let file = encrypt("x", "p", 1, &mut rng).unwrap();
         assert_eq!(decrypt(&file, "p").unwrap(), "x");
-        assert_eq!(encrypt("x", "p", 0, &mut rng), Err(CryptoError::InvalidIterations));
+        assert_eq!(
+            encrypt("x", "p", 0, &mut rng),
+            Err(CryptoError::InvalidIterations)
+        );
     }
 }

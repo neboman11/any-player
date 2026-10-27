@@ -8,9 +8,15 @@ use proptest::prelude::*;
 
 #[derive(Debug, Clone)]
 enum Op {
-    Replace { len: usize, start: isize, random_start: bool },
+    Replace {
+        len: usize,
+        start: isize,
+        random_start: bool,
+    },
     PlayNext,
-    Advance { wrap: bool },
+    Advance {
+        wrap: bool,
+    },
     Back,
     Jump(usize),
     Shuffle(bool),
@@ -19,10 +25,12 @@ enum Op {
 
 fn op() -> impl Strategy<Value = Op> {
     prop_oneof![
-        (0usize..12, -2isize..14, any::<bool>()).prop_map(|(len, start, random_start)| Op::Replace {
-            len,
-            start,
-            random_start
+        (0usize..12, -2isize..14, any::<bool>()).prop_map(|(len, start, random_start)| {
+            Op::Replace {
+                len,
+                start,
+                random_start,
+            }
         }),
         Just(Op::PlayNext),
         any::<bool>().prop_map(|wrap| Op::Advance { wrap }),
@@ -34,41 +42,64 @@ fn op() -> impl Strategy<Value = Op> {
 }
 
 fn tracks(len: usize, salt: u64) -> Vec<Track> {
-    (0..len).map(|i| jf(&format!("t{salt}-{}", i % 4))).collect()
+    (0..len)
+        .map(|i| jf(&format!("t{salt}-{}", i % 4)))
+        .collect()
 }
 
 fn assert_invariants(s: &QueueState) {
     let mut sorted = s.order.to_vec();
     sorted.sort_unstable();
-    assert_eq!(sorted, (0..s.entries.len()).collect::<Vec<_>>(), "order is a permutation of entries");
+    assert_eq!(
+        sorted,
+        (0..s.entries.len()).collect::<Vec<_>>(),
+        "order is a permutation of entries"
+    );
     if s.entries.is_empty() {
         assert_eq!(s.cursor, -1);
     } else {
         assert!(s.cursor >= -1 && s.cursor < isize::try_from(s.order.len()).unwrap());
     }
     if !s.shuffle {
-        assert_eq!(s.order.to_vec(), (0..s.entries.len()).collect::<Vec<_>>(), "shuffle off ⇒ identity");
+        assert_eq!(
+            s.order.to_vec(),
+            (0..s.entries.len()).collect::<Vec<_>>(),
+            "shuffle off ⇒ identity"
+        );
     }
     let mut uids: Vec<u64> = s.entries.iter().map(|e| e.uid).collect();
     uids.sort_unstable();
     uids.dedup();
     assert_eq!(uids.len(), s.entries.len(), "uids are unique");
-    assert!(s.entries.iter().all(|e| e.uid < s.next_uid), "next_uid is fresh");
+    assert!(
+        s.entries.iter().all(|e| e.uid < s.next_uid),
+        "next_uid is fresh"
+    );
 }
 
 fn apply(s: &QueueState, op: &Op, seed: u64) -> QueueState {
     let mut r = rng(seed);
     match *op {
-        Op::Replace { len, start, random_start } => QueueOps::replace(s, tracks(len, seed), start, &mut r, random_start),
+        Op::Replace {
+            len,
+            start,
+            random_start,
+        } => QueueOps::replace(s, tracks(len, seed), start, &mut r, random_start),
         Op::PlayNext => QueueOps::play_next(s, jf(&format!("n{seed}"))),
         Op::Advance { wrap } => QueueOps::advance(s, wrap).unwrap_or_else(|| s.clone()),
         Op::Back => QueueOps::back(s).unwrap_or_else(|| s.clone()),
         Op::Jump(i) => {
-            let uid = s.entries.get(i % s.entries.len().max(1)).map_or(999_999, |e| e.uid);
+            let uid = s
+                .entries
+                .get(i % s.entries.len().max(1))
+                .map_or(999_999, |e| e.uid);
             QueueOps::jump_to_uid(s, uid)
         }
         Op::Shuffle(on) => QueueOps::set_shuffle(s, on, &mut r),
-        Op::Repeat(m) => QueueOps::set_repeat(s, [RepeatMode::Off, RepeatMode::One, RepeatMode::All][usize::from(m)]),
+        Op::Repeat(m) => QueueOps::set_repeat(
+            s,
+            [RepeatMode::Off, RepeatMode::One, RepeatMode::All][usize::from(m)],
+        ),
     }
 }
 

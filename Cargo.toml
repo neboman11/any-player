@@ -1,8 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "app"]
-# The legacy Tauri app stays a separate package until cutover.
-exclude = ["src-tauri"]
 
 [workspace.package]
 version = "0.2.0"

@@ -12,16 +12,27 @@ pub fn rng(seed: u64) -> StdRng {
 
 /// Jellyfin track with a playable http url.
 pub fn jf(id: &str) -> Track {
-    Track { url: Some(format!("http://host/{id}.flac")), ..Track::new(id, format!("Song {id}"), "Artist", SourceType::Jellyfin) }
+    Track {
+        url: Some(format!("http://host/{id}.flac")),
+        ..Track::new(id, format!("Song {id}"), "Artist", SourceType::Jellyfin)
+    }
 }
 
 pub fn jf_titled(id: &str, title: &str, artist: &str) -> Track {
-    Track { url: Some(format!("http://host/{id}.flac")), ..Track::new(id, title, artist, SourceType::Jellyfin) }
+    Track {
+        url: Some(format!("http://host/{id}.flac")),
+        ..Track::new(id, title, artist, SourceType::Jellyfin)
+    }
 }
 
 /// Spotify track with a valid 22-char id derived from `name`.
 pub fn sp(name: &str) -> Track {
-    Track::new(format!("{name:x<22}"), format!("Spotify {name}"), "Artist", SourceType::Spotify)
+    Track::new(
+        format!("{name:x<22}"),
+        format!("Spotify {name}"),
+        "Artist",
+        SourceType::Spotify,
+    )
 }
 
 /// A Plex track without url (unplayable).
@@ -31,7 +42,11 @@ pub fn dead(id: &str) -> Track {
 
 /// Short label: Spotify ids lose their padding.
 pub fn label(t: &Track) -> String {
-    if t.source == SourceType::Spotify { t.id.trim_end_matches('x').to_owned() } else { t.id.clone() }
+    if t.source == SourceType::Spotify {
+        t.id.trim_end_matches('x').to_owned()
+    } else {
+        t.id.clone()
+    }
 }
 
 pub fn play_order_ids(s: &QueueState) -> Vec<String> {
@@ -43,7 +58,9 @@ pub fn ids<'a>(entries: impl Iterator<Item = &'a ap_model::QueueEntry>) -> Vec<S
 }
 
 pub fn fixture(name: &str) -> String {
-    let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "fixtures", name].iter().collect();
+    let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "fixtures", name]
+        .iter()
+        .collect();
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("fixture {}: {e}", path.display()))
 }
 

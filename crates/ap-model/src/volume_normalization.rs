@@ -64,7 +64,10 @@ pub fn track_gain(samples: impl IntoIterator<Item = f32>) -> f32 {
         return 1.0;
     }
     #[expect(clippy::cast_precision_loss, reason = "count <= 529_200")]
-    #[expect(clippy::cast_possible_truncation, reason = "rms of f32 samples fits f32")]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "rms of f32 samples fits f32"
+    )]
     let rms = (sum_sq / count as f64).sqrt() as f32;
     if rms <= 0.0005 {
         return 1.0;
@@ -111,12 +114,18 @@ mod tests {
 
     fn reference(amplitude_rms: f32, peak: f32) -> f32 {
         let target = 0.04 + 0.85 * 0.18;
-        (target / amplitude_rms).clamp(0.4, 3.0).min(0.98 / peak).clamp(0.25, 3.0)
+        (target / amplitude_rms)
+            .clamp(0.4, 3.0)
+            .min(0.98 / peak)
+            .clamp(0.25, 3.0)
     }
 
     #[test]
     fn track_gain_short_or_silent_input_is_unity() {
-        assert!((track_gain(std::iter::repeat_n(0.5, TRACK_GAIN_MIN_SAMPLES - 1)) - 1.0).abs() < f32::EPSILON);
+        assert!(
+            (track_gain(std::iter::repeat_n(0.5, TRACK_GAIN_MIN_SAMPLES - 1)) - 1.0).abs()
+                < f32::EPSILON
+        );
         assert!((track_gain(std::iter::repeat_n(0.0, 100_000)) - 1.0).abs() < f32::EPSILON);
         assert!((track_gain(std::iter::repeat_n(0.0004, 100_000)) - 1.0).abs() < f32::EPSILON);
     }
@@ -144,7 +153,10 @@ mod tests {
                 / samples.len() as f64)
                 .sqrt() as f32;
             let g = track_gain(samples);
-            assert!((g - reference(rms, peak)).abs() < 1e-5, "amp {amplitude}: {g}");
+            assert!(
+                (g - reference(rms, peak)).abs() < 1e-5,
+                "amp {amplitude}: {g}"
+            );
         }
         // 0.2 amplitude: rms ≈ 0.1414 → gain ≈ 1.365.
         let g = track_gain(sine(0.2, 200_000));

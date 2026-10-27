@@ -10,12 +10,12 @@ use rusqlite::{Connection, TransactionBehavior};
 use crate::error::{Result, StoreError};
 
 /// The schema version this build reads and writes.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 type Step = fn(&Connection) -> Result<()>;
 
 /// `STEPS[n]` migrates version `n` to `n + 1`.
-const STEPS: [Step; 1] = [migrate_0_to_1];
+const STEPS: [Step; 2] = [migrate_0_to_1, migrate_1_to_2];
 
 /// Current `PRAGMA user_version`.
 pub fn user_version(conn: &Connection) -> Result<i64> {
@@ -208,5 +208,32 @@ fn migrate_0_to_1(conn: &Connection) -> Result<()> {
     if orphan_tracks + orphan_sources > 0 {
         tracing::info!(orphan_tracks, orphan_sources, "removed legacy orphan rows");
     }
+    Ok(())
+}
+
+/// Wire metadata for exact state-file round trips (design §6.2, migration 1 → 2).
+///
+/// State files from Android carry string row ids, ISO timestamps with fractional seconds and
+/// track URLs that the legacy integer-keyed, seconds-precision rows cannot represent. The columns
+/// are nullable: rows created locally have no wire id until first exported, and the legacy app
+/// ignores unknown columns.
+fn migrate_1_to_2(conn: &Connection) -> Result<()> {
+    for (table, column) in [
+        ("custom_playlists", "created_at_iso"),
+        ("custom_playlists", "updated_at_iso"),
+        ("playlist_tracks", "wire_id"),
+        ("playlist_tracks", "added_at_iso"),
+        ("playlist_tracks", "url"),
+        ("union_playlist_sources", "wire_id"),
+        ("union_playlist_sources", "added_at_iso"),
+    ] {
+        add_column_if_missing(conn, table, column, "TEXT")?;
+    }
+    conn.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_playlist_tracks_wire_id
+             ON playlist_tracks(wire_id) WHERE wire_id IS NOT NULL;
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_union_playlist_sources_wire_id
+             ON union_playlist_sources(wire_id) WHERE wire_id IS NOT NULL;",
+    )?;
     Ok(())
 }

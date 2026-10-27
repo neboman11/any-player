@@ -1,107 +1,88 @@
-# Contributing to Any Player
+# Contributing
 
-Thanks for helping improve Any Player. This guide covers the current development workflow, quality checks, and contribution expectations for this repo.
+Any Player is a Rust workspace with a Slint UI. Read [docs/DESIGN.md](docs/DESIGN.md) first; this file is the short
+list of rules.
 
-## Before you start
+## Setup
 
-1. Read [README.md](README.md) for setup and app overview.
-2. Read [copilot-instructions.md](.github/copilot/copilot-instructions.md) for repository-specific coding rules.
-3. Install Tauri prerequisites for your OS: https://tauri.app/start/prerequisites/
+See the prerequisites in [README.md](README.md). Then:
 
-## Development setup
-
-```bash
-pnpm install
+```sh
+cargo build --workspace
+cargo run -p any-player -- --demo   # fake data; no servers or keyring needed
 ```
 
-Run the desktop app:
+## Crate layering
 
-```bash
-pnpm tauri dev
+```text
+app -> ap-dj, ap-sync, ap-platform
+ap-sync -> ap-playback, ap-library
+ap-dj -> ap-playback, ap-library
+ap-playback -> ap-library, ap-store, ap-model
+ap-library -> ap-providers, ap-store
+ap-providers -> ap-store, ap-model
+ap-store -> ap-model
 ```
 
-Frontend-only mode (optional):
+- `ap-model` has no IO and no async runtime; every other crate may depend on it.
+- Dependencies point downward only. Do not add upward or sideways edges.
+- `app` consumes service handles and state snapshots. It never touches SQL, `reqwest`, or audio types.
+- Every service exposes `tokio::sync::watch` (state) and `broadcast` (events) receivers. Mutable state stays private.
 
-```bash
-pnpm dev
+## Threading
+
+- Slint UI and view-model state run on the main thread. Services update the UI only through
+  `slint::invoke_from_event_loop` / `Weak::upgrade_in_event_loop`.
+- Network, sync, providers and orchestration run on the tokio runtime owned by `app`.
+- The playback engine, Spotify backend and DJ scheduler are single tokio actor tasks driven by `mpsc` commands.
+- Local audio decode is one OS thread per decoder feeding an `rtrb` ring; the `cpal` output callback never blocks
+  or allocates.
+- SQLite goes through the dedicated DB thread (writer) and the read-only pool. Never open ad-hoc connections.
+- Large list transforms (≥1k rows) and DSP use `tokio::task::spawn_blocking`.
+- Never block the main thread or a tokio worker with IO or heavy computation.
+
+## Wire compatibility
+
+Sync signatures, the `any-player-state` transfer file, config files, break schedule and dedupe behavior must match
+the Android app byte-for-byte. The golden vectors in `fixtures/` are generated from the Android app's production
+code; Rust must reproduce them. Never hand-edit a fixture to make a test pass. If Android behavior changes,
+regenerate them:
+
+```sh
+cd any-player-android
+rm -rf /tmp/ap-fixtures
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk ANYPLAYER_FIXTURE_OUT=/tmp/ap-fixtures ./gradlew \
+  :core:model:test --tests '*DesktopFixtureGenerator*' \
+  :core:data:testDebugUnitTest --tests '*DesktopFixtureGenerator*' \
+  :app:testDebugUnitTest --tests '*DesktopFixtureGenerator*'
+cp /tmp/ap-fixtures/*.json core/model/src/test/resources/dedup_spec.json \
+  core/data/src/test/resources/legacy-state.json ../any-player-desktop-v2/fixtures/
 ```
 
-## Recommended contributor workflow
+Adjust the final path to where your desktop checkout lives. Details are in
+[fixtures/README.md](fixtures/README.md).
 
-1. Create a feature branch.
-2. Keep changes scoped to one purpose per PR.
-3. Run the checks below before opening a PR.
-4. Update docs when user-visible behavior or developer workflow changes.
-5. Open a PR with a clear description, validation steps, and screenshots/GIFs for UI changes.
+## Testing
 
-## Quality checks
+- `cargo test --workspace` must pass.
+- Tests are offline and deterministic: no real network, no real keyring, no wall-clock sleeps, no ambient
+  randomness (inject a seed or clock). Use fakes and local mock servers.
+- No `#[ignore]` tests. A test either runs everywhere in CI or does not exist.
+- Bug fixes come with a regression test; new behavior with tests at the lowest crate that owns it.
 
-Run these before submitting:
+## Lint and format
 
-```bash
-pnpm lint
-cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
-cd src-tauri && cargo test
+```sh
+cargo fmt --all
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Notes:
-- There is currently no standard `pnpm test` script in this repo.
-- Manual validation is expected for UI, provider auth flows, and playback behavior.
+Clippy pedantic is enabled workspace-wide (see `[workspace.lints]` in `Cargo.toml`); `unsafe` is denied. Do not
+leave `dbg!`, `todo!` or `unimplemented!` behind. CI runs `cargo fmt --all -- --check`, clippy and
+`cargo test --workspace --locked`.
 
-## Project architecture (current)
+## Commits
 
-- Frontend (`src/`): React pages/components, hooks, and typed Tauri API wrappers.
-- Backend (`src-tauri/src/`): Tauri commands, provider integrations, playback engine, cache/state, and SQLite persistence.
-- App communication: frontend uses typed invokes in `src/api.ts`; backend exposes commands under `src-tauri/src/commands/`.
-
-## Coding guidelines
-
-### Rust
-- Use `snake_case` for functions/modules/variables and `PascalCase` for types.
-- Prefer focused modules (`commands`, `providers`, `playback`, `database`, `state`).
-- Return explicit errors; propagate with `?` and include context in messages.
-- Keep async lock scopes tight (`Arc<Mutex<T>>`) to reduce contention.
-- Use `tracing` for operationally useful logs.
-
-### TypeScript/React
-- Use `camelCase` for variables/functions and `PascalCase` for components/types.
-- Keep components functional and hook-based.
-- Put shared contracts in `src/types.ts` and keep them aligned with backend payloads.
-- Route backend calls through `src/api.ts` (avoid ad hoc `invoke` usage in components).
-- Favor small, composable hooks for auth/playback/playlist/search logic.
-
-### General
-- Match existing patterns before introducing new abstractions.
-- Avoid unrelated refactors in feature/fix PRs.
-- Keep naming and folder placement consistent with nearby code.
-
-## Security & data handling
-
-- Never commit secrets or provider tokens.
-- Do not store credentials in plaintext; preserve existing secure storage patterns.
-- Validate and sanitize user-provided values in command handlers.
-- Preserve safe handling of exported configuration/state payloads.
-
-## Documentation expectations
-
-Update relevant docs when behavior changes:
-- [README.md](README.md) for user/developer workflows and feature scope.
-- [docs/android-companion-implementation-spec.md](docs/android-companion-implementation-spec.md) for Android companion scope/contracts (when applicable).
-- Inline doc comments for non-obvious logic in Rust/TypeScript modules.
-
-## Pull request checklist
-
-- [ ] Changes are scoped and follow existing architecture.
-- [ ] `pnpm lint` passes.
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings` passes.
-- [ ] Relevant `cargo test` checks pass.
-- [ ] Manual verification completed for affected flows.
-- [ ] Docs updated if behavior/workflow changed.
-
-## Questions
-
-- Open an issue for discussion.
-- Reference existing patterns in the codebase and docs.
-- Ask maintainers in the PR thread when design tradeoffs are unclear.
-
-Thanks again for contributing.
+Use [Conventional Commits](https://www.conventionalcommits.org): `type(scope): summary`, with types such as `feat`,
+`fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`. Use the crate name as scope when it fits
+(`fix(ap-sync): ...`). Keep commits focused; mark breaking changes with `!`.

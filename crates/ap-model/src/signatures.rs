@@ -12,7 +12,12 @@ use crate::text::{cmp_utf16, kotlin_is_blank, kotlin_trim, sha256_hex};
 /// is applied: a current track missing from the queue is prepended. `shuffle` prints as Kotlin
 /// `Boolean?.toString()`; sources print as the uppercase enum name.
 #[must_use]
-pub fn app_state(current: Option<&Track>, queue: &[Track], shuffle: Option<bool>, repeat: &str) -> String {
+pub fn app_state(
+    current: Option<&Track>,
+    queue: &[Track],
+    shuffle: Option<bool>,
+    repeat: &str,
+) -> String {
     let shuffle = match shuffle {
         Some(true) => "true",
         Some(false) => "false",
@@ -37,10 +42,17 @@ pub fn app_state(current: Option<&Track>, queue: &[Track], shuffle: Option<bool>
 pub fn canonical(element: &JsonElement) -> JsonElement {
     match element {
         JsonElement::Object(map) => {
-            let mut entries: Vec<(&String, &JsonElement)> =
-                map.iter().filter(|(_, v)| !matches!(v, JsonElement::Null)).collect();
+            let mut entries: Vec<(&String, &JsonElement)> = map
+                .iter()
+                .filter(|(_, v)| !matches!(v, JsonElement::Null))
+                .collect();
             entries.sort_by(|a, b| cmp_utf16(a.0, b.0));
-            JsonElement::Object(entries.into_iter().map(|(k, v)| (k.clone(), canonical(v))).collect())
+            JsonElement::Object(
+                entries
+                    .into_iter()
+                    .map(|(k, v)| (k.clone(), canonical(v)))
+                    .collect(),
+            )
         }
         JsonElement::Array(items) => JsonElement::Array(items.iter().map(canonical).collect()),
         other => other.clone(),
@@ -68,7 +80,11 @@ fn rows(element: Option<&JsonElement>) -> JsonElement {
 }
 
 fn playlist_id(entry: &IndexMap<String, JsonElement>) -> Option<std::borrow::Cow<'_, str>> {
-    entry.get("playlist").and_then(JsonElement::as_object)?.get("id")?.content_or_null()
+    entry
+        .get("playlist")
+        .and_then(JsonElement::as_object)?
+        .get("id")?
+        .content_or_null()
 }
 
 /// Playlists namespace content (config-file `custom_playlists` array), independent of the
@@ -107,8 +123,14 @@ pub fn playlists(playlists: Option<&JsonElement>) -> String {
 #[must_use]
 pub fn settings_json(normalization_enabled: bool, normalization_strict: bool) -> JsonElement {
     JsonElement::Object(IndexMap::from([
-        ("audio_normalization_enabled".to_owned(), JsonElement::Bool(normalization_enabled)),
-        ("audio_normalization_strict_mode".to_owned(), JsonElement::Bool(normalization_strict)),
+        (
+            "audio_normalization_enabled".to_owned(),
+            JsonElement::Bool(normalization_enabled),
+        ),
+        (
+            "audio_normalization_strict_mode".to_owned(),
+            JsonElement::Bool(normalization_strict),
+        ),
     ]))
 }
 
@@ -142,7 +164,10 @@ fn is_java_space(c: char) -> bool {
 #[must_use]
 pub fn normalize_auth_token(value: &str) -> String {
     let trimmed = kotlin_trim(value);
-    if let Some(prefix) = trimmed.get(..6).filter(|p| p.eq_ignore_ascii_case("bearer")) {
+    if let Some(prefix) = trimmed
+        .get(..6)
+        .filter(|p| p.eq_ignore_ascii_case("bearer"))
+    {
         let rest = &trimmed[prefix.len()..];
         let after = rest.trim_start_matches(is_java_space);
         if after.len() < rest.len() {
@@ -177,7 +202,10 @@ mod tests {
 
     #[test]
     fn base_url_normalization() {
-        assert_eq!(normalize_server_base_url("  http://host:8080///  "), "http://host:8080");
+        assert_eq!(
+            normalize_server_base_url("  http://host:8080///  "),
+            "http://host:8080"
+        );
         assert_eq!(normalize_server_base_url("HTTPS://x"), "https://HTTPS://x");
         assert_eq!(normalize_server_base_url(" / "), "");
     }

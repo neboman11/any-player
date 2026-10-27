@@ -23,6 +23,7 @@ fn navigate_every_page_and_dialog_with_fake_engine() {
     let service = Arc::new(DemoServices::new());
     let ui = MainWindow::new().unwrap();
     attach(&ui, service.ports());
+    ui.window().set_size(slint::LogicalSize::new(800.0, 560.0));
     let step = Rc::new(Cell::new(0));
     let timer = Timer::default();
     let weak = ui.as_weak();
@@ -31,6 +32,17 @@ fn navigate_every_page_and_dialog_with_fake_engine() {
         match step.get() {
             0 => {
                 visible(&ui, "Now Playing");
+                for label in [
+                    "Shuffle",
+                    "Previous",
+                    "Play",
+                    "Next",
+                    "Repeat off",
+                    "Playback position",
+                    "Volume",
+                ] {
+                    visible(&ui, label);
+                }
                 assert!(ui.get_now_title().contains("Northern Lights"));
                 ui.invoke_action("toggle".into(), "".into(), 0);
             }
@@ -56,9 +68,15 @@ fn navigate_every_page_and_dialog_with_fake_engine() {
             4 => {
                 visible(&ui, "Late Night Favorites");
                 visible(&ui, "Edit");
+                // 800 px: row actions fold into one menu button; headers stay sortable.
+                visible(&ui, "More actions for Northern Lights 1");
+                visible(&ui, "Sort by Title");
+                ui.invoke_sort("title".into());
                 ui.set_dialog("edit".into());
             }
             5 => {
+                assert_eq!(ui.get_sort_column(), "title");
+                assert!(!ui.get_sort_descending());
                 visible(&ui, "Edit Playlist");
                 ui.set_dialog("delete".into());
             }

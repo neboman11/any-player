@@ -72,6 +72,7 @@ impl StreamResolver for Resolver {
         Ok(StreamRequest {
             url: track.url.as_ref().unwrap().parse()?,
             headers: reqwest::header::HeaderMap::default(),
+            allow_invalid_certs: false,
         })
     }
 }

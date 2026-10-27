@@ -121,7 +121,10 @@ mod tests {
 
     #[test]
     fn enums_use_lowercase_serial_names() {
-        assert_eq!(serde_json::to_string(&PlaylistType::Union).unwrap(), "\"union\"");
+        assert_eq!(
+            serde_json::to_string(&PlaylistType::Union).unwrap(),
+            "\"union\""
+        );
         assert_eq!(serde_json::to_string(&RepeatMode::All).unwrap(), "\"all\"");
         assert_eq!(
             serde_json::to_string(&PlaybackStateType::Buffering).unwrap(),
@@ -133,7 +136,10 @@ mod tests {
     #[test]
     fn sources_decode_in_any_case() {
         for raw in ["\"spotify\"", "\"Spotify\"", "\"SPOTIFY\""] {
-            assert_eq!(serde_json::from_str::<SourceType>(raw).unwrap(), SourceType::Spotify);
+            assert_eq!(
+                serde_json::from_str::<SourceType>(raw).unwrap(),
+                SourceType::Spotify
+            );
         }
         assert!(serde_json::from_str::<SourceType>("\"tidal\"").is_err());
     }

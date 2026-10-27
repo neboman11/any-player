@@ -52,7 +52,10 @@ pub fn write_quoted(out: &mut String, s: &str) {
 impl JsonElement {
     /// Parses strict JSON (kotlinx `Json.parseToJsonElement` with default settings).
     pub fn parse(text: &str) -> Result<Self, JsonSyntaxError> {
-        let mut p = Parser { s: text.as_bytes(), i: 0 };
+        let mut p = Parser {
+            s: text.as_bytes(),
+            i: 0,
+        };
         p.ws();
         let value = p.value(0)?;
         p.ws();
@@ -98,7 +101,10 @@ impl JsonElement {
             return Some(v);
         }
         // Kotlin `Double.toLong()` saturates and maps NaN to 0, like Rust `as`.
-        #[expect(clippy::cast_possible_truncation, reason = "Kotlin Double.toLong semantics")]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "Kotlin Double.toLong semantics"
+        )]
         content.parse::<f64>().ok().map(|d| d as i64)
     }
 
@@ -152,9 +158,11 @@ impl From<&serde_json::Value> for JsonElement {
             serde_json::Value::Number(n) => Self::Number(n.to_string()),
             serde_json::Value::String(s) => Self::String(s.clone()),
             serde_json::Value::Array(items) => Self::Array(items.iter().map(Self::from).collect()),
-            serde_json::Value::Object(map) => {
-                Self::Object(map.iter().map(|(k, v)| (k.clone(), Self::from(v))).collect())
-            }
+            serde_json::Value::Object(map) => Self::Object(
+                map.iter()
+                    .map(|(k, v)| (k.clone(), Self::from(v)))
+                    .collect(),
+            ),
         }
     }
 }
@@ -168,7 +176,10 @@ struct Parser<'a> {
 
 impl Parser<'_> {
     fn err(&self, message: &'static str) -> JsonSyntaxError {
-        JsonSyntaxError { offset: self.i, message }
+        JsonSyntaxError {
+            offset: self.i,
+            message,
+        }
     }
 
     fn ws(&mut self) {
@@ -286,7 +297,10 @@ impl Parser<'_> {
     }
 
     fn hex4(&mut self) -> Result<u32, JsonSyntaxError> {
-        let digits = self.s.get(self.i..self.i + 4).ok_or_else(|| self.err("short \\u escape"))?;
+        let digits = self
+            .s
+            .get(self.i..self.i + 4)
+            .ok_or_else(|| self.err("short \\u escape"))?;
         let text = std::str::from_utf8(digits).map_err(|_| self.err("bad \\u escape"))?;
         let v = u32::from_str_radix(text, 16).map_err(|_| self.err("bad \\u escape"))?;
         self.i += 4;
@@ -304,7 +318,9 @@ impl Parser<'_> {
                 }
                 self.i += 1;
             }
-            out.push_str(std::str::from_utf8(&self.s[start..self.i]).map_err(|_| self.err("utf-8"))?);
+            out.push_str(
+                std::str::from_utf8(&self.s[start..self.i]).map_err(|_| self.err("utf-8"))?,
+            );
             match self.s.get(self.i) {
                 Some(b'"') => {
                     self.i += 1;
@@ -312,7 +328,10 @@ impl Parser<'_> {
                 }
                 Some(b'\\') => {
                     self.i += 1;
-                    let esc = *self.s.get(self.i).ok_or_else(|| self.err("unterminated escape"))?;
+                    let esc = *self
+                        .s
+                        .get(self.i)
+                        .ok_or_else(|| self.err("unterminated escape"))?;
                     self.i += 1;
                     match esc {
                         b'"' => out.push('"'),
@@ -334,7 +353,10 @@ impl Parser<'_> {
                             } else {
                                 hi
                             };
-                            out.push(char::from_u32(code).ok_or_else(|| self.err("unpaired surrogate"))?);
+                            out.push(
+                                char::from_u32(code)
+                                    .ok_or_else(|| self.err("unpaired surrogate"))?,
+                            );
                         }
                         _ => return Err(self.err("bad escape")),
                     }
@@ -353,7 +375,10 @@ mod tests {
     #[test]
     fn escaping_table_matches_kotlinx() {
         let mut out = String::new();
-        let input: String = (0u8..0x20).map(char::from).chain("\"\\/\u{7f}é😀\u{2028}".chars()).collect();
+        let input: String = (0u8..0x20)
+            .map(char::from)
+            .chain("\"\\/\u{7f}é😀\u{2028}".chars())
+            .collect();
         write_quoted(&mut out, &input);
         assert_eq!(
             out,
@@ -367,8 +392,14 @@ mod tests {
 
     #[test]
     fn numbers_keep_their_literal_text() {
-        let v = JsonElement::parse(r#" {"a": 1.0, "b": 1e3, "c": -0, "d": [12345678901234567890123]} "#).unwrap();
-        assert_eq!(v.to_string(), r#"{"a":1.0,"b":1e3,"c":-0,"d":[12345678901234567890123]}"#);
+        let v = JsonElement::parse(
+            r#" {"a": 1.0, "b": 1e3, "c": -0, "d": [12345678901234567890123]} "#,
+        )
+        .unwrap();
+        assert_eq!(
+            v.to_string(),
+            r#"{"a":1.0,"b":1e3,"c":-0,"d":[12345678901234567890123]}"#
+        );
     }
 
     #[test]

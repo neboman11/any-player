@@ -47,11 +47,12 @@ impl ImageLoader {
             limits.max_image_height = Some(4096);
             limits.max_alloc = Some(64 * 1024 * 1024);
             reader.limits(limits);
-            let image = reader
+            let mut image = reader
                 .decode()
                 .map_err(|e| ServiceError(e.to_string()))?
                 .thumbnail(640, 640)
                 .to_rgba8();
+            round_corners(&mut image);
             Ok(SharedPixelBuffer::clone_from_slice(
                 image.as_raw(),
                 image.width(),
@@ -66,11 +67,45 @@ impl ImageLoader {
     }
 }
 
-/// 100 MiB disk LRU. Cache hits are touched; eviction and filesystem metadata run off-thread.
+// Bake the mask once off-thread: native clipping backends do not all honor
+// rounded rectangle clips for image children.
+fn round_corners(image: &mut image::RgbaImage) {
+    let (width, height) = image.dimensions();
+    let radius = width.min(height) / 20;
+    for y in 0..radius {
+        for x in 0..radius {
+            // Four-by-four subpixel coverage, with integer arithmetic.
+            let mut coverage = 0_u16;
+            let scaled_radius = i64::from(radius) * 8;
+            for sy in [1, 3, 5, 7] {
+                for sx in [1, 3, 5, 7] {
+                    let dx = i64::from(radius - x) * 8 - sx;
+                    let dy = i64::from(radius - y) * 8 - sy;
+                    coverage += u16::from(dx * dx + dy * dy <= scaled_radius * scaled_radius);
+                }
+            }
+            for (px, py) in [
+                (x, y),
+                (width - 1 - x, y),
+                (x, height - 1 - y),
+                (width - 1 - x, height - 1 - y),
+            ] {
+                let pixel = image.get_pixel_mut(px, py);
+                pixel.0[3] = u8::try_from(u16::from(pixel.0[3]) * coverage / 16)
+                    .expect("coverage cannot increase alpha");
+            }
+        }
+    }
+}
+
+/// Disk LRU (100 MiB by default). Cache hits are touched; eviction and filesystem metadata run
+/// off-thread. Provider artwork auth is resolved per request and never becomes part of the key.
 pub struct DiskImageCache {
     directory: std::path::PathBuf,
     client: reqwest::Client,
     writer: tokio::sync::Mutex<()>,
+    providers: Option<Arc<crate::services::providers::ProvidersAdapter>>,
+    capacity: u64,
 }
 impl DiskImageCache {
     pub fn new(directory: std::path::PathBuf) -> Self {
@@ -78,7 +113,23 @@ impl DiskImageCache {
             directory,
             client: reqwest::Client::new(),
             writer: tokio::sync::Mutex::new(()),
+            providers: None,
+            capacity: 100 * 1024 * 1024,
         }
+    }
+    pub fn authenticated(
+        directory: std::path::PathBuf,
+        providers: Arc<crate::services::providers::ProvidersAdapter>,
+    ) -> Self {
+        Self {
+            providers: Some(providers),
+            ..Self::new(directory)
+        }
+    }
+    #[must_use]
+    pub fn with_capacity(mut self, bytes: u64) -> Self {
+        self.capacity = bytes;
+        self
     }
 }
 #[async_trait]
@@ -101,9 +152,20 @@ impl ImageCache for DiskImageCache {
             .await;
             return Ok(bytes);
         }
+        let request = self.providers.as_ref().and_then(|p| p.image_request(url));
+        let (url, headers) = request.map_or_else(
+            || {
+                (
+                    ap_providers::provider::strip_url_tokens(url),
+                    reqwest::header::HeaderMap::new(),
+                )
+            },
+            |request| (request.url.to_string(), request.headers),
+        );
         let mut response = self
             .client
             .get(url)
+            .headers(headers)
             .timeout(std::time::Duration::from_secs(15))
             .send()
             .await
@@ -134,6 +196,7 @@ impl ImageCache for DiskImageCache {
             .await
             .map_err(|e| ServiceError(e.to_string()))?;
         let directory = self.directory.clone();
+        let capacity = self.capacity;
         tokio::task::spawn_blocking(move || {
             let mut entries: Vec<_> = std::fs::read_dir(directory)
                 .into_iter()
@@ -155,7 +218,7 @@ impl ImageCache for DiskImageCache {
             entries.sort_by_key(|e| e.0);
             let mut total: u64 = entries.iter().map(|e| e.1).sum();
             for (_, len, path) in entries {
-                if total <= 100 * 1024 * 1024 {
+                if total <= capacity {
                     break;
                 }
                 if std::fs::remove_file(path).is_ok() {
@@ -170,11 +233,15 @@ impl ImageCache for DiskImageCache {
 }
 
 pub(crate) fn attach(ui: &crate::MainWindow) {
-    use slint::ComponentHandle;
     let directory = dirs::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("any-player/images");
-    let loader = ImageLoader::new(Arc::new(DiskImageCache::new(directory)));
+    attach_cache(ui, Arc::new(DiskImageCache::new(directory)));
+}
+
+pub fn attach_cache(ui: &crate::MainWindow, cache: Arc<dyn ImageCache>) {
+    use slint::ComponentHandle;
+    let loader = ImageLoader::new(cache);
     let weak = ui.as_weak();
     let ready = loader.clone();
     ui.on_artwork_ready(move |url, image| {
@@ -204,4 +271,24 @@ pub(crate) fn attach(ui: &crate::MainWindow) {
             }
         });
     });
+}
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn artwork_mask_rounds_corners_without_changing_center() {
+        let mut image = image::RgbaImage::from_pixel(100, 80, image::Rgba([100, 150, 200, 255]));
+        super::round_corners(&mut image);
+        for (x, y) in [(0, 0), (99, 0), (0, 79), (99, 79)] {
+            assert_eq!(image.get_pixel(x, y).0[3], 0);
+        }
+        assert_eq!(image.get_pixel(50, 40).0, [100, 150, 200, 255]);
+        assert_eq!(image.get_pixel(50, 0).0, [100, 150, 200, 255]);
+    }
+
+    #[test]
+    fn tiny_artwork_does_not_underflow() {
+        let mut image = image::RgbaImage::from_pixel(1, 1, image::Rgba([1, 2, 3, 255]));
+        super::round_corners(&mut image);
+        assert_eq!(image.get_pixel(0, 0).0, [1, 2, 3, 255]);
+    }
 }

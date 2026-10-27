@@ -72,7 +72,10 @@ pub const DEFAULT_MAX_RUN_ITEMS: usize = 50;
 pub fn break_run(pending: &PendingBreak) -> Run {
     Run {
         kind: BackendKind::Local,
-        items: vec![PlanItem::Break { break_id: pending.break_id.clone(), path: pending.path.clone() }],
+        items: vec![PlanItem::Break {
+            break_id: pending.break_id.clone(),
+            path: pending.path.clone(),
+        }],
     }
 }
 
@@ -124,7 +127,10 @@ pub fn plan_run(
                 break;
             }
         }
-        items.push(PlanItem::Song { uid: entry.uid, order_pos: pos });
+        items.push(PlanItem::Song {
+            uid: entry.uid,
+            order_pos: pos,
+        });
         pos += 1;
     }
     kind.map(|kind| Run { kind, items })

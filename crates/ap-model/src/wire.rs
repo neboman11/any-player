@@ -33,14 +33,20 @@ fn is_default_format(v: &str) -> bool {
 fn default_version() -> i32 {
     ANY_PLAYER_STATE_VERSION
 }
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "serde skip_serializing_if signature")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if signature"
+)]
 fn is_default_version(v: &i32) -> bool {
     *v == ANY_PLAYER_STATE_VERSION
 }
 fn default_true() -> bool {
     true
 }
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "serde skip_serializing_if signature")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if signature"
+)]
 fn is_true(v: &bool) -> bool {
     *v
 }
@@ -63,7 +69,10 @@ fn is_default_kdf(v: &str) -> bool {
 pub struct AnyPlayerStateEnvelope {
     #[serde(default = "default_format", skip_serializing_if = "is_default_format")]
     pub format: String,
-    #[serde(default = "default_version", skip_serializing_if = "is_default_version")]
+    #[serde(
+        default = "default_version",
+        skip_serializing_if = "is_default_version"
+    )]
     pub version: i32,
     pub created_at: String,
     pub source_app: SourceAppInfo,
@@ -127,7 +136,10 @@ pub struct EncryptedStateFile {
     pub format: String,
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub encrypted: bool,
-    #[serde(default = "default_algorithm", skip_serializing_if = "is_default_algorithm")]
+    #[serde(
+        default = "default_algorithm",
+        skip_serializing_if = "is_default_algorithm"
+    )]
     pub algorithm: String,
     #[serde(default = "default_kdf", skip_serializing_if = "is_default_kdf")]
     pub kdf: String,
@@ -168,7 +180,9 @@ impl AnyPlayerStateEnvelope {
             created_at,
             source_app,
             data,
-            integrity: Integrity { sha256: String::new() },
+            integrity: Integrity {
+                sha256: String::new(),
+            },
         };
         envelope.integrity.sha256 = envelope.compute_integrity();
         envelope
@@ -183,23 +197,36 @@ impl AnyPlayerStateEnvelope {
     /// `sha256_hex` of the AppJson text of this envelope with `integrity.sha256 = ""`.
     #[must_use]
     pub fn compute_integrity(&self) -> String {
-        let seed = Self { integrity: Integrity { sha256: String::new() }, ..self.clone() };
+        let seed = Self {
+            integrity: Integrity {
+                sha256: String::new(),
+            },
+            ..self.clone()
+        };
         sha256_hex(&seed.to_json())
     }
 }
 
 /// Android `decodeAndVerify`: detects encryption, decrypts with `passphrase`, decodes and checks
 /// format, version and integrity.
-pub fn decode_and_verify(raw: &str, passphrase: Option<&str>) -> Result<AnyPlayerStateEnvelope, StateFileError> {
+pub fn decode_and_verify(
+    raw: &str,
+    passphrase: Option<&str>,
+) -> Result<AnyPlayerStateEnvelope, StateFileError> {
     let root = JsonElement::parse(raw)?;
     let root = root.as_object().ok_or(StateFileError::NotAnObject)?;
     let primitive = |key: &str| -> Result<Option<&JsonElement>, StateFileError> {
         match root.get(key) {
-            Some(JsonElement::Array(_) | JsonElement::Object(_)) => Err(StateFileError::NotAnObject),
+            Some(JsonElement::Array(_) | JsonElement::Object(_)) => {
+                Err(StateFileError::NotAnObject)
+            }
             other => Ok(other),
         }
     };
-    let flagged = primitive("encrypted")?.and_then(JsonElement::content_or_null).as_deref() == Some("true");
+    let flagged = primitive("encrypted")?
+        .and_then(JsonElement::content_or_null)
+        .as_deref()
+        == Some("true");
     let has_material = ["saltBase64", "nonceBase64", "ciphertextBase64"]
         .into_iter()
         .map(|k| primitive(k).map(|v| v.and_then(JsonElement::content_or_null).is_some()))
@@ -210,7 +237,8 @@ pub fn decode_and_verify(raw: &str, passphrase: Option<&str>) -> Result<AnyPlaye
     let decrypted;
     let plain = if flagged || has_material {
         let file: EncryptedStateFile = serde_json::from_str(raw)?;
-        decrypted = transfer_crypto::decrypt(&file, passphrase.ok_or(StateFileError::PassphraseRequired)?)?;
+        decrypted =
+            transfer_crypto::decrypt(&file, passphrase.ok_or(StateFileError::PassphraseRequired)?)?;
         decrypted.as_str()
     } else {
         raw
@@ -335,18 +363,33 @@ pub fn parse_config_playlist_type(value: &str) -> Option<PlaylistType> {
 #[must_use]
 pub fn parse_config_source_type(value: &str) -> Option<SourceType> {
     let lower = kotlin_trim(value).to_lowercase();
-    SourceType::ALL_VARIANTS.iter().copied().find(|s| s.serial_name() == lower)
+    SourceType::ALL_VARIANTS
+        .iter()
+        .copied()
+        .find(|s| s.serial_name() == lower)
 }
 
 fn occurrence_key(key: String, occurrence: usize) -> String {
-    if occurrence == 0 { key } else { format!("{key}:occurrence:{occurrence}") }
+    if occurrence == 0 {
+        key
+    } else {
+        format!("{key}:occurrence:{occurrence}")
+    }
 }
 
 /// Deterministic row id of the `occurrence`-th (0-based) config track with this natural key:
 /// `nameUUIDFromBytes("track:<playlistId>:<SOURCE>:<trackId>[:occurrence:<n>]")`.
 #[must_use]
-pub fn config_track_row_id(playlist_id: &str, source: SourceType, track_id: &str, occurrence: usize) -> String {
-    let key = occurrence_key(format!("track:{playlist_id}:{}:{track_id}", source.name()), occurrence);
+pub fn config_track_row_id(
+    playlist_id: &str,
+    source: SourceType,
+    track_id: &str,
+    occurrence: usize,
+) -> String {
+    let key = occurrence_key(
+        format!("track:{playlist_id}:{}:{track_id}", source.name()),
+        occurrence,
+    );
     name_uuid_from_bytes(key.as_bytes())
 }
 
@@ -360,7 +403,10 @@ pub fn config_union_source_row_id(
     occurrence: usize,
 ) -> String {
     let key = occurrence_key(
-        format!("union:{union_playlist_id}:{}:{source_playlist_id}", source.name()),
+        format!(
+            "union:{union_playlist_id}:{}:{source_playlist_id}",
+            source.name()
+        ),
         occurrence,
     );
     name_uuid_from_bytes(key.as_bytes())
@@ -374,7 +420,10 @@ mod tests {
     fn empty_envelope_omits_defaults() {
         let e = AnyPlayerStateEnvelope::new(
             "2026-05-18T12:00:00Z".into(),
-            SourceAppInfo { platform: "android".into(), app_version: "test".into() },
+            SourceAppInfo {
+                platform: "android".into(),
+                app_version: "test".into(),
+            },
             AnyPlayerStateData::default(),
         );
         assert_eq!(
@@ -386,16 +435,28 @@ mod tests {
     #[test]
     fn integrity_mismatch_is_rejected() {
         let raw = r#"{"createdAt":"x","sourceApp":{"platform":"a","appVersion":"b"},"data":{},"integrity":{"sha256":"00"}}"#;
-        assert!(matches!(decode_and_verify(raw, None), Err(StateFileError::IntegrityFailed)));
+        assert!(matches!(
+            decode_and_verify(raw, None),
+            Err(StateFileError::IntegrityFailed)
+        ));
         let bad_version = r#"{"version":2,"createdAt":"x","sourceApp":{"platform":"a","appVersion":"b"},"data":{},"integrity":{"sha256":"00"}}"#;
-        assert!(matches!(decode_and_verify(bad_version, None), Err(StateFileError::UnsupportedVersion(2))));
+        assert!(matches!(
+            decode_and_verify(bad_version, None),
+            Err(StateFileError::UnsupportedVersion(2))
+        ));
     }
 
     #[test]
     fn config_type_parsing_is_lenient() {
-        assert_eq!(parse_config_source_type(" Jellyfin "), Some(SourceType::Jellyfin));
+        assert_eq!(
+            parse_config_source_type(" Jellyfin "),
+            Some(SourceType::Jellyfin)
+        );
         assert_eq!(parse_config_source_type("tidal"), None);
-        assert_eq!(parse_config_playlist_type("UNION"), Some(PlaylistType::Union));
+        assert_eq!(
+            parse_config_playlist_type("UNION"),
+            Some(PlaylistType::Union)
+        );
     }
 
     #[test]
@@ -404,7 +465,15 @@ mod tests {
             "custom_playlists":[{"playlist":{"id":"p","name":"n","description":null,"image_url":null,"created_at":1,"updated_at":2,
             "track_count":0,"playlist_type":"standard","is_distinct":false},"tracks":[],"union_sources":[]}]}"#;
         let config: ConfigFile = serde_json::from_str(raw).unwrap();
-        assert_eq!(config.provider_configs.jellyfin.unwrap().base_url.as_deref(), Some("http://j"));
+        assert_eq!(
+            config
+                .provider_configs
+                .jellyfin
+                .unwrap()
+                .base_url
+                .as_deref(),
+            Some("http://j")
+        );
         assert_eq!(config.custom_playlists[0].playlist.description, None);
     }
 }

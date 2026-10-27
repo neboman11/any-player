@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::enums::{PlaybackStateType, PlaylistType, RepeatMode, SourceType};
 
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "serde skip_serializing_if signature")]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if signature"
+)]
 pub(crate) fn is_false(v: &bool) -> bool {
     !*v
 }
@@ -22,16 +25,29 @@ pub struct Track {
     pub artist: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub album: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "duration_ms", alias = "duration")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "duration_ms",
+        alias = "duration"
+    )]
     pub duration_ms: Option<i64>,
     pub source: SourceType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "image_url")]
     pub image_url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "bitrate_kbps")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "bitrate_kbps"
+    )]
     pub bitrate_kbps: Option<i32>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "sample_rate_hz")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "sample_rate_hz"
+    )]
     pub sample_rate_hz: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enriched: Option<bool>,
@@ -241,9 +257,10 @@ mod tests {
         assert_eq!(t.duration_ms, Some(5));
         assert_eq!(t.image_url.as_deref(), Some("i"));
         assert_eq!((t.bitrate_kbps, t.sample_rate_hz), (Some(1), Some(2)));
-        let d: Track =
-            serde_json::from_str(r#"{"id":"1","title":"T","artist":"A","source":"plex","duration":7}"#)
-                .unwrap();
+        let d: Track = serde_json::from_str(
+            r#"{"id":"1","title":"T","artist":"A","source":"plex","duration":7}"#,
+        )
+        .unwrap();
         assert_eq!(d.duration_ms, Some(7));
     }
 }

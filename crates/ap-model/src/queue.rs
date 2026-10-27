@@ -53,7 +53,9 @@ impl QueueState {
     /// The cursor as an order position, when it points into `order`.
     #[must_use]
     pub fn cursor_pos(&self) -> Option<usize> {
-        usize::try_from(self.cursor).ok().filter(|&c| c < self.order.len())
+        usize::try_from(self.cursor)
+            .ok()
+            .filter(|&c| c < self.order.len())
     }
 
     #[must_use]
@@ -142,7 +144,11 @@ impl QueueOps {
             ..s.clone()
         };
         if len == 0 {
-            return QueueState { order: Arc::new([]), cursor: -1, ..base };
+            return QueueState {
+                order: Arc::new([]),
+                cursor: -1,
+                ..base
+            };
         }
         let start = if random_start && s.shuffle && start_index == 0 && len > 1 {
             rng.random_range(0..len)
@@ -152,9 +158,17 @@ impl QueueOps {
         if s.shuffle {
             let rest = shuffled((0..len).filter(|&i| i != start).collect(), rng);
             let order: Arc<[usize]> = std::iter::once(start).chain(rest).collect();
-            QueueState { order, cursor: 0, ..base }
+            QueueState {
+                order,
+                cursor: 0,
+                ..base
+            }
         } else {
-            QueueState { order: (0..len).collect(), cursor: to_isize(start), ..base }
+            QueueState {
+                order: (0..len).collect(),
+                cursor: to_isize(start),
+                ..base
+            }
         }
     }
 
@@ -163,7 +177,10 @@ impl QueueOps {
     /// queue becomes a single current entry.
     #[must_use]
     pub fn play_next(s: &QueueState, track: Track) -> QueueState {
-        let entry = QueueEntry { uid: s.next_uid, track };
+        let entry = QueueEntry {
+            uid: s.next_uid,
+            track,
+        };
         if s.entries.is_empty() {
             return QueueState {
                 entries: Arc::new([entry]),
@@ -176,16 +193,19 @@ impl QueueOps {
             };
         }
         let offset = to_isize(s.play_next_offset);
-        let order_insert = usize::try_from((s.cursor + 1 + offset).clamp(0, to_isize(s.order.len())))
-            .unwrap_or(0);
+        let order_insert =
+            usize::try_from((s.cursor + 1 + offset).clamp(0, to_isize(s.order.len()))).unwrap_or(0);
         let current_entry_index = s.cursor_pos().map_or(-1, |c| to_isize(s.order[c]));
         let entry_insert =
             usize::try_from((current_entry_index + 1 + offset).clamp(0, to_isize(s.entries.len())))
                 .unwrap_or(0);
         let mut entries = s.entries.to_vec();
         entries.insert(entry_insert, entry);
-        let mut order: Vec<usize> =
-            s.order.iter().map(|&i| if i >= entry_insert { i + 1 } else { i }).collect();
+        let mut order: Vec<usize> = s
+            .order
+            .iter()
+            .map(|&i| if i >= entry_insert { i + 1 } else { i })
+            .collect();
         order.insert(order_insert, entry_insert);
         QueueState {
             entries: entries.into(),
@@ -265,7 +285,10 @@ impl QueueOps {
 
     #[must_use]
     pub fn set_repeat(s: &QueueState, mode: RepeatMode) -> QueueState {
-        QueueState { repeat: mode, ..s.clone() }
+        QueueState {
+            repeat: mode,
+            ..s.clone()
+        }
     }
 
     /// Android engine `previous()` for the queue: restart past 3 s, otherwise move to the closest
@@ -275,7 +298,9 @@ impl QueueOps {
         if position_ms > PREVIOUS_RESTART_THRESHOLD_MS {
             return Previous::SeekToStart;
         }
-        let Some(cursor) = s.cursor_pos() else { return Previous::SeekToStart };
+        let Some(cursor) = s.cursor_pos() else {
+            return Previous::SeekToStart;
+        };
         (0..cursor)
             .rev()
             .find(|&pos| backend_for(&s.entry_at(pos).track) != BackendKind::Unplayable)
@@ -285,6 +310,10 @@ impl QueueOps {
     /// Cursor moves reset the "play next" stacking and never bump `content_version`.
     #[must_use]
     pub fn move_cursor(s: &QueueState, pos: isize) -> QueueState {
-        QueueState { cursor: pos, play_next_offset: 0, ..s.clone() }
+        QueueState {
+            cursor: pos,
+            play_next_offset: 0,
+            ..s.clone()
+        }
     }
 }

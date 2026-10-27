@@ -119,20 +119,35 @@ impl RemoteBreakGenerator {
             return self.failed(kind);
         }
         let path = file.to_path_buf();
+        // Blocking DSP cannot be aborted once started. Its result retains cleanup ownership
+        // until awaited, so cancellation cannot leave a WAV resurrected by the DSP writer.
         match tokio::task::spawn_blocking(move || {
-            voice_processor::normalize_wave_file(&path, level)
+            let cleanup = ProcessingFile(Some(path));
+            let result = voice_processor::normalize_wave_file(
+                cleanup.0.as_deref().expect("owned processing file"),
+                level,
+            );
+            (result, cleanup)
         })
         .await
         {
-            Ok(Ok(written)) => written,
-            Ok(Err(error)) => {
-                let kind = match error {
-                    voice_processor::WavError::Hound(hound::Error::IoError(_)) => "Io",
-                    _ => "Format",
-                };
-                self.diagnostics
-                    .log(VOICE_TAG, "Server audio could not be decoded", Some(kind));
-                false
+            Ok((result, mut cleanup)) => {
+                cleanup.0 = None;
+                match result {
+                    Ok(written) => written,
+                    Err(error) => {
+                        let kind = match error {
+                            voice_processor::WavError::Hound(hound::Error::IoError(_)) => "Io",
+                            _ => "Format",
+                        };
+                        self.diagnostics.log(
+                            VOICE_TAG,
+                            "Server audio could not be decoded",
+                            Some(kind),
+                        );
+                        false
+                    }
+                }
             }
             Err(_) => self.failed("Panic"),
         }
@@ -142,6 +157,15 @@ impl RemoteBreakGenerator {
         self.diagnostics
             .log(TAG, "Remote break generation failed", Some(kind));
         false
+    }
+}
+
+struct ProcessingFile(Option<std::path::PathBuf>);
+impl Drop for ProcessingFile {
+    fn drop(&mut self) {
+        if let Some(path) = &self.0 {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 

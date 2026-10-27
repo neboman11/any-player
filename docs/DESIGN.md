@@ -227,6 +227,25 @@ CREATE TABLE dj_passage_state (account_key TEXT PRIMARY KEY, state_json TEXT NOT
 CREATE TABLE track_gain (track_key TEXT PRIMARY KEY, gain REAL NOT NULL, analyzed_at_ms INTEGER NOT NULL);
 ```
 
+**Migration 1 → 2 (wire metadata)**
+
+This migration adds nullable `TEXT` columns, so that `any-player-state` round trips are exact:
+
+- `custom_playlists`: `created_at_iso`, `updated_at_iso`.
+- `playlist_tracks`: `wire_id`, `added_at_iso`, `url`.
+- `union_playlist_sources`: `wire_id`, `added_at_iso`.
+- Partial unique indexes on both `wire_id` columns (`WHERE wire_id IS NOT NULL`).
+
+Android state files carry string row ids, fractional ISO timestamps and track URLs, which the legacy integer-keyed,
+seconds-precision rows can't hold.
+
+Rules for the new columns:
+
+- The integer and seconds columns stay authoritative for config files and legacy paths.
+- A row without a `wire_id` gets a deterministic one on first export (the `name_uuid_from_bytes` natural key of
+  §10.3), and that id is persisted so it stays stable afterwards.
+- The legacy app ignores the extra columns.
+
 `owner_key` is `p:<source>:<id>` for a provider playlist and `u:<id>` for a union playlist (Android parity).
 
 `track_json` never stores auth headers or tokens:
@@ -517,7 +536,10 @@ clients interoperate against the same account.
 - WebSocket: `GET /v1/ws` with the Authorization **header** (no `?token=`). Only
   `{event_type:"state_updated", namespace, version, source_client_id}` messages are handled.
 - Reconnect: backoff 1–60 s with jitter, reset only after a socket has stayed open for 30 s, and gated on network
-  availability (an `if-addrs` change watcher plus a probe).
+  availability.
+  - "Online" means any interface address that isn't loopback, link-local or unspecified, watched with `if-addrs`.
+  - There is no internet reachability probe, so LAN-only sync servers work. This matches Android's
+    `NET_CAPABILITY_INTERNET` check.
 
 ### 9.2 Engine behavior
 

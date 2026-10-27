@@ -1,62 +1,192 @@
-import { Button, CheckBox, LineEdit, Slider, ComboBox, ScrollView, ListView, AboutSlint, VerticalBox, HorizontalBox, GroupBox, TextEdit, Palette } from "std-widgets.slint";
+import { Button as NativeButton, CheckBox, LineEdit, Slider, ComboBox, ScrollView, ListView, AboutSlint, VerticalBox, HorizontalBox, GroupBox, TextEdit, Palette } from "std-widgets.slint";
 
-export struct TrackRow { key: string, title: string, artist: string, album: string, duration: string, source: string, index: int }
+export struct TrackRow { key: string, title: string, artist: string, album: string, duration: string, source: string, quality: string, index: int }
 export struct CardRow { id: string, name: string, detail: string }
 export struct ColumnRow { key: string, label: string, width: length }
 
+component Button inherits NativeButton { min-height: 32px; max-height: 36px; }
+// Shared surfaces follow the native palette, including OS light/dark changes.
+global Theme {
+    out property <color> accent: #159a83;
+    out property <color> muted: Palette.foreground.with-alpha(0.65);
+    out property <color> surface: Palette.foreground.with-alpha(0.045);
+}
+component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> primary;
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    in property <bool> reveal: true;
+    callback clicked;
+    width: primary ? 52px : 36px;
+    height: primary ? 52px : 36px;
+    border-radius: self.height / 2;
+    background: primary ? Theme.accent : checked ? Theme.accent.with-alpha(0.15) : hit.has-hover ? Theme.surface : transparent;
+    border-width: focus.has-focus ? 2px : 0px;
+    border-color: Theme.accent;
+    opacity: !root.reveal && !hit.has-hover && !focus.has-focus ? 0 : enabled ? 1 : 0.35;
+    forward-focus: focus;
+    accessible-role: button;
+    accessible-label: label;
+    accessible-enabled: enabled;
+    Image {
+        source: root.icon; width: 20px; height: 20px;
+        x: (parent.width - self.width)/2; y: (parent.height - self.height)/2;
+        colorize: root.primary ? white : root.checked ? Theme.accent : Palette.foreground;
+    }
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == Key.Return { root.clicked(); return accept; }
+            return reject;
+        }
+    }
+    hit := TouchArea { enabled: root.enabled; clicked => {focus.focus();root.clicked();} }
+}
+component Cover inherits Rectangle {
+    in property <image> art;
+    in property <bool> present;
+    in property <int> variant;
+    border-radius: 12px;
+    background: transparent;
+    clip: true;
+    if root.present: Image { width:parent.width; height:parent.height; source: root.art; image-fit: cover; }
+    if !root.present: Image { width:parent.width; height:parent.height; source: mod(root.variant,3) == 1 ? @image-url("icons/cover-1.svg") : mod(root.variant,3) == 2 ? @image-url("icons/cover-2.svg") : @image-url("icons/cover-0.svg"); image-fit: contain; }
+}
 component Label inherits Text {
     color: Palette.foreground;
     accessible-role: text;
     accessible-label: self.text;
 }
+// One column-width model for header and rows: the same fixed lead/actions widths and the same
+// stretch weights, laid out with zero spacing (cells pad their own text) so hidden columns take
+// no space and every header cell sits exactly over its row cells.
+component TableCell inherits Rectangle {
+    in property <string> text;
+    in property <float> weight;
+    in property <bool> shown: true;
+    in property <bool> header;
+    in property <bool> sortable;
+    in property <string> arrow;
+    callback clicked;
+    min-width: 0px; preferred-width: 0px;
+    horizontal-stretch: shown ? weight : 0;
+    max-width: shown ? 100000px : 0px;
+    visible: shown;
+    if root.header && root.sortable: TouchArea {
+        mouse-cursor: pointer;
+        accessible-role: button;
+        accessible-label: "Sort by " + root.text;
+        clicked => { root.clicked(); }
+        Rectangle { background: parent.has-hover ? Theme.surface : transparent; }
+    }
+    Label {
+        x: 8px; width: max(0px, parent.width - 16px); height: parent.height;
+        text: root.text + root.arrow;
+        overflow: elide;
+        vertical-alignment: center;
+        color: root.header ? (root.arrow != "" ? Palette.foreground : Theme.muted) : Palette.foreground;
+        font-size: root.header ? 11px : 13px;
+        font-weight: root.header ? 700 : 400;
+    }
+}
 component TrackTable inherits Rectangle {
+    min-width: 0px;
+    preferred-width: 400px;
+    clip: true;
     in property <[TrackRow]> rows;
     in property <[ColumnRow]> columns;
     in property <bool> editable;
     in property <bool> reorder;
+    in property <bool> sortable;
+    in property <string> sort-column;
+    in property <bool> sort-descending;
+    private property <string> selected-key;
+    // Narrow tables drop Album first, then Via, and fold row actions into one menu button.
+    private property <bool> compact: root.width < 720px;
+    private property <bool> show-album: root.width >= 680px;
+    private property <bool> show-source: root.width >= 520px;
+    private property <length> lead-width: 40px;
+    private property <length> actions-width: root.compact ? 44px : root.editable ? 236px : 124px;
     callback action(string, string, int);
     callback sort(string);
+    function heading(key: string, label: string) -> string {
+        return key == "duration" ? "Time" : key == "source" ? "Via" : label;
+    }
+    function shown(key: string) -> bool {
+        return key == "album" ? root.show-album : key == "source" ? root.show-source : true;
+    }
     VerticalLayout {
-        spacing: 3px;
-        HorizontalLayout {
-            height: 34px;
-            Label { text: "#"; width: 32px; }
-            for column in root.columns: Button { text: column.label; width: column.width; clicked => { root.sort(column.key); } }
-            Label { text: "Actions"; horizontal-stretch: 1; }
+        Rectangle {
+            height: 32px;
+            HorizontalLayout {
+                width: list.visible-width; x: 0px;
+                Label { text: "#"; width: root.lead-width; horizontal-alignment: center; vertical-alignment: center; font-size: 11px; font-weight: 700; color: Theme.muted; }
+                for column in root.columns: TableCell {
+                    header: true; sortable: root.sortable;
+                    text: root.heading(column.key, column.label);
+                    weight: column.width / 1px;
+                    shown: root.shown(column.key);
+                    arrow: root.sortable && root.sort-column == column.key ? (root.sort-descending ? " ▼" : " ▲") : "";
+                    clicked => { root.sort(column.key); }
+                }
+                Rectangle { width: root.actions-width; }
+            }
+            Rectangle { y: parent.height - 1px; height: 1px; background: Palette.border; }
         }
-        ListView {
+        list := ListView {
             for row in root.rows: Rectangle {
-                height: 44px;
-                background: mod(row.index, 2) == 0 ? #80808010 : #80808005;
+                height: 48px;
+                background: root.selected-key == row.key ? Theme.accent.with-alpha(0.18) : row-hit.has-hover ? Theme.accent.with-alpha(0.1) : mod(row.index, 2) == 0 ? Theme.surface : transparent;
                 accessible-role: list-item;
                 accessible-label: row.title + " by " + row.artist;
-                TouchArea { accessible-role: button; accessible-label: "Play " + row.title; clicked => {root.action("play",row.key,row.index);} }
+                row-hit := TouchArea { accessible-role: button; accessible-label: "Play " + row.title; clicked => {root.selected-key=row.key;root.action("play",row.key,row.index);} }
                 HorizontalLayout {
-                    spacing: 4px;
                     drag := TouchArea {
-                        width: 32px;
+                        width: root.lead-width;
                         enabled: root.reorder;
                         accessible-role: button;
                         accessible-label: "Drag to reorder " + row.title;
-                        Label { text: root.reorder ? "☰" : row.index + 1; vertical-alignment: center; }
+                        if root.reorder: Image {source:@image-url("icons/drag.svg");width:16px;height:16px;x:(parent.width - self.width)/2;y:16px;colorize:Theme.muted;}
+                        if !root.reorder: Label { text: row.index + 1; width: parent.width; height: parent.height; horizontal-alignment: center; vertical-alignment: center; color: Theme.muted; }
                         pointer-event(event) => {
                             if event.kind == PointerEventKind.up && root.reorder {
-                                root.action("drag", row.key, row.index + round((self.mouse-y - self.pressed-y) / 44px));
+                                root.action("drag", row.key, row.index + round((self.mouse-y - self.pressed-y) / 48px));
                             }
                         }
                     }
-                    for column in root.columns: Label {
-                        width: column.width;
+                    for column in root.columns: TableCell {
+                        weight: column.width / 1px;
+                        shown: root.shown(column.key);
                         text: column.key == "title" ? row.title : column.key == "artist" ? row.artist : column.key == "album" ? row.album : column.key == "duration" ? row.duration : row.source;
-                        overflow: elide;
-                        vertical-alignment: center;
                     }
-                    Button { text: "▶"; accessible-label: "Play from here " + row.title; clicked => { root.action("play", row.key, row.index); } }
-                    Button { text: "Next"; accessible-label: "Play next " + row.title; clicked => { root.action("next", row.key, row.index); } }
-                    Button { text: "+"; accessible-label: "Add to playlist " + row.title; clicked => { root.action("add", row.key, row.index); } }
-                    if root.editable: Button { text: "Remove"; accessible-label: "Remove " + row.title; clicked => { root.action("remove", row.key, row.index); } }
-                    if root.editable: Button { text: "↑"; accessible-label: "Move up " + row.title; enabled: root.reorder && row.index > 0; clicked => { root.action("move", row.key, row.index - 1); } }
-                    if root.editable: Button { text: "↓"; accessible-label: "Move down " + row.title; enabled: root.reorder && row.index < root.rows.length - 1; clicked => { root.action("move", row.key, row.index + 1); } }
+                    if !root.compact: HorizontalLayout {
+                        width: root.actions-width;
+                        spacing: 4px; padding-right: 8px; padding-top: 6px; padding-bottom: 6px; alignment: end;
+                        IconButton { icon: @image-url("icons/play.svg"); label: "Play from here " + row.title; clicked => { root.action("play", row.key, row.index); } }
+                        IconButton { icon: @image-url("icons/next.svg"); label: "Play next " + row.title; clicked => { root.action("next", row.key, row.index); } }
+                        IconButton { icon: @image-url("icons/plus.svg"); label: "Add to playlist " + row.title; clicked => { root.action("add", row.key, row.index); } }
+                        if root.editable: IconButton { icon: @image-url("icons/trash.svg"); label: "Remove " + row.title; clicked => { root.action("remove", row.key, row.index); } }
+                        if root.editable: Button { width:32px; text: "↑"; accessible-label: "Move up " + row.title; enabled: root.reorder && row.index > 0; clicked => { root.action("move", row.key, row.index - 1); } }
+                        if root.editable: Button { width:32px; text: "↓"; accessible-label: "Move down " + row.title; enabled: root.reorder && row.index < root.rows.length - 1; clicked => { root.action("move", row.key, row.index + 1); } }
+                    }
+                    if root.compact: more := ContextMenuArea {
+                        width: root.actions-width;
+                        Menu {
+                            MenuItem { title: "Play from here"; activated => { root.action("play", row.key, row.index); } }
+                            MenuItem { title: "Play next"; activated => { root.action("next", row.key, row.index); } }
+                            MenuItem { title: "Add to playlist…"; activated => { root.action("add", row.key, row.index); } }
+                            if root.editable: MenuItem { title: "Remove"; activated => { root.action("remove", row.key, row.index); } }
+                            if root.editable: MenuItem { title: "Move up"; enabled: root.reorder && row.index > 0; activated => { root.action("move", row.key, row.index - 1); } }
+                            if root.editable: MenuItem { title: "Move down"; enabled: root.reorder && row.index < root.rows.length - 1; activated => { root.action("move", row.key, row.index + 1); } }
+                        }
+                        IconButton {
+                            x: 0px; y: 6px;
+                            icon: @image-url("icons/more.svg"); label: "More actions for " + row.title;
+                            clicked => { more.show({ x: self.x, y: self.y + self.height }); }
+                        }
+                    }
                 }
             }
         }
@@ -67,6 +197,8 @@ export component MainWindow inherits Window {
     title: "Any Player";
     preferred-width: 1100px; preferred-height: 720px;
     min-width: 800px; min-height: 560px;
+    background: Palette.background;
+    default-font-size: 13px;
     forward-focus: keyboard-scope;
     in-out property <int> page: 0;
     in-out property <int> settings-tab: 0;
@@ -82,6 +214,8 @@ export component MainWindow inherits Window {
     in-out property <bool> selected-union;
     in-out property <bool> distinct;
     in-out property <bool> reorder-enabled: true;
+    in-out property <string> sort-column;
+    in-out property <bool> sort-descending;
     in-out property <string> dialog;
     in-out property <string> draft-name;
     in-out property <string> draft-description;
@@ -89,6 +223,9 @@ export component MainWindow inherits Window {
     in-out property <int> source-filter;
     in-out property <string> toast;
     in-out property <string> banner: "Demo mode — offline sample data. No audio is played.";
+    in-out property <string> startup-warning;
+    callback startup-retry(string);
+    callback banner-dismissed();
     in-out property <string> now-title: "No track playing";
     in-out property <string> now-artist: "Select a track to play";
     in-out property <string> now-album;
@@ -140,6 +277,7 @@ export component MainWindow inherits Window {
     in-out property <string> transfer-passphrase;
     in-out property <bool> transfer-replace;
     in-out property <bool> transfer-dry-run: true;
+    in-out property <string> transfer-status;
     in-out property <int> provider-tab;
     in-out property <string> provider-url;
     in-out property <string> provider-secret;
@@ -192,116 +330,200 @@ export component MainWindow inherits Window {
             return reject;
         }
         VerticalLayout {
-            spacing: 8px; padding: 12px;
-            if root.banner != "": HorizontalLayout {
-                height: 40px;
-                Label { text: root.banner; wrap: word-wrap; }
-                Button { text: "Dismiss"; clicked => { root.banner = ""; } }
+            spacing: 16px; padding: 16px;
+            if root.banner != "": Rectangle {
+                border-radius: 8px; background: Theme.surface;
+                HorizontalLayout {
+                    padding-left: 12px; padding-right: 6px; padding-top: 4px; padding-bottom: 4px; spacing: 12px;
+                    Label { text: root.banner; wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
+                    Button { text: "Dismiss"; horizontal-stretch: 0; clicked => { root.banner = ""; root.banner-dismissed(); } }
+                }
+            }
+            if root.startup-warning != "": Rectangle {
+                border-radius: 8px; background: Theme.surface;
+                VerticalLayout {
+                    padding: 8px; padding-left: 12px; spacing: 8px;
+                    Label { text: root.startup-warning; wrap: word-wrap; }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Button { text: "Retry keyring"; horizontal-stretch: 0; clicked => { root.startup-retry("keyring"); } }
+                        Button { text: "Retry Spotify"; horizontal-stretch: 0; clicked => { root.startup-retry("spotify"); } }
+                        Button { text: "Retry Jellyfin"; horizontal-stretch: 0; clicked => { root.startup-retry("jellyfin"); } }
+                        Button { text: "Retry Plex"; horizontal-stretch: 0; clicked => { root.startup-retry("plex"); } }
+                        Button { text: "Retry playback"; horizontal-stretch: 0; clicked => { root.startup-retry("playback"); } }
+                        Rectangle { horizontal-stretch: 1; }
+                        Button { text: "Continue without services"; horizontal-stretch: 0; clicked => { root.startup-warning = ""; } }
+                    }
+                }
             }
             HorizontalLayout {
-                spacing: 18px;
+                spacing: 24px;
                 VerticalLayout {
-                    width: 145px; spacing: 8px;
-                    Text { text: "Any Player"; font-size: 23px; font-weight: 700; accessible-role: text; accessible-label: self.text; }
-                    for title[index] in ["Now Playing", "Playlists", "Search", "Settings"]: Button {
-                        text: title; accessible-label: title; checked: root.page == index;
-                        clicked => { root.page = index; root.navigate(index); }
+                    width: 152px; spacing: 8px;
+                    Label { text: "any player"; font-size: 22px; font-weight: 800; height: 48px; }
+                    for title[index] in ["Now Playing", "Playlists", "Search", "Settings"]: Rectangle {
+                        height: 44px; border-radius: 8px;
+                        background: root.page == index ? Theme.accent.with-alpha(0.12) : nav-hit.has-hover ? Theme.surface : transparent;
+                        if root.page == index: Rectangle { x: 0px; width: 3px; height: 20px; y: 12px; background: Theme.accent; border-radius: 2px; }
+                        HorizontalLayout {
+                            padding-left: 12px; spacing: 12px;
+                            Image { width: 20px; source: index == 0 ? @image-url("icons/now-playing.svg") : index == 1 ? @image-url("icons/playlists.svg") : index == 2 ? @image-url("icons/search.svg") : @image-url("icons/settings.svg"); colorize: root.page == index ? Theme.accent : Palette.foreground; }
+                            Label { text: title; vertical-alignment: center; font-weight: root.page == index ? 700 : 400; }
+                        }
+                        forward-focus: nav-focus;
+                        accessible-role: button; accessible-label: title;
+                        border-width: nav-focus.has-focus ? 2px : 0px; border-color: Theme.accent;
+                        nav-focus := FocusScope { key-pressed(event) => { if event.text == " " || event.text == Key.Return {root.page=index;root.navigate(index);return accept;}return reject;} }
+                        nav-hit := TouchArea { clicked => {nav-focus.focus();root.page=index;root.navigate(index);} }
                     }
                     Rectangle { vertical-stretch: 1; }
                     Label { text: "Desktop v0.2.0"; }
                 }
                 VerticalLayout {
-                    if root.page == 0: VerticalLayout {
-                        HorizontalLayout {
-                            VerticalLayout {
-                                Image { source: root.artwork; height: 150px; image-fit: contain; accessible-role: image; accessible-label: "Current album artwork"; }
-                                if !root.artwork-present: Label { text: "♫"; font-size: 48px; horizontal-alignment: center; }
-                                Text { text: root.now-title; font-size: 28px; font-weight: 700; wrap: word-wrap; accessible-role: text; accessible-label: self.text; }
-                                Label { text: root.now-artist; font-size: 18px; }
-                                Label { text: root.now-album; }
-                                Label {
-                                    text: "Source: " + root.now-source + " · Quality: " + root.quality; wrap: word-wrap;
-                                    Tooltip { text: root.now-source == "Spotify" ? @markdown("Spotify does not expose per-track playback bitrate/sample-rate to this app, so exact quality values cannot be shown.") : @markdown(""); }
-                                }
-                                Label { text: root.device; }
+                    if root.page == 0: HorizontalLayout {
+                        spacing: 24px;
+                        VerticalLayout {
+                            spacing: 12px;
+                            Label { text: "NOW PLAYING"; color: Theme.muted; font-size: 11px; font-weight: 700; height: 24px; }
+                            Rectangle {
+                                vertical-stretch: 1;
+                                Cover { art: root.artwork; present: root.artwork-present; width: min(parent.width, parent.height); height: self.width; x: (parent.width - self.width)/2; y: (parent.height - self.height)/2; accessible-role: image; accessible-label: "Current album artwork"; }
                             }
+                            Label { text: root.now-title; font-size: 26px; font-weight: 750; overflow: elide; horizontal-alignment: center; }
+                            Label { text: root.now-artist; font-size: 16px; color: Theme.muted; horizontal-alignment: center; }
+                            Label {
+                                text: root.now-source == "" ? "" : (root.now-album == "" ? "" : root.now-album + " · ") + root.now-source + " · " + root.quality; color: Theme.muted; horizontal-alignment: center; overflow: elide;
+                                Tooltip { text: root.now-source == "Spotify" ? @markdown("Spotify does not expose per-track playback bitrate/sample-rate to this app, so exact quality values cannot be shown.") : @markdown(""); }
+                            }
+                            Label { text: root.device; color: Theme.muted; horizontal-alignment: center; height: root.device == "" ? 0px : 20px; }
+                            if root.disabled-reason != "": Label { text: root.disabled-reason; wrap: word-wrap; }
+                            Slider { value: root.progress; maximum: 100; accessible-label: "Playback position"; released => {root.seek(self.value);} }
+                            Label { text: root.position-text; color: Theme.muted; horizontal-alignment: center; }
+                            HorizontalLayout {
+                                alignment: center; spacing: 16px; height: 56px;
+                                IconButton { icon: @image-url("icons/shuffle.svg"); label: "Shuffle"; checked: root.shuffle; clicked => {root.action("shuffle","",0);} }
+                                IconButton { icon: @image-url("icons/prev.svg"); label: "Previous"; clicked => {root.action("previous","",0);} }
+                                IconButton { icon: root.playing ? @image-url("icons/pause.svg") : @image-url("icons/play.svg"); label: root.playing ? "Pause" : "Play"; primary: true; enabled: root.disabled-reason == ""; clicked => {root.action("toggle","",0);} }
+                                IconButton { icon: @image-url("icons/next.svg"); label: "Next"; clicked => {root.action("next","",0);} }
+                                IconButton { icon: root.repeat-label == "Repeat one" ? @image-url("icons/repeat-one.svg") : @image-url("icons/repeat.svg"); label: root.repeat-label; checked: root.repeat-label != "Repeat off"; clicked => {root.action("repeat","",0);} }
+                            }
+                            HorizontalLayout {
+                                alignment: center; spacing: 8px; height: 28px;
+                                Image { source: @image-url("icons/volume.svg"); colorize: Theme.muted; width: 18px; }
+                                Slider { width: 120px; value: root.volume; maximum: 100; accessible-label: "Volume"; changed(v) => {root.volume=v;root.volume-change(v);} }
+                            }
+                        }
+                        Rectangle {
+                            width: 280px; border-radius: 12px; background: Theme.surface;
                             VerticalLayout {
-                                width: 360px;
+                                padding: 12px; spacing: 8px;
                                 HorizontalLayout {
-                                    Button { text: "Up Next"; checked: !root.history; clicked => {root.history=false; root.action("queue", "", 0);} }
-                                    Button { text: "History"; checked: root.history; clicked => {root.history=true; root.action("queue", "", 1);} }
+                                    Button { text: "Up Next"; checked: !root.history; clicked => {root.history=false;root.action("queue","",0);} }
+                                    Button { text: "History"; checked: root.history; clicked => {root.history=true;root.action("queue","",1);} }
                                 }
                                 ListView {
                                     for row in root.queue: Rectangle {
-                                        height: 44px;
+                                        height: 64px; border-radius: 8px;
+                                        background: queue-hit.has-hover ? Theme.accent.with-alpha(0.12) : transparent;
+                                        queue-hit := TouchArea { accessible-role: button; accessible-label: "Jump to " + row.title; enabled: row.key != "dj"; clicked => {root.action("jump",row.key,0);} }
                                         HorizontalLayout {
-                                            Button { text: row.title + " — " + row.artist; accessible-label: "Jump to " + row.title; enabled: row.key != "dj"; clicked => {root.action("jump", row.key, 0);} }
-                                            Button { text: "Play next"; enabled: row.key != "dj"; clicked => {root.action("queue-next", row.key, 0);} }
-                                        }
-                                        ContextMenuArea {
-                                            Menu {
-                                                MenuItem { title: "Play next"; enabled: row.key != "dj"; activated => {root.action("queue-next", row.key, 0);} }
+                                            padding: 8px; spacing: 8px;
+                                            Cover { width: 40px; height: 40px; border-radius: 6px; variant: row.index; }
+                                            VerticalLayout {
+                                                alignment: center; spacing: 4px;
+                                                Label { text: row.title; overflow: elide; font-weight: 600; }
+                                                Label { text: row.artist + " · " + row.quality; overflow: elide; color: Theme.muted; font-size: 11px; }
                                             }
+                                            Label { text: row.duration; color: Theme.muted; font-size: 11px; vertical-alignment: center; width: 32px; }
+                                            IconButton { icon: @image-url("icons/next.svg"); label: "Play next " + row.title; reveal: queue-hit.has-hover; enabled: row.key != "dj"; clicked => {root.action("queue-next",row.key,0);} }
                                         }
+                                        ContextMenuArea { Menu { MenuItem {title: "Play next"; enabled: row.key != "dj"; activated => {root.action("queue-next",row.key,0);} } } }
                                     }
                                 }
                             }
                         }
-                        if root.disabled-reason != "": Label { text: root.disabled-reason; wrap: word-wrap; }
-                        Slider { value: root.progress; minimum: 0; maximum: 100; accessible-label: "Playback position"; released => { root.seek(self.value); } }
-                        Label { text: root.position-text; }
-                        HorizontalLayout {
-                            Button { text: "Shuffle"; checked: root.shuffle; clicked => {root.action("shuffle", "", 0);} }
-                            Button { text: "Previous"; clicked => {root.action("previous", "", 0);} }
-                            Button { text: root.playing ? "Pause" : "Play"; enabled: root.disabled-reason == ""; clicked => {root.action("toggle", "", 0);} }
-                            Button { text: "Next"; clicked => {root.action("next", "", 0);} }
-                            Button { text: root.repeat-label; clicked => {root.action("repeat", "", 0);} }
-                            Slider { value: root.volume; maximum: 100; accessible-label: "Volume"; changed(value) => { root.volume = value; root.volume-change(value); } }
-                        }
                     }
                     if root.page == 1 && root.selected-id == "": VerticalLayout {
+                        spacing: 8px;
                         HorizontalLayout {
                             Text { text: "Your Playlists"; font-size: 26px; accessible-role: text; accessible-label: self.text; }
                             Button { text: "Refresh"; clicked => {root.action("refresh", "", 0);} }
                             Button { text: "+ Create Playlist"; clicked => {root.dialog="create";root.draft-name="";root.create-union=false;} }
                         }
                         HorizontalLayout { for tab[index] in ["All", "Custom", "Spotify", "Jellyfin", "Plex"]: Button { text: tab; checked: root.catalog-tab == index; clicked => {root.catalog-tab=index;root.action("catalog", "", index);} } }
-                        ListView { for card in root.cards: Button { height: 68px; text: card.name + "\n" + card.detail; accessible-label: "Open playlist " + card.name; clicked => {root.action("open",card.id,0);} } }
+                        ListView {
+                            for group-index in ceil(root.cards.length / 3): Rectangle {
+                                height: 244px;
+                                HorizontalLayout {
+                                    spacing: 16px;
+                                    for offset in 3: Rectangle {
+                                        in property <int> card-index: group-index * 3 + offset;
+                                        in property <CardRow> item: root.cards[self.card-index];
+                                        visible: self.card-index < root.cards.length;
+                                        border-radius: 12px; background: card-hit.has-hover ? Theme.accent.with-alpha(0.1) : Theme.surface;
+                                        border-width: card-focus.has-focus ? 2px : 0px; border-color: Theme.accent;
+                                        forward-focus: card-focus;
+                                        accessible-role: button; accessible-label: "Open playlist " + self.item.name;
+                                        VerticalLayout {
+                                            padding: 12px; spacing: 8px;
+                                            Cover { height: 160px; variant: card-index; }
+                                            Label { text: item.name; font-weight: 700; overflow: elide; }
+                                            Label { text: item.detail; color: Theme.muted; font-size: 11px; overflow: elide; }
+                                        }
+                                        card-focus := FocusScope { key-pressed(event) => {if event.text == Key.Return || event.text == " " {root.action("open",item.id,0);return accept;}return reject;} }
+                                        card-hit := TouchArea { clicked => {card-focus.focus();root.action("open",item.id,0);} }
+                                    }
+                                }
+                            }
+                        }
                         if root.cards.length == 0: Label { text: "No playlists found. Connect a service in Settings."; }
                     }
                     if root.page == 1 && root.selected-id != "": VerticalLayout {
+                        spacing: 8px;
                         HorizontalLayout {
-                            Button { text: "← Back"; clicked => {root.action("back","",0);} }
-                            Text { text: root.selected-name; font-size: 24px; accessible-role: text; accessible-label: self.text; }
-                            if root.selected-union: Label { text: "UNION"; }
+                            spacing: 12px;
+                            Button { text: "Back"; icon: @image-url("icons/back.svg"); colorize-icon: true; horizontal-stretch: 0; clicked => {root.action("back","",0);} }
+                            Text { text: root.selected-name; font-size: 24px; font-weight: 700; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; accessible-role: text; accessible-label: self.text; }
+                            if root.selected-union: VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: union-tag.preferred-width + 16px; height: 22px;
+                                    border-radius: 11px; background: Theme.accent.with-alpha(0.15);
+                                    union-tag := Label { x: 8px; y: (parent.height - self.height) / 2; text: "UNION"; font-size: 11px; font-weight: 700; color: Theme.accent; }
+                                }
+                            }
                         }
-                        Label { text: root.selected-description; }
+                        if root.selected-description != "": Label { text: root.selected-description; color: Theme.muted; overflow: elide; }
                         HorizontalLayout {
-                            CheckBox { text: "Distinct"; checked: root.distinct; toggled => {root.action("distinct", "", self.checked ? 1 : 0);} }
-                            Button { text: "Play All"; clicked => {root.action("play-all", "", 0);} }
-                            Button { text: "Refresh"; clicked => {root.action("refresh", "", 0);} }
-                            if root.selected-custom: Button { text: "Edit"; clicked => {root.draft-name=root.selected-name;root.draft-description=root.selected-description;root.dialog="edit";} }
-                            if root.selected-custom: Button { text: "Delete"; clicked => {root.dialog="delete";} }
-                            if root.selected-union: Button { text: "+ Add Playlist"; clicked => {root.dialog="source";root.action("candidates", "", root.source-filter);} }
+                            spacing: 8px;
+                            Button { text: "Play All"; primary: true; icon: @image-url("icons/play.svg"); colorize-icon: true; horizontal-stretch: 0; clicked => {root.action("play-all", "", 0);} }
+                            Button { text: "Refresh"; horizontal-stretch: 0; clicked => {root.action("refresh", "", 0);} }
+                            if root.selected-custom: Button { text: "Edit"; horizontal-stretch: 0; clicked => {root.draft-name=root.selected-name;root.draft-description=root.selected-description;root.dialog="edit";} }
+                            if root.selected-custom: Button { text: "Delete"; horizontal-stretch: 0; clicked => {root.dialog="delete";} }
+                            if root.selected-union: Button { text: "+ Add Playlist"; horizontal-stretch: 0; clicked => {root.dialog="source";root.action("candidates", "", root.source-filter);} }
+                            Rectangle { horizontal-stretch: 1; }
+                            CheckBox { text: "Distinct"; horizontal-stretch: 0; checked: root.distinct; toggled => {root.action("distinct", "", self.checked ? 1 : 0);} }
                         }
                         if root.selected-union: ListView {
-                            height: 108px;
+                            height: min(max(root.union-sources.length, 1), 2) * 36px;
                             for source[index] in root.union-sources: HorizontalLayout {
-                                height: 34px;
-                                Label { text: source.name; }
-                                Button { text: "Remove"; clicked => {root.action("source-remove",source.id,0);} }
-                                Button { text: "↑"; accessible-label: "Move source up"; enabled:index>0; clicked => {root.action("source-move",source.id,index - 1);} }
-                                Button { text: "↓"; accessible-label: "Move source down"; enabled:index<root.union-sources.length - 1; clicked => {root.action("source-move",source.id,index + 1);} }
+                                height: 36px; spacing: 4px; padding-right: 8px;
+                                Label { text: source.name; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+                                IconButton { icon: @image-url("icons/trash.svg"); label: "Remove source " + source.name; clicked => {root.action("source-remove",source.id,0);} }
+                                Button { text: "↑"; width: 32px; accessible-label: "Move source up"; enabled:index>0; clicked => {root.action("source-move",source.id,index - 1);} }
+                                Button { text: "↓"; width: 32px; accessible-label: "Move source down"; enabled:index<root.union-sources.length - 1; clicked => {root.action("source-move",source.id,index + 1);} }
                             }
                         }
                         LineEdit { text <=> root.filter; placeholder-text: "Search tracks..."; accessible-label: "Filter tracks"; edited => {root.action("filter",self.text,0);} }
-                        TrackTable { rows: root.tracks; columns: root.columns; editable: root.selected-custom && !root.selected-union; reorder: root.reorder-enabled; action(a,k,n) => {root.track-action(a,k,n);} sort(key) => {root.sort(key);} }
+                        TrackTable { rows: root.tracks; columns: root.columns; editable: root.selected-custom && !root.selected-union; reorder: root.reorder-enabled; sortable: true; vertical-stretch: 1; sort-column: root.sort-column; sort-descending: root.sort-descending; action(a,k,n) => {root.track-action(a,k,n);} sort(key) => {root.sort(key);} }
                         if root.distinct && root.duplicates.length > 0: VerticalLayout {
-                            Label { text: "Duplicates — Distinct playback keeps the first occurrence and skips the rest."; }
-                            ListView { height: 75px; for row in root.duplicates: HorizontalLayout { height: 32px; Label {text:row.title + " — " + row.artist;} if root.selected-custom && !root.selected-union: Button {text:"Remove";clicked=>{root.track-action("remove",row.key,row.index);}} } }
+                            spacing: 4px; vertical-stretch: 0;
+                            Label { text: root.duplicates.length + " duplicates — Distinct playback keeps the first occurrence and skips the rest."; color: Theme.muted; font-size: 11px; overflow: elide; }
+                            ListView { height: 64px; for row in root.duplicates: HorizontalLayout { height: 32px; spacing: 8px; padding-right: 8px; Label {text:row.title + " — " + row.artist; overflow: elide; vertical-alignment: center; horizontal-stretch: 1;} if root.selected-custom && !root.selected-union: Button {text:"Remove";horizontal-stretch:0;clicked=>{root.track-action("remove",row.key,row.index);}} } }
                         }
                     }
                     if root.page == 2: VerticalLayout {
+                        spacing: 8px;
                         Text { text: "Search"; font-size: 26px; accessible-role: text; accessible-label: self.text; }
                         HorizontalLayout {
                             search-input := LineEdit {
@@ -327,6 +549,7 @@ export component MainWindow inherits Window {
                         }
                     }
                     if root.page == 3: VerticalLayout {
+                        spacing: 8px;
                         Text {text:"Settings";font-size:26px;accessible-role:text;accessible-label:self.text;}
                         HorizontalLayout {for tab[index] in ["General","Providers","AI DJ"]: Button {text:tab;checked:root.settings-tab==index;clicked=>{root.settings-tab=index;}}}
                         ScrollView { VerticalBox {
@@ -351,6 +574,7 @@ export component MainWindow inherits Window {
                                     CheckBox {text:"Replace existing state (otherwise merge)";checked <=> root.transfer-replace;}
                                     CheckBox {text:"Dry run (preview import)";checked <=> root.transfer-dry-run;}
                                     HorizontalBox {for label[index] in ["Export state","Import state","Export Config","Import Config"]: Button {text:label;clicked=>{root.action("transfer","",index);}}}
+                                    if root.transfer-status != "": Label {text:root.transfer-status;wrap:word-wrap;color:Theme.muted;}
                                 }}
                                 Button {text:"Clear Provider Cache";clicked=>{root.action("clear-cache","",0);}}
                                 GroupBox {title:"Track Table Columns";VerticalBox {
@@ -405,15 +629,24 @@ export component MainWindow inherits Window {
                 }
             }
             if root.page != 0: HorizontalLayout {
-                height: 54px;
-                Label {text:root.now-title + " — " + root.now-artist;overflow:elide;}
-                Button {text:"Previous";clicked=>{root.action("previous","",0);}}
-                Button {text:root.playing?"Pause":"Play";enabled:root.disabled-reason=="";clicked=>{root.action("toggle","",0);}}
-                Button {text:"Next";clicked=>{root.action("next","",0);}}
+                height: 64px; spacing: 12px;
+                Cover { width: 48px; height: 48px; art: root.artwork; present: root.artwork-present; border-radius: 6px; }
+                VerticalLayout {
+                    width: 180px; alignment: center; spacing: 4px;
+                    Label {text:root.now-title;overflow:elide;font-weight:600;}
+                    Label {text:root.now-artist;overflow:elide;color:Theme.muted;font-size:11px;}
+                }
+                IconButton {icon:@image-url("icons/prev.svg");label:"Previous";clicked=>{root.action("previous","",0);}}
+                IconButton {icon:root.playing?@image-url("icons/pause.svg"):@image-url("icons/play.svg");label:root.playing?"Pause":"Play";primary:true;enabled:root.disabled-reason=="";clicked=>{root.action("toggle","",0);}}
+                IconButton {icon:@image-url("icons/next.svg");label:"Next";clicked=>{root.action("next","",0);}}
                 Slider {value:root.progress;maximum:100;accessible-label:"Playback position";released=>{root.seek(self.value);}}
-                Slider {value:root.volume;maximum:100;accessible-label:"Volume";changed(v)=>{root.volume-change(v);}}
+                Image {source:@image-url("icons/volume.svg");colorize:Theme.muted;width:18px;}
+                Slider {width:88px;value:root.volume;maximum:100;accessible-label:"Volume";changed(v)=>{root.volume-change(v);}}
             }
-            if root.toast != "": HorizontalLayout {height:36px;Label {text:root.toast;wrap:word-wrap;} Button {text:"×";accessible-label:"Dismiss notification";clicked=>{root.toast="";}}}
+            if root.toast != "": Rectangle {
+                border-radius: 8px; background: Theme.surface;
+                HorizontalLayout {padding-left:12px;padding-right:6px;padding-top:4px;padding-bottom:4px;spacing:12px;Label {text:root.toast;wrap:word-wrap;vertical-alignment:center;horizontal-stretch:1;} Button {text:"×";width:36px;horizontal-stretch:0;accessible-label:"Dismiss notification";clicked=>{root.toast="";}}}
+            }
         }
     if root.dialog != "" || root.sync-conflict || root.sync-overwrite: Rectangle {
         background: #00000088;

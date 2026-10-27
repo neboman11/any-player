@@ -347,6 +347,35 @@ impl LibraryPort for DemoServices {
         let _writer = self.library_writer.lock().expect("library writer");
         let mut state = self.library.borrow().clone();
         match command {
+            LibraryCommand::Open(_) => {}
+            LibraryCommand::Play { id, key } => {
+                let rows = state.materialize(&id);
+                let distinct = state
+                    .catalog
+                    .iter()
+                    .find(|p| p.id == id)
+                    .is_some_and(|p| p.distinct);
+                let selected = key
+                    .as_deref()
+                    .or_else(|| rows.first().map(|r| r.key.as_str()));
+                let (tracks, start) = selected
+                    .and_then(|key| crate::vm::library::playback_selection(&rows, key, distinct))
+                    .unwrap_or_default();
+                self.playback.send_modify(|s| {
+                    s.queue = QueueOps::replace(
+                        &s.queue,
+                        tracks,
+                        isize::try_from(start).unwrap_or_default(),
+                        &mut rand::rng(),
+                        false,
+                    );
+                    s.position_ms = 0;
+                    s.playing = !s.queue.entries.is_empty();
+                });
+            }
+            LibraryCommand::PlayNext(track) => self.playback.send_modify(|s| {
+                s.queue = QueueOps::play_next(&s.queue, track);
+            }),
             LibraryCommand::Refresh => {
                 for playlist in self
                     .provider_seed

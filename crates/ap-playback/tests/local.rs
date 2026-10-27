@@ -212,6 +212,7 @@ async fn range_read_seek_and_disk_cache() {
     let request = StreamRequest {
         url: server.url.parse().unwrap(),
         headers: reqwest::header::HeaderMap::default(),
+        allow_invalid_certs: false,
     };
     let c = cache();
     let req = request.clone();
@@ -252,6 +253,7 @@ async fn no_range_forward_and_backward_seek() {
     let request = StreamRequest {
         url: server.url.parse().unwrap(),
         headers: reqwest::header::HeaderMap::default(),
+        allow_invalid_certs: false,
     };
     tokio::task::spawn_blocking(move || {
         let mut source = HttpSource::new(request, "PLEX:no-range".into(), cache()).unwrap();

@@ -109,7 +109,11 @@ pub fn reduce_with(
     );
     let mut next = if reset {
         BreakSchedule {
-            enabled: if let ScheduleEvent::Enabled(on) = event { on } else { s.enabled },
+            enabled: if let ScheduleEvent::Enabled(on) = event {
+                on
+            } else {
+                s.enabled
+            },
             songs_until_break: draw_interval(),
             anchor_order_pos: queue.cursor,
             order_version: version(queue),
@@ -120,7 +124,10 @@ pub fn reduce_with(
         s.clone()
     };
     if !next.enabled {
-        return BreakSchedule { target_uid: None, ..next };
+        return BreakSchedule {
+            target_uid: None,
+            ..next
+        };
     }
     if event == ScheduleEvent::GenerationFailed {
         next = BreakSchedule {
@@ -141,7 +148,11 @@ pub fn reduce_with(
         };
         let remaining = next.songs_until_break - delta;
         next = BreakSchedule {
-            songs_until_break: if remaining < 0 { RETRY_INTERVAL } else { remaining },
+            songs_until_break: if remaining < 0 {
+                RETRY_INTERVAL
+            } else {
+                remaining
+            },
             anchor_order_pos: if reanchor {
                 queue.cursor
             } else {
@@ -167,12 +178,17 @@ pub fn reduce_with(
             if entry.track.is_dj_filler {
                 continue;
             }
-            if real >= next.songs_until_break && backend_for(&entry.track) != BackendKind::Unplayable {
+            if real >= next.songs_until_break
+                && backend_for(&entry.track) != BackendKind::Unplayable
+            {
                 target = Some(entry.uid);
                 break;
             }
             real += 1;
         }
     }
-    BreakSchedule { target_uid: target, ..next }
+    BreakSchedule {
+        target_uid: target,
+        ..next
+    }
 }

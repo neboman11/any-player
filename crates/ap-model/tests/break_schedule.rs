@@ -20,11 +20,19 @@ fn queue(count: usize) -> QueueState {
 }
 
 fn enabled(q: &QueueState) -> BreakSchedule {
-    reduce(&BreakSchedule::default(), ScheduleEvent::Enabled(true), q, &mut rng(9))
+    reduce(
+        &BreakSchedule::default(),
+        ScheduleEvent::Enabled(true),
+        q,
+        &mut rng(9),
+    )
 }
 
 fn at(q: &QueueState, cursor: isize) -> QueueState {
-    QueueState { cursor, ..q.clone() }
+    QueueState {
+        cursor,
+        ..q.clone()
+    }
 }
 
 fn moved(s: &BreakSchedule, q: &QueueState, cursor: isize) -> BreakSchedule {
@@ -32,9 +40,19 @@ fn moved(s: &BreakSchedule, q: &QueueState, cursor: isize) -> BreakSchedule {
 }
 
 fn map_tracks(q: &QueueState, f: impl Fn(usize, &QueueEntry) -> Track) -> QueueState {
-    let entries: Arc<[QueueEntry]> =
-        q.entries.iter().enumerate().map(|(i, e)| QueueEntry { uid: e.uid, track: f(i, e) }).collect();
-    QueueState { entries, ..q.clone() }
+    let entries: Arc<[QueueEntry]> = q
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(i, e)| QueueEntry {
+            uid: e.uid,
+            track: f(i, e),
+        })
+        .collect();
+    QueueState {
+        entries,
+        ..q.clone()
+    }
 }
 
 fn pos(n: i32) -> usize {
@@ -45,9 +63,17 @@ fn pos(n: i32) -> usize {
 fn enable_prepares_future_target_immediately_with_random_interval() {
     let q = queue(20);
     for seed in 0..=100 {
-        let s = reduce(&BreakSchedule::default(), ScheduleEvent::Enabled(true), &q, &mut rng(seed));
+        let s = reduce(
+            &BreakSchedule::default(),
+            ScheduleEvent::Enabled(true),
+            &q,
+            &mut rng(seed),
+        );
         assert!((3..=5).contains(&s.songs_until_break));
-        assert_eq!(Some(q.entry_at(pos(s.songs_until_break) + 1).uid), s.target_uid);
+        assert_eq!(
+            Some(q.entry_at(pos(s.songs_until_break) + 1).uid),
+            s.target_uid
+        );
         assert_eq!(s.songs_away(&q), Some(s.songs_until_break));
     }
 }
@@ -95,20 +121,34 @@ fn one_song_backward_bounce_preserves_ready_target_and_counts_only_new_advances(
 fn content_edits_reanchor_without_counting() {
     let q = queue(20);
     let s = enabled(&q);
-    let edited = QueueState { cursor: 2, content_version: q.content_version + 1, ..q.clone() };
+    let edited = QueueState {
+        cursor: 2,
+        content_version: q.content_version + 1,
+        ..q.clone()
+    };
     let result = reduce(&s, ScheduleEvent::CursorMoved, &edited, &mut rng(0));
     assert_eq!(result.songs_until_break, s.songs_until_break);
-    assert_eq!(result.order_version, i64::try_from(edited.content_version).unwrap());
+    assert_eq!(
+        result.order_version,
+        i64::try_from(edited.content_version).unwrap()
+    );
 }
 
 #[test]
 fn dj_entries_never_count_and_are_never_targets() {
     let q = queue(20);
     let s = enabled(&q);
-    let mixed = map_tracks(&q, |i, e| Track { is_dj_filler: (1..=3).contains(&i), ..e.track.clone() });
+    let mixed = map_tracks(&q, |i, e| Track {
+        is_dj_filler: (1..=3).contains(&i),
+        ..e.track.clone()
+    });
     let result = moved(&s, &mixed, 3);
     assert_eq!(result.songs_until_break, s.songs_until_break);
-    let target = mixed.entries.iter().find(|e| Some(e.uid) == result.target_uid).unwrap();
+    let target = mixed
+        .entries
+        .iter()
+        .find(|e| Some(e.uid) == result.target_uid)
+        .unwrap();
     assert!(!target.track.is_dj_filler);
 }
 
@@ -117,7 +157,10 @@ fn unplayable_entries_are_not_break_targets() {
     let q = queue(20);
     let s = enabled(&q);
     let p = q.order_pos_of_uid(s.target_uid.unwrap()).unwrap();
-    let mixed = map_tracks(&q, |i, e| Track { url: if i == p { None } else { e.track.url.clone() }, ..e.track.clone() });
+    let mixed = map_tracks(&q, |i, e| Track {
+        url: if i == p { None } else { e.track.url.clone() },
+        ..e.track.clone()
+    });
     let result = reduce(&s, ScheduleEvent::CursorMoved, &mixed, &mut rng(0));
     assert_eq!(result.target_uid, Some(mixed.entry_at(p + 1).uid));
 }
@@ -125,7 +168,12 @@ fn unplayable_entries_are_not_break_targets() {
 #[test]
 fn failed_generation_retries_after_three_more_real_songs() {
     let q = queue(20);
-    let failed = reduce(&enabled(&q), ScheduleEvent::GenerationFailed, &q, &mut rng(0));
+    let failed = reduce(
+        &enabled(&q),
+        ScheduleEvent::GenerationFailed,
+        &q,
+        &mut rng(0),
+    );
     assert_eq!(failed.songs_until_break, 3);
     assert!(failed.failed_on_current);
     assert_eq!(moved(&failed, &q, 0), failed);
@@ -172,15 +220,26 @@ fn short_queue_has_no_target_but_retains_schedule() {
 
 #[test]
 fn duplicate_track_ids_target_unique_queue_slot() {
-    let q = map_tracks(&queue(20), |_, e| Track { id: "duplicate".into(), ..e.track.clone() });
+    let q = map_tracks(&queue(20), |_, e| Track {
+        id: "duplicate".into(),
+        ..e.track.clone()
+    });
     let s = enabled(&q);
-    assert_eq!(s.target_uid, Some(q.entry_at(pos(s.songs_until_break) + 1).uid));
+    assert_eq!(
+        s.target_uid,
+        Some(q.entry_at(pos(s.songs_until_break) + 1).uid)
+    );
 }
 
 #[test]
 fn queue_replacement_rerolls_and_clears_failure() {
     let q = queue(20);
-    let failed = reduce(&enabled(&q), ScheduleEvent::GenerationFailed, &q, &mut rng(0));
+    let failed = reduce(
+        &enabled(&q),
+        ScheduleEvent::GenerationFailed,
+        &q,
+        &mut rng(0),
+    );
     let s = reduce(&failed, ScheduleEvent::QueueReplaced, &q, &mut rng(2));
     assert!((3..=5).contains(&s.songs_until_break));
     assert!(!s.failed_on_current);
@@ -196,8 +255,12 @@ fn fixture_queue(v: &Value) -> QueueState {
             track: serde_json::from_value(e["track"].clone()).unwrap(),
         })
         .collect();
-    let order: Arc<[usize]> =
-        v["order"].as_array().unwrap().iter().map(|i| usize::try_from(i.as_u64().unwrap()).unwrap()).collect();
+    let order: Arc<[usize]> = v["order"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| usize::try_from(i.as_u64().unwrap()).unwrap())
+        .collect();
     QueueState {
         entries,
         order,
@@ -240,20 +303,51 @@ fn golden_vectors_from_android() {
         for (step, (event, want)) in events.iter().zip(expected).enumerate() {
             let q = fixture_queue(&event["queue"]);
             let ev = fixture_event(event["event"].as_str().unwrap());
-            s = reduce_with(&s, ev, &q, || intervals.next().unwrap_or_else(|| panic!("{name}: interval exhausted")));
+            s = reduce_with(&s, ev, &q, || {
+                intervals
+                    .next()
+                    .unwrap_or_else(|| panic!("{name}: interval exhausted"))
+            });
             let ctx = format!("{name} step {step}");
-            assert_eq!(s.songs_away(&q).map(i64::from), want["songs_away"].as_i64(), "{ctx}: songs_away");
-            assert_eq!(s.target_uid, want["target_uid"].as_u64(), "{ctx}: target_uid");
-            assert_eq!(i64::from(s.songs_until_break), want["songs_until_break"].as_i64().unwrap(), "{ctx}");
+            assert_eq!(
+                s.songs_away(&q).map(i64::from),
+                want["songs_away"].as_i64(),
+                "{ctx}: songs_away"
+            );
+            assert_eq!(
+                s.target_uid,
+                want["target_uid"].as_u64(),
+                "{ctx}: target_uid"
+            );
+            assert_eq!(
+                i64::from(s.songs_until_break),
+                want["songs_until_break"].as_i64().unwrap(),
+                "{ctx}"
+            );
             assert_eq!(
                 i64::try_from(s.anchor_order_pos).unwrap(),
                 want["anchor_order_pos"].as_i64().unwrap(),
                 "{ctx}: anchor"
             );
-            assert_eq!(s.order_version, want["order_version"].as_i64().unwrap(), "{ctx}: order_version");
-            assert_eq!(s.failed_on_current, want["failed_on_current"].as_bool().unwrap(), "{ctx}: failed");
-            assert_eq!(s.enabled, want["enabled"].as_bool().unwrap(), "{ctx}: enabled");
+            assert_eq!(
+                s.order_version,
+                want["order_version"].as_i64().unwrap(),
+                "{ctx}: order_version"
+            );
+            assert_eq!(
+                s.failed_on_current,
+                want["failed_on_current"].as_bool().unwrap(),
+                "{ctx}: failed"
+            );
+            assert_eq!(
+                s.enabled,
+                want["enabled"].as_bool().unwrap(),
+                "{ctx}: enabled"
+            );
         }
-        assert!(intervals.next().is_none(), "{name}: every scripted interval is consumed");
+        assert!(
+            intervals.next().is_none(),
+            "{name}: every scripted interval is consumed"
+        );
     }
 }

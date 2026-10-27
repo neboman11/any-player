@@ -94,6 +94,9 @@ impl LibrarySnapshot {
             .collect()
     }
     pub fn materialize(&self, id: &str) -> Vec<TrackOccurrence> {
+        if let Some(rows) = self.tracks.get(id) {
+            return rows.clone();
+        }
         if let Some(sources) = self.sources.get(id) {
             sources
                 .iter()
@@ -116,6 +119,12 @@ impl LibrarySnapshot {
 #[derive(Clone, Debug)]
 pub enum LibraryCommand {
     Refresh,
+    Open(String),
+    Play {
+        id: String,
+        key: Option<String>,
+    },
+    PlayNext(Track),
     Create {
         name: String,
         union: bool,
@@ -246,6 +255,8 @@ pub struct SyncSnapshot {
     pub conflict: bool,
     pub overwrite: bool,
     pub status: String,
+    /// Last sync import outcome, shown on the Settings transfer status line.
+    pub import_status: String,
 }
 #[derive(Clone, Debug)]
 pub enum SyncChoice {

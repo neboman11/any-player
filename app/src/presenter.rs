@@ -69,6 +69,13 @@ fn row(track: &Track, key: String, index: usize) -> TrackRow {
             .map_or_else(|| "--:--".into(), duration)
             .into(),
         source: format!("{:?}", track.source).into(),
+        quality: track
+            .bitrate_kbps
+            .map_or_else(
+                || format!("{:?}", track.source),
+                |bitrate| format!("{bitrate} kbps"),
+            )
+            .into(),
         index: i32::try_from(index).unwrap_or(i32::MAX),
     }
 }
@@ -111,6 +118,7 @@ impl Bridge {
             context.library_render += 1;
             (context.library_render, context.clone())
         };
+        let sort = context.table.sort.clone();
         tokio::spawn(async move {
             let receiver = bridge.ports.library.subscribe();
             let prepared = tokio::task::spawn_blocking(move || {
@@ -207,6 +215,8 @@ impl Bridge {
                     ui.set_candidates(swap(ui.get_candidates(), candidates));
                     ui.set_union_sources(swap(ui.get_union_sources(), sources));
                     ui.set_reorder_enabled(reorder);
+                    ui.set_sort_column(sort.column.into());
+                    ui.set_sort_descending(sort.descending);
                 });
             }
         });
@@ -366,26 +376,24 @@ impl Bridge {
         let ports = self.ports.clone();
         match action {
             "play" => {
-                let (tracks, start) = if search {
-                    (vec![track], 0)
-                } else {
-                    let distinct = state
-                        .catalog
-                        .iter()
-                        .find(|p| p.id == selected)
-                        .is_some_and(|p| p.distinct);
-                    let Some(selection) =
-                        crate::vm::library::playback_selection(&rows, &key, distinct)
-                    else {
-                        return;
-                    };
-                    selection
-                };
                 self.launch(async move {
-                    ports
-                        .playback
-                        .playback(PlaybackCommand::SetQueue { tracks, start })
-                        .await
+                    if search {
+                        ports
+                            .playback
+                            .playback(PlaybackCommand::SetQueue {
+                                tracks: vec![track],
+                                start: 0,
+                            })
+                            .await
+                    } else {
+                        ports
+                            .library
+                            .library(LibraryCommand::Play {
+                                id: selected,
+                                key: Some(key),
+                            })
+                            .await
+                    }
                 });
             }
             "next" => self.launch(async move {
@@ -508,6 +516,9 @@ impl Bridge {
         }
         match action {
             "open" => {
+                let open = key.clone();
+                let service = ports.library.clone();
+                self.launch(async move { service.library(LibraryCommand::Open(open)).await });
                 let mut context = self.context.lock().expect("context");
                 context.selected = key;
                 context.table = TrackTable::default();
@@ -549,25 +560,13 @@ impl Bridge {
                 ui.get_search_source(),
             ),
             "play-all" => {
-                let state = ports.library.subscribe().borrow().clone();
-                let mut tracks: Vec<_> = state
-                    .materialize(&selected)
-                    .into_iter()
-                    .map(|r| r.track)
-                    .collect();
-                if state
-                    .catalog
-                    .iter()
-                    .find(|p| p.id == selected)
-                    .is_some_and(|p| p.distinct)
-                {
-                    let mut seen = std::collections::HashSet::new();
-                    tracks.retain(|t| seen.insert(ap_model::dedupe::key(&t.title, &t.artist)));
-                }
                 self.launch(async move {
                     ports
-                        .playback
-                        .playback(PlaybackCommand::SetQueue { tracks, start: 0 })
+                        .library
+                        .library(LibraryCommand::Play {
+                            id: selected,
+                            key: None,
+                        })
                         .await
                 });
             }
@@ -1052,6 +1051,7 @@ pub fn attach(ui: &MainWindow, services: Services) {
                     ui.set_sync_playlists(state.domains[1]);
                     ui.set_sync_providers(state.domains[2]);
                     ui.set_sync_settings(state.domains[3]);
+                    ui.set_transfer_status(state.import_status.into());
                 });
                 if rx.changed().await.is_err() {
                     break;

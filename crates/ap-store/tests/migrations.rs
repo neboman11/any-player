@@ -85,7 +85,32 @@ async fn fresh_empty_db_gets_full_v1_schema() {
 }
 
 async fn assert_migrated_current_fixture(db: &Db, path: &Path) {
-    assert_eq!(pragma_i64(path, "user_version"), 1);
+    assert_eq!(pragma_i64(path, "user_version"), SCHEMA_VERSION);
+    // Wire metadata columns (migration 1 → 2) exist and are empty for legacy rows.
+    assert_eq!(
+        count(
+            db,
+            "SELECT COUNT(*) FROM playlist_tracks WHERE wire_id IS NOT NULL OR url IS NOT NULL OR added_at_iso IS NOT NULL"
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        count(
+            db,
+            "SELECT COUNT(*) FROM union_playlist_sources WHERE wire_id IS NOT NULL OR added_at_iso IS NOT NULL"
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        count(
+            db,
+            "SELECT COUNT(*) FROM custom_playlists WHERE created_at_iso IS NOT NULL OR updated_at_iso IS NOT NULL"
+        )
+        .await,
+        0
+    );
     // Orphans gone.
     assert_eq!(
         count(
@@ -286,7 +311,7 @@ async fn newer_schema_is_refused_and_untouched() {
             err,
             StoreError::SchemaTooNew {
                 found: 99,
-                supported: 1
+                supported: SCHEMA_VERSION
             }
         ),
         "{err:?}"

@@ -147,6 +147,7 @@ impl HttpSource {
         Ok(Self {
             client: Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
+                .danger_accept_invalid_certs(request.allow_invalid_certs)
                 .build()
                 .map_err(io::Error::other)?,
             request,
