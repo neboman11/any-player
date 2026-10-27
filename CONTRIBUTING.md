@@ -72,6 +72,8 @@ Adjust the final path to where your desktop checkout lives. Details are in
   randomness (inject a seed or clock). Use fakes and local mock servers.
 - No `#[ignore]` tests. A test either runs everywhere in CI or does not exist.
 - Bug fixes come with a regression test; new behavior with tests at the lowest crate that owns it.
+- Compare file-lock contention with `fs2::lock_contended_error()`'s native OS code, not only
+  `ErrorKind::WouldBlock`: Windows reports `ERROR_LOCK_VIOLATION` for an existing primary instance.
 
 ## Lint and format
 

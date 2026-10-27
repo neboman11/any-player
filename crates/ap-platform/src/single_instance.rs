@@ -60,7 +60,7 @@ pub async fn acquire(data_dir: &Path, events: mpsc::UnboundedSender<()>) -> io::
             });
             Ok(Instance::Primary(PrimaryInstance { _lock: lock, task }))
         }
-        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+        Err(e) if e.raw_os_error() == fs2::lock_contended_error().raw_os_error() => {
             for attempt in 0..50 {
                 let socket_name = name.as_str().to_ns_name::<GenericNamespaced>()?;
                 match Stream::connect(socket_name).await {
