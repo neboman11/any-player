@@ -945,10 +945,10 @@ impl Actor {
         if preserve_empty && current.is_none() && tracks.is_empty() {
             return false;
         }
-        if let Some(current) = &current {
-            if !tracks.iter().any(|t| t.same_track(current)) {
-                tracks.insert(0, current.clone());
-            }
+        if let Some(current) = &current
+            && !tracks.iter().any(|t| t.same_track(current))
+        {
+            tracks.insert(0, current.clone());
         }
         self.suppress_until = Instant::now() + ECHO;
         let engine = &self.deps.engine;
@@ -985,10 +985,10 @@ impl Actor {
         } else if tracks.is_empty() && !local.entries.is_empty() {
             engine.set_queue(vec![], 0, ChangeOrigin::Sync, false);
         }
-        if let Some(position) = field(data, "position").as_long_lenient() {
-            if engine.position_ms().abs_diff(position) > 2500 {
-                engine.seek(position, ChangeOrigin::Sync);
-            }
+        if let Some(position) = field(data, "position").as_long_lenient()
+            && engine.position_ms().abs_diff(position) > 2500
+        {
+            engine.seek(position, ChangeOrigin::Sync);
         }
         match text(field(data, "state")) {
             Some("playing") => engine.play(ChangeOrigin::Sync),
@@ -1161,12 +1161,13 @@ impl Actor {
     async fn timers(&mut self) -> Result<()> {
         let now = Instant::now();
         let online = *self.deps.network.borrow();
-        if online && self.startup_due.is_some_and(|due| due <= now) {
-            if let Some(target) = self.pending.clone() {
-                self.startup_due = Some(now + jitter(self.startup_backoff));
-                self.startup_backoff = (self.startup_backoff * 2).min(Duration::from_secs(60));
-                self.pull_now(&target, false, true).await?;
-            }
+        if online
+            && self.startup_due.is_some_and(|due| due <= now)
+            && let Some(target) = self.pending.clone()
+        {
+            self.startup_due = Some(now + jitter(self.startup_backoff));
+            self.startup_backoff = (self.startup_backoff * 2).min(Duration::from_secs(60));
+            self.pull_now(&target, false, true).await?;
         }
         let Some(target) = self.confirmed.clone() else {
             return Ok(());

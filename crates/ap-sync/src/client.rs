@@ -203,10 +203,10 @@ pub(crate) async fn next_update(socket: &mut SyncSocket) -> Result<Option<SyncUp
         if message.is_close() {
             return Ok(None);
         }
-        if let Ok(text) = message.to_text() {
-            if let Some(event) = SyncUpdate::parse(text) {
-                return Ok(Some(event));
-            }
+        if let Ok(text) = message.to_text()
+            && let Some(event) = SyncUpdate::parse(text)
+        {
+            return Ok(Some(event));
         }
     }
     Ok(None)

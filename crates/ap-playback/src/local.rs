@@ -1034,41 +1034,41 @@ impl Worker {
         if self.producer.as_ref().is_none_or(Producer::is_full) {
             return Ok(());
         }
-        if self.messages.is_empty() && !self.ended {
-            if let Some(decoder) = &mut self.decoder {
-                if let Some(samples) = decoder.next()? {
-                    self.messages
-                        .extend(samples.into_iter().map(Message::Sample));
+        if self.messages.is_empty()
+            && !self.ended
+            && let Some(decoder) = &mut self.decoder
+        {
+            if let Some(samples) = decoder.next()? {
+                self.messages
+                    .extend(samples.into_iter().map(Message::Sample));
+            } else {
+                let duration = if decoder.duration > 0 {
+                    decoder.duration
                 } else {
-                    let duration = if decoder.duration > 0 {
-                        decoder.duration
-                    } else {
-                        i64::try_from(decoder.input_frames * 1000 / u64::from(decoder.rate))
-                            .unwrap_or(i64::MAX)
-                    };
-                    self.messages.push_back(Message::Position(
-                        BackendEvent::PositionDiscontinuity {
-                            load_id: self.load,
-                            position_ms: i64::try_from(
-                                (decoder.start_position + decoder.output_frames) * 1000
-                                    / u64::from(self.format.sample_rate),
-                            )
-                            .unwrap_or(i64::MAX),
-                            duration_ms: duration,
-                        },
-                    ));
-                    let repeat = self.shared.repeat.load(Ordering::Acquire)
-                        && matches!(self.run.get(self.index), Some(RunItem::Song { .. }));
-                    if !repeat {
-                        self.index += 1;
-                    }
-                    if self.index < self.run.len() {
-                        self.open(0)?;
-                    } else {
-                        self.ended = true;
-                        self.messages
-                            .push_back(Message::End(BackendEvent::RunEnded { load_id: self.load }));
-                    }
+                    i64::try_from(decoder.input_frames * 1000 / u64::from(decoder.rate))
+                        .unwrap_or(i64::MAX)
+                };
+                self.messages
+                    .push_back(Message::Position(BackendEvent::PositionDiscontinuity {
+                        load_id: self.load,
+                        position_ms: i64::try_from(
+                            (decoder.start_position + decoder.output_frames) * 1000
+                                / u64::from(self.format.sample_rate),
+                        )
+                        .unwrap_or(i64::MAX),
+                        duration_ms: duration,
+                    }));
+                let repeat = self.shared.repeat.load(Ordering::Acquire)
+                    && matches!(self.run.get(self.index), Some(RunItem::Song { .. }));
+                if !repeat {
+                    self.index += 1;
+                }
+                if self.index < self.run.len() {
+                    self.open(0)?;
+                } else {
+                    self.ended = true;
+                    self.messages
+                        .push_back(Message::End(BackendEvent::RunEnded { load_id: self.load }));
                 }
             }
         }

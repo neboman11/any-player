@@ -150,10 +150,10 @@ impl SpotifyDeviceResolver {
     }
     pub async fn resolve(&self, origin: ChangeOrigin) -> Result<String, SpotifyError> {
         let mut state = self.state.lock().await;
-        if let Some((id, at)) = &state.cached {
-            if at.elapsed() <= DEVICE_CACHE_TTL {
-                return Ok(id.clone());
-            }
+        if let Some((id, at)) = &state.cached
+            && at.elapsed() <= DEVICE_CACHE_TTL
+        {
+            return Ok(id.clone());
         }
         let mut devices = self.available().await?;
         let mut picked = self.pick(&devices, state.preferred.as_ref());
@@ -590,17 +590,15 @@ impl Actor {
             }
             Command::Upcoming(..) | Command::Play(_) => {}
             Command::Pause => {
-                if self.started {
-                    if let Err(e) = self.api.pause(&self.device).await {
-                        if self
-                            .api
-                            .current_playback()
-                            .await?
-                            .is_some_and(|s| s.is_playing)
-                        {
-                            return Err(e);
-                        }
-                    }
+                if self.started
+                    && let Err(e) = self.api.pause(&self.device).await
+                    && self
+                        .api
+                        .current_playback()
+                        .await?
+                        .is_some_and(|s| s.is_playing)
+                {
+                    return Err(e);
                 }
                 let a = self.a();
                 self.anchor(a.position(), a.duration, false);
@@ -665,14 +663,13 @@ impl Actor {
         }
         if boundary.is_some_and(|t| t <= now) {
             let snapshot = self.api.current_playback().await?;
-            if let Some(s) = &snapshot {
-                if Self::matches(&self.items[self.index], s)
-                    && s.is_playing
-                    && s.duration_ms - s.position_ms > END_LEAD_MS + END_TOLERANCE_MS
-                {
-                    self.accept(snapshot).await?;
-                    return Ok(());
-                }
+            if let Some(s) = &snapshot
+                && Self::matches(&self.items[self.index], s)
+                && s.is_playing
+                && s.duration_ms - s.position_ms > END_LEAD_MS + END_TOLERANCE_MS
+            {
+                self.accept(snapshot).await?;
+                return Ok(());
             }
             self.finish_boundary().await?;
         } else if self.poll_at.is_some_and(|t| t <= now) {
@@ -817,10 +814,10 @@ impl Actor {
         if s.is_playing {
             self.playing_seen = true;
         }
-        if s.shuffle {
-            if let Err(error) = self.api.shuffle(false, &self.device).await {
-                tracing::debug!(%error, "Spotify shuffle correction will retry at the next poll");
-            }
+        if s.shuffle
+            && let Err(error) = self.api.shuffle(false, &self.device).await
+        {
+            tracing::debug!(%error, "Spotify shuffle correction will retry at the next poll");
         }
         self.apply_settings().await;
         if !s.is_playing
