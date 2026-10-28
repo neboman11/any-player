@@ -52,7 +52,10 @@ wiremock = "0.6"
 raw-window-handle = "0.6.2"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
-tray-icon = "0.21"
+# Keep this in step with the `muda` version used by Slint's macOS and Windows
+# backends; older `tray-icon` releases bundle a different `muda` major and clash
+# at link time with the `slint` winit backend on macOS.
+tray-icon = "=0.24.2"
 
 [lints]
 workspace = true
